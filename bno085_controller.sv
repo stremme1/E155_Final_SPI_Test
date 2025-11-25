@@ -40,8 +40,15 @@ module bno085_controller (
     output logic        error
 );
 
-    // SHTP Protocol constants
-    localparam [7:0] CHANNEL_REPORTS = 8'h05;
+    // SHTP Protocol constants (per datasheet Section 1.3.1)
+    localparam [7:0] CHANNEL_COMMAND = 8'h00;      // SHTP command channel
+    localparam [7:0] CHANNEL_EXECUTABLE = 8'h01;    // Executable channel
+    localparam [7:0] CHANNEL_CONTROL = 8'h02;       // Sensor hub control channel
+    localparam [7:0] CHANNEL_REPORTS = 8'h03;       // Input sensor reports (non-wake, not gyroRV)
+    localparam [7:0] CHANNEL_WAKE_REPORTS = 8'h04; // Wake input sensor reports
+    localparam [7:0] CHANNEL_GYRO_RV = 8'h05;       // Gyro rotation vector
+    
+    // Report IDs (per datasheet Section 1.3.2, Figure 1-30)
     localparam [7:0] REPORT_ID_ROTATION_VECTOR = 8'h05;
     localparam [7:0] REPORT_ID_GYROSCOPE = 8'h01;
     
@@ -85,14 +92,16 @@ module bno085_controller (
     // ========================================================================
     function [7:0] get_init_byte(input [1:0] cmd, input [7:0] idx);
         case (cmd)
-            // Product ID Request (5 bytes): 04 00 00 00 F9
+            // Product ID Request (5 bytes): 04 00 02 00 F9
+            // SHTP Header: Length=5, Channel=2 (SH-2 control), Seq=0
+            // Payload: Report ID 0xF9
             2'd0: begin
                 case (idx)
-                    0: get_init_byte = 8'h04;
-                    1: get_init_byte = 8'h00;
-                    2: get_init_byte = 8'h00;
+                    0: get_init_byte = 8'h05; // Length LSB (5 bytes total)
+                    1: get_init_byte = 8'h00; // Length MSB
+                    2: get_init_byte = 8'h02; // Channel 2 (SH-2 control per datasheet Fig 1-30)
                     3: get_init_byte = 8'h00; // Seq 0
-                    4: get_init_byte = 8'hF9;
+                    4: get_init_byte = 8'hF9; // Report ID (Product ID Request)
                     default: get_init_byte = 8'h00;
                 endcase
             end
@@ -140,12 +149,12 @@ module bno085_controller (
         endcase
     endfunction
     
-    // Command lengths
+    // Command lengths (including SHTP header)
     function [7:0] get_cmd_len(input [1:0] cmd);
         case (cmd)
-            2'd0: get_cmd_len = 8'd5;
-            2'd1: get_cmd_len = 8'd17;
-            2'd2: get_cmd_len = 8'd17;
+            2'd0: get_cmd_len = 8'd5;  // Product ID: 4 header + 1 payload
+            2'd1: get_cmd_len = 8'd17; // Set Feature: 4 header + 13 payload
+            2'd2: get_cmd_len = 8'd17; // Set Feature: 4 header + 13 payload
             default: get_cmd_len = 8'd0;
         endcase
     endfunction
@@ -345,7 +354,9 @@ module bno085_controller (
                     if (spi_rx_valid && !spi_busy) begin
                         if (byte_cnt < packet_length - 4 && byte_cnt < 64) begin
                             // Parse on the fly
-                            if (channel == CHANNEL_REPORTS) begin
+                            // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
+                            // Per datasheet Section 1.3.1: Channel 3 = input sensor reports, Channel 5 = gyro rotation vector
+                            if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
                                 if (byte_cnt == 0) begin
                                     current_report_id <= spi_rx_data;
                                 end else if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin

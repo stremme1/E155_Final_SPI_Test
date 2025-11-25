@@ -64,17 +64,27 @@ module mock_bno085 (
     integer cmd_byte_count = 0;
     
     // Product ID response - use function instead of array for iverilog compatibility
+    // Per datasheet Figure 1-29: Product ID Response is on Channel 2 (SH-2 control)
     function [7:0] get_prod_id_byte(input [3:0] idx);
         case (idx)
-            0: get_prod_id_byte = 8'h09;  // Length LSB (9 bytes)
+            0: get_prod_id_byte = 8'h11;  // Length LSB (17 bytes total: 4 header + 13 payload)
             1: get_prod_id_byte = 8'h00;  // Length MSB
-            2: get_prod_id_byte = 8'h01;  // Channel (Command)
+            2: get_prod_id_byte = 8'h02;  // Channel 2 (SH-2 control per datasheet Fig 1-30)
             3: get_prod_id_byte = 8'h00;  // Sequence
-            4: get_prod_id_byte = 8'hF1;  // Get Product ID Response
-            5: get_prod_id_byte = 8'h00;  // Product ID LSB
-            6: get_prod_id_byte = 8'h00;  // Product ID
-            7: get_prod_id_byte = 8'hA0;  // Product ID
-            8: get_prod_id_byte = 8'h02;  // Product ID MSB (BNO085 = 0x0002A0)
+            4: get_prod_id_byte = 8'hF8;  // Report ID (Product ID Response per Fig 1-29)
+            5: get_prod_id_byte = 8'h00;  // Reset Cause
+            6: get_prod_id_byte = 8'h03;  // SW Version Major
+            7: get_prod_id_byte = 8'h02;  // SW Version Minor
+            8: get_prod_id_byte = 8'h00;  // SW Part Number LSB
+            9: get_prod_id_byte = 8'h00;  // SW Part Number
+            10: get_prod_id_byte = 8'hA0; // SW Part Number
+            11: get_prod_id_byte = 8'h02; // SW Part Number MSB (BNO085 = 0x0002A0)
+            12: get_prod_id_byte = 8'h00; // SW Build Number LSB
+            13: get_prod_id_byte = 8'h00; // SW Build Number
+            14: get_prod_id_byte = 8'h00; // SW Build Number
+            15: get_prod_id_byte = 8'h00; // SW Build Number MSB
+            16: get_prod_id_byte = 8'h00; // SW Version Patch LSB
+            17: get_prod_id_byte = 8'h00; // SW Version Patch MSB
             default: get_prod_id_byte = 8'h00;
         endcase
     endfunction
@@ -227,29 +237,34 @@ module mock_bno085 (
         integer i;
         begin
             // Check channel and command
-            if (received_channel == 8'h01) begin // Command channel
+            // Per datasheet: Product ID Request (0xF9) is on Channel 2 (SH-2 control)
+            if (received_channel == 8'h02) begin // Channel 2 (SH-2 control)
                 // Check for Product ID Request (0xF9)
                 if (rx_buffer[4] == 8'hF9) begin
-                    // Send Product ID response
-                    for (i = 0; i < 9; i = i + 1) begin
+                    // Send Product ID response (17 bytes: 4 header + 13 payload per Fig 1-29)
+                    for (i = 0; i < 18; i = i + 1) begin
                         response_queue[i] = get_prod_id_byte(i);
                     end
-                    response_len = 9;
+                    response_len = 18;
                     response_ptr = 0;
                     tx_byte = response_queue[0];
                     // Assert INT to indicate response ready
                     #500;
                     int_n = 1'b0;
                 end
-            end else if (received_channel == 8'h02) begin // Control channel
+            end
+            
+            // Set Feature commands are also on Channel 2
+            if (received_channel == 8'h02) begin // Control channel
                 // Check for Set Feature (0xFD)
                 if (rx_buffer[4] == 8'hFD) begin
-                    // Send Set Feature ACK
-                    response_queue[0] = 8'h05; // Length LSB
+                    // Per datasheet Fig 1-30: Set Feature Command (0xFD) gets Get Feature Response (0xFC)
+                    // Send Get Feature Response (simplified - just acknowledge)
+                    response_queue[0] = 8'h05; // Length LSB (5 bytes: 4 header + 1 payload)
                     response_queue[1] = 8'h00; // Length MSB
-                    response_queue[2] = 8'h02; // Channel
+                    response_queue[2] = 8'h02; // Channel 2 (SH-2 control)
                     response_queue[3] = received_seq; // Sequence
-                    response_queue[4] = 8'hFE; // Set Feature Response
+                    response_queue[4] = 8'hFC; // Get Feature Response (per datasheet Fig 1-30)
                     response_len = 5;
                     response_ptr = 0;
                     tx_byte = response_queue[0];
@@ -270,9 +285,10 @@ module mock_bno085 (
         integer i;
         begin
             // Header (18 bytes total)
+            // Per datasheet: Rotation Vector reports go on Channel 3 (input sensor reports)
             response_queue[0] = 8'h12; // Length LSB (18)
             response_queue[1] = 8'h00; // Length MSB
-            response_queue[2] = 8'h05; // Channel (Reports)
+            response_queue[2] = 8'h03; // Channel 3 (input sensor reports per Section 1.3.1)
             response_queue[3] = 8'h00; // Sequence
             
             // Report Body
@@ -309,9 +325,10 @@ module mock_bno085 (
         input [15:0] x, y, z; // Angular velocity (little-endian 16-bit)
         begin
             // Header (14 bytes total)
+            // Per datasheet: Gyroscope reports go on Channel 3 (input sensor reports)
             response_queue[0] = 8'h0E; // Length LSB (14)
             response_queue[1] = 8'h00; // Length MSB
-            response_queue[2] = 8'h05; // Channel (Reports)
+            response_queue[2] = 8'h03; // Channel 3 (input sensor reports per Section 1.3.1)
             response_queue[3] = 8'h00; // Sequence
             
             // Report Body
