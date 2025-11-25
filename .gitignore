@@ -1,0 +1,8 @@
+# Build artifacts
+*.vvp
+*.vcd
+*.log
+
+# Simulation files
+simulation.log
+
