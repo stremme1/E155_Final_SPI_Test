@@ -1,162 +1,227 @@
-# BNO085 FPGA Implementation
+# BNO08X FPGA Implementation
+
+This directory contains a SystemVerilog implementation of the BNO08X sensor interface for FPGA, ported from the C implementation in `Code_for_C_imp` and using the Adafruit BNO08x library structure.
 
 ## Overview
 
-This directory contains a professional FPGA implementation of the Adafruit BNO08x library for the iCE40 UltraPlus FPGA family. The implementation translates the C++ Arduino library logic into SystemVerilog, maintaining protocol compatibility with the original Adafruit library.
+The implementation provides:
+- SPI master interface for BNO08X communication (SPI Mode 3)
+- SHTP (Sensor Hub Transport Protocol) handler
+- BNO08X controller with initialization and sensor reading
+- Sensor data processing (quaternion to Euler conversion)
+- Drum trigger logic based on orientation and motion
 
-## Architecture
+## Clock Configuration
 
-### Clock System
+The system is designed for a **3MHz clock** derived from a 48MHz HSOSC divided by 16:
 
-The design uses the iCE40 UltraPlus built-in **HSOSC (High-Speed Oscillator)** primitive:
-
-- **HSOSC Frequency**: 48MHz (nominal)
-- **Division Factor**: 16 (CLKHF_DIV = 2'b11)
-- **System Clock**: 3MHz
-- **SPI Clock**: ~750kHz (derived from 3MHz system clock)
-
-**Clock Configuration:**
 ```systemverilog
+// HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
+// CLKHF_DIV(2'b11) = divide by 16 to get 3MHz from 48MHz
 HSOSC #(.CLKHF_DIV(2'b11)) hf_osc (
     .CLKHFPU(1'b1),   // Power up
     .CLKHFEN(1'b1),   // Enable
-    .CLKHF(clk)       // Output: 3MHz (48MHz / 16)
+    .CLKHF(clk)       // Output clock (3MHz from 48MHz / 16)
 );
 ```
 
-**Reference**: [iCE40 UltraPlus Family Data Sheet](https://hmc-e155.github.io/assets/doc/FPGA-DS-02008-2-0-iCE40-UltraPlus-Family-Data-Sheet.pdf), Section 3.1.10
+## Module Structure
 
-### SPI Configuration
+### 1. `bno08x_spi_master.sv`
+SPI master interface implementing SPI Mode 3 (CPOL=1, CPHA=1):
+- Clock idles high
+- Data captured on rising edge
+- Maximum SPI clock: 3MHz (within BNO08X specifications)
+- Handles CS setup/hold timing requirements
 
-Per the Adafruit BNO08x library (`Adafruit_BNO08x.cpp` line 167-169):
+**Key Features:**
+- Configurable data length (up to 65535 bytes)
+- Separate read/write modes
+- Proper timing for CS, SCK, MOSI, MISO signals
 
-- **SPI Mode**: Mode 3 (CPOL=1, CPHA=1)
-- **Bit Order**: MSB first
-- **Frequency**: 1MHz maximum (BNO085 specification)
-- **Current Implementation**: ~750kHz (within spec)
+### 2. `shtp_protocol.sv`
+SHTP protocol handler for packet assembly and parsing:
+- 4-byte SHTP header format
+- Channel and sequence number management
+- Packet length handling with continuation bit support
 
-### Protocol Implementation
+**SHTP Header Format:**
+- Byte 0: Length LSB
+- Byte 1: Length MSB (bit 15 = continuation bit)
+- Byte 2: Channel
+- Byte 3: Sequence Number
 
-The implementation follows the **SHTP (Sensor Hub Transport Protocol)** as used in the Adafruit library:
+### 3. `bno08x_controller.sv`
+Main controller for BNO08X initialization and operation:
+- Hardware reset and wake signal handling
+- Product ID request/response
+- Sensor enable/configuration
+- Interrupt-driven data reading
+- SHTP channel management
 
-#### SPI HAL Functions (from Adafruit library)
+**State Machine:**
+- `INIT_RESET`: Hardware reset sequence
+- `INIT_WAIT_INT`: Wait for interrupt after reset
+- `INIT_GET_PRODUCT_ID`: Request product information
+- `INIT_WAIT_PRODUCT_ID`: Wait for product ID response
+- `IDLE`: Ready for sensor operations
+- `ENABLE_SENSOR`: Configure sensor reports
+- `READ_SENSOR_DATA`: Read sensor data via SPI
+- `PROCESS_SENSOR_DATA`: Parse and process sensor reports
 
-1. **`spihal_wait_for_int()`** (lines 549-560)
-   - Waits for INT pin to go low (up to 500ms timeout)
-   - Indicates sensor has data ready
+### 4. `sensor_processor.sv`
+Sensor data processing and drum trigger logic:
+- Parses quaternion and gyroscope reports
+- Converts quaternion to Euler angles (roll, pitch, yaw)
+- Implements drum trigger logic based on orientation zones
+- Supports dual-sensor system (left/right hand)
 
-2. **`spihal_read()`** (lines 566-606)
-   - Waits for INT
-   - Reads 4-byte SHTP header
-   - Extracts packet length (masking continuation bit)
-   - Reads full packet payload
+**Drum Trigger Mapping:**
+- 0: Snare drum
+- 1: Hi-hat
+- 2: Kick drum (button trigger)
+- 3: High tom
+- 4: Mid tom
+- 5: Crash cymbal
+- 6: Ride cymbal
+- 7: Floor tom
+- 8: No trigger
 
-3. **`spihal_write()`** (lines 608-619)
-   - Waits for INT
-   - Writes SHTP packet
+### 5. `quaternion_to_euler.sv`
+Quaternion to Euler angle conversion:
+- Converts quaternion (Q30 format) to Euler angles (degrees, Q16 format)
+- Uses ZYX (yaw-pitch-roll) convention
+- Implements atan2 and asin functions (simplified version)
 
-#### SHTP Packet Format
+**Note:** The current implementation uses simplified approximations. For production use, implement proper CORDIC algorithms or lookup tables for accurate angle conversion.
+
+### 6. `bno08x_drum_system.sv`
+Top-level module integrating all components:
+- Connects SPI controller, sensor processor, and drum logic
+- Manages yaw offset configuration
+- Provides unified interface for the drum system
+
+## SPI Interface Connections
 
 ```
-[Length LSB] [Length MSB] [Channel] [Sequence] [Payload...]
-     Byte 0      Byte 1     Byte 2     Byte 3
+FPGA                    BNO08X
+----                    ------
+spi_cs_n    ------>     H_CSN (Pin 18)
+spi_sck     ------>     H_SCL/SCK (Pin 19)
+spi_mosi    ------>     H_MOSI (Pin 17)
+spi_miso    <------     H_SDA/H_MISO (Pin 20)
+h_intn      <------     H_INTN (Pin 14)
+wake        ------>     PS0/WAKE (Pin 6)
+reset_bno   ------>     NRST (Pin 11)
 ```
 
-- **Length**: 16-bit little-endian (bit 15 = continuation bit, must be masked)
-- **Channel**: SHTP channel number (0x02 = Control, 0x03 = Reports, 0x05 = Gyro RV)
-- **Sequence**: Packet sequence number
-- **Payload**: Variable length based on report type
+## Usage Example
 
-## Module Hierarchy
-
+```systemverilog
+// Instantiate the drum system
+bno08x_drum_system drum_sys (
+    .clk(clk_3mhz),
+    .rst_n(rst_n),
+    .spi_cs_n(spi_cs_n),
+    .spi_sck(spi_sck),
+    .spi_mosi(spi_mosi),
+    .spi_miso(spi_miso),
+    .h_intn(h_intn),
+    .wake(wake),
+    .reset_bno(reset_bno),
+    .sensor_select(1'b0),  // 0 = right hand, 1 = left hand
+    .enable_system(1'b1),
+    .sensor_id(8'h08),     // SH2_GAME_ROTATION_VECTOR
+    .report_interval(32'd10000),  // 10ms = 100Hz
+    .set_yaw_offset(1'b0),
+    .yaw_offset1(32'd0),
+    .yaw_offset2(32'd0),
+    .drum_trigger(drum_trigger),
+    .trigger_valid(trigger_valid),
+    .initialized(initialized),
+    .error(error),
+    // ... other outputs
+);
 ```
-bno085_fpga_top
-├── HSOSC (clock generation)
-├── spi_master (SPI Mode 3 implementation)
-└── bno085_controller (SHTP protocol handler)
-    ├── Initialization state machine
-    ├── Command ROM (Product ID, Set Feature)
-    └── Report parser (Rotation Vector, Gyroscope)
-```
 
-## Files
+## Sensor Configuration
 
-- **`bno085_fpga_top.sv`**: Top-level module with HSOSC clock configuration
-- **`README.md`**: This file
+### Supported Sensor IDs (from sh2.h):
+- `0x01`: Accelerometer
+- `0x02`: Gyroscope (Calibrated)
+- `0x05`: Rotation Vector
+- `0x08`: Game Rotation Vector (recommended for drum system)
+- `0x09`: Geomagnetic Rotation Vector
 
-## Dependencies
+### Report Intervals:
+- Minimum: 1000 microseconds (1000 Hz)
+- Typical: 10000 microseconds (100 Hz)
+- Maximum: Depends on sensor type (see BNO08X datasheet)
 
-This implementation requires the following modules (from parent directory):
+## Drum Logic
 
-- `spi_master.sv`: SPI Mode 3 master implementation
-- `bno085_controller.sv`: SHTP protocol controller
+The drum trigger logic is based on the original C implementation in `Code_for_C_imp/main.c`:
 
-## Initialization Sequence
+### Right Hand (sensor_select = 0):
+- **Yaw 20-120°**: Snare drum (gyro_y < -2500)
+- **Yaw 340-20°**: High tom or Crash cymbal (pitch > 50°)
+- **Yaw 305-340°**: Mid tom or Ride cymbal (pitch > 50°)
+- **Yaw 200-305°**: Floor tom or Ride cymbal (pitch > 30°)
 
-1. **Reset Wait**: 100ms delay after system reset
-2. **Wake Sensor**: Drive PS0/WAKE pin low
-3. **Wait for INT**: Sensor asserts INT when ready (max 150µs per datasheet)
-4. **Product ID Request**: Query sensor identity
-5. **Enable Rotation Vector**: Configure 50Hz rotation vector reports
-6. **Enable Gyroscope**: Configure 50Hz gyroscope reports
-7. **Normal Operation**: Poll INT pin and read sensor reports
-
-## Sensor Reports
-
-### Rotation Vector (Quaternion)
-- **Report ID**: 0x05
-- **Channel**: 0x05 (Gyro Rotation Vector) or 0x03 (Standard Reports)
-- **Data Format**: 16-bit signed integers (Q14 fixed-point)
-- **Components**: W, X, Y, Z
-
-### Gyroscope
-- **Report ID**: 0x02 (Calibrated Gyroscope)
-- **Channel**: 0x03 (Standard Reports)
-- **Data Format**: 16-bit signed integers
-- **Components**: X, Y, Z (angular velocity)
-
-## Pin Requirements
-
-### Required Pull-ups
-
-1. **FPGA Reset (`rst_n`)**: 10kΩ external pull-up to VCC
-2. **BNO085 INT (`int_n`)**: FPGA internal pull-up or 4.7kΩ-10kΩ external
-3. **BNO085 RST**: 10kΩ pull-up to VCC (hardware, not FPGA pin)
-
-### Pin Assignments
-
-Refer to your project's `PIN_CONFIGURATION.md` for specific pin mappings.
+### Left Hand (sensor_select = 1):
+- **Yaw 350-100°**: Snare or Hi-hat (pitch > 30° and gyro_z > -2000)
+- **Yaw 325-350°**: High tom or Crash cymbal (pitch > 50°)
+- **Yaw 300-325°**: Mid tom or Ride cymbal (pitch > 50°)
+- **Yaw 200-300°**: Floor tom or Ride cymbal (pitch > 30°)
 
 ## Timing Considerations
 
-### SPI Timing (per BNO085 datasheet)
+### SPI Timing (from BNO08X datasheet):
+- Maximum SPI clock: 3MHz ✓ (our clock is 3MHz)
+- CS setup to CLK: 0.1μs min
+- CS hold: 16.83ns min
+- CLK to MISO valid: 35ns max
+- MOSI setup: 25ns min
+- MOSI hold: 5.4ns min
 
-- **tCSSU** (CS setup): 0.1µs minimum
-- **tCSH** (CS hold): 0.1µs minimum
-- **tWK** (Wake pulse): 150µs maximum
-- **SPI Clock**: 1MHz maximum
+### Interrupt Timing:
+- H_INTN assertion indicates data ready
+- Host should respond within 10ms to avoid timeout
+- Recommended: respond within 1/10 of fastest sensor period
 
-### System Timing
+## Implementation Notes
 
-- **System Clock**: 3MHz (333ns period)
-- **SPI Clock**: ~750kHz (1.33µs period)
-- **INT Wait Timeout**: 200µs (600 cycles @ 3MHz)
+1. **Fixed-Point Arithmetic**: The implementation uses fixed-point arithmetic (Q30 for quaternions, Q16 for angles). Ensure proper scaling in calculations.
 
-## Verification
+2. **Quaternion to Euler Conversion**: The current implementation uses simplified approximations. For production, implement:
+   - CORDIC algorithm for atan2 and asin
+   - Lookup tables for faster computation
+   - Proper quadrant handling
 
-This implementation has been verified against:
+3. **Dual Sensor Support**: The system supports two sensors (left/right hand). Use `sensor_select` to switch between them.
 
-1. **Adafruit BNO08x Library**: Protocol compatibility
-2. **BNO085 Datasheet**: Timing and electrical specifications
-3. **iCE40 UltraPlus Data Sheet**: Clock and I/O specifications
+4. **Yaw Offset**: The system supports yaw offset calibration. Set `set_yaw_offset` to capture current yaw as the zero reference.
+
+5. **Error Handling**: The `error` signal indicates communication or initialization failures. Monitor this signal and implement retry logic if needed.
+
+## Testing and Verification
+
+1. **Initialization**: Verify `initialized` signal goes high after power-on
+2. **SPI Communication**: Monitor SPI signals with logic analyzer
+3. **Sensor Data**: Check `data_ready` and sensor data outputs
+4. **Drum Triggers**: Verify trigger outputs match expected orientation zones
 
 ## References
 
-1. [Adafruit BNO08x Library](https://github.com/adafruit/Adafruit_BNO08x)
-2. [iCE40 UltraPlus Family Data Sheet](https://hmc-e155.github.io/assets/doc/FPGA-DS-02008-2-0-iCE40-UltraPlus-Family-Data-Sheet.pdf)
-3. BNO085 Datasheet (Hillcrest Laboratories)
+- BNO08X Datasheet (Revision 1.17)
+- Adafruit BNO08x Library
+- SH-2 Reference Manual
+- iCE40 UltraPlus Family Data Sheet
 
 ## License
 
-This implementation is based on the Adafruit BNO08x library, which uses the BSD license. Please refer to the original library's license file for details.
+This implementation is based on:
+- Adafruit BNO08x library (BSD license)
+- SH-2 library (Apache License 2.0)
+- Original C implementation in `Code_for_C_imp`
 
