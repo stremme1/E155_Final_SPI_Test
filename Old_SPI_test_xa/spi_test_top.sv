@@ -33,34 +33,27 @@ module spi_test_top (
     localparam [22:0] DELAY_2SEC = 23'd6_000_000;
     logic [22:0] rst_delay_counter;
     logic bno085_rst_n_delayed;
-    logic reset_sequence_started;  // Track if we've seen FPGA reset go LOW at least once
     
     // Connect FPGA reset to internal reset
     assign rst_n = fpga_rst_n;
     
-    // BNO085 Reset Sequence (recreates manual sequence):
-    // 1. Start with bno085_rst_n LOW (grounded) - initial state
-    // 2. When fpga_rst_n goes LOW: keep bno085_rst_n LOW, mark sequence started
-    // 3. When fpga_rst_n goes HIGH: after delay, release bno085_rst_n HIGH (starts INT and data)
+    // BNO085 Reset Sequence (recreates manual reset sequence):
+    // 1. Start with BNO085 reset LOW (grounded) - power-up state
+    // 2. When FPGA reset is active: keep BNO085 reset LOW
+    // 3. After FPGA reset is released: keep BNO085 reset LOW for delay period
+    // 4. Then drive BNO085 reset HIGH (to power) to start data transmission
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
-            // FPGA reset is active: keep BNO085 in reset and reset counter
+            // FPGA reset is active: keep BNO085 in reset (LOW) and reset counter
             rst_delay_counter <= 23'd0;
-            bno085_rst_n_delayed <= 1'b0;  // Keep LOW during FPGA reset
-            reset_sequence_started <= 1'b1;  // Mark that we've seen reset
+            bno085_rst_n_delayed <= 1'b0;  // Drive LOW (grounded) - like manually grounding pin
         end else begin
-            // FPGA reset released: only start delay sequence if we've seen reset go LOW first
-            if (reset_sequence_started) begin
-                if (rst_delay_counter < DELAY_2SEC) begin
-                    rst_delay_counter <= rst_delay_counter + 1;
-                    bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset during delay
-                end else begin
-                    bno085_rst_n_delayed <= 1'b1;  // Release BNO085 reset after 2 seconds (starts INT and data)
-                end
+            // FPGA reset released: count up to delay period
+            if (rst_delay_counter < DELAY_2SEC) begin
+                rst_delay_counter <= rst_delay_counter + 1;
+                bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset (LOW) during delay
             end else begin
-                // Haven't seen reset yet, keep BNO085 in reset (initial state)
-                bno085_rst_n_delayed <= 1'b0;
-                rst_delay_counter <= 23'd0;
+                bno085_rst_n_delayed <= 1'b1;  // Drive HIGH (to power) after delay - starts data
             end
         end
     end
