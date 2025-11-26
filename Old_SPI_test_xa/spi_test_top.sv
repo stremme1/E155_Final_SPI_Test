@@ -28,9 +28,33 @@ module spi_test_top (
     logic signed [15:0] gyro_x, gyro_y, gyro_z;
     logic initialized, error;
     
-    // Connect FPGA reset to internal reset and BNO085 reset output
+    // BNO085 Reset Delay Counter
+    // Clock is 3MHz, so 2 seconds = 6,000,000 cycles
+    localparam [22:0] DELAY_2SEC = 23'd6_000_000;
+    logic [22:0] rst_delay_counter;
+    logic bno085_rst_n_delayed;
+    
+    // Connect FPGA reset to internal reset
     assign rst_n = fpga_rst_n;
-    assign bno085_rst_n1 = fpga_rst_n;  // Direct connection: FPGA reset drives BNO085 reset pin
+    
+    // BNO085 Reset with 2-second delay after FPGA reset release
+    always_ff @(posedge clk or negedge fpga_rst_n) begin
+        if (!fpga_rst_n) begin
+            // FPGA reset is active: keep BNO085 in reset and reset counter
+            rst_delay_counter <= 23'd0;
+            bno085_rst_n_delayed <= 1'b0;
+        end else begin
+            // FPGA reset released: count up to 2 seconds
+            if (rst_delay_counter < DELAY_2SEC) begin
+                rst_delay_counter <= rst_delay_counter + 1;
+                bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset during delay
+            end else begin
+                bno085_rst_n_delayed <= 1'b1;  // Release BNO085 reset after 2 seconds
+            end
+        end
+    end
+    
+    assign bno085_rst_n1 = bno085_rst_n_delayed;
 
     // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
     // CLKHF_DIV(2'b11) = divide by 16 to get 3MHz from 48MHz
