@@ -28,33 +28,65 @@ module spi_test_top (
     logic signed [15:0] gyro_x, gyro_y, gyro_z;
     logic initialized, error;
     
-    // BNO085 Reset Delay Counter
-    // Clock is 3MHz, so 2 seconds = 6,000,000 cycles
+    // BNO085 Reset Sequence Counter
+    // Clock is 3MHz, 2 seconds = 6,000,000 cycles
     localparam [22:0] DELAY_2SEC = 23'd6_000_000;
     logic [22:0] rst_delay_counter;
+    logic [1:0] rst_phase;  // 0=LOW delay1, 1=HIGH delay2, 2=LOW (final, stay here)
     logic bno085_rst_n_delayed;
     
     // Connect FPGA reset to internal reset
     assign rst_n = fpga_rst_n;
     
-    // BNO085 Reset Sequence (recreates manual reset sequence):
-    // 1. Start with BNO085 reset LOW (grounded) - power-up state
-    // 2. When FPGA reset is active: keep BNO085 reset LOW
-    // 3. After FPGA reset is released: keep BNO085 reset LOW for delay period
-    // 4. Then drive BNO085 reset HIGH (to power) to start data transmission
+    // BNO085 Reset Sequence (automatic on single FPGA reset press):
+    // 1. Start LOW (grounded) - during FPGA reset
+    // 2. After FPGA reset released: stay LOW for delay
+    // 3. Drive HIGH (release BNO085 reset) for delay  
+    // 4. Drive LOW again (assert) briefly, then HIGH (off/released) - triggers initialization
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
-            // FPGA reset is active: keep BNO085 in reset (LOW) and reset counter
+            // FPGA reset active: reset everything, start with BNO085 reset LOW
             rst_delay_counter <= 23'd0;
-            bno085_rst_n_delayed <= 1'b0;  // Drive LOW (grounded) - like manually grounding pin
+            rst_phase <= 2'd0;
+            bno085_rst_n_delayed <= 1'b0;  // LOW (grounded)
         end else begin
-            // FPGA reset released: count up to delay period
-            if (rst_delay_counter < DELAY_2SEC) begin
-                rst_delay_counter <= rst_delay_counter + 1;
-                bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset (LOW) during delay
-            end else begin
-                bno085_rst_n_delayed <= 1'b1;  // Drive HIGH (to power) after delay - starts data
-            end
+            case (rst_phase)
+                2'd0: begin
+                    // Phase 0: Keep LOW, count delay
+                    bno085_rst_n_delayed <= 1'b0;
+                    if (rst_delay_counter < DELAY_2SEC) begin
+                        rst_delay_counter <= rst_delay_counter + 1;
+                    end else begin
+                        rst_delay_counter <= 23'd0;
+                        rst_phase <= 2'd1;  // Move to Phase 1 (go HIGH)
+                    end
+                end
+                2'd1: begin
+                    // Phase 1: Drive HIGH (release BNO085 reset), count delay
+                    bno085_rst_n_delayed <= 1'b1;
+                    if (rst_delay_counter < DELAY_2SEC) begin
+                        rst_delay_counter <= rst_delay_counter + 1;
+                    end else begin
+                        rst_delay_counter <= 23'd0;
+                        rst_phase <= 2'd2;  // Move to Phase 2 (go LOW briefly then HIGH)
+                    end
+                end
+                2'd2: begin
+                    // Phase 2: Drive LOW briefly (assert), then HIGH (off/released)
+                    // Brief LOW pulse, then stay HIGH - BNO085 controller handles initialization
+                    if (rst_delay_counter < 23'd1000) begin  // Brief LOW pulse (~333us at 3MHz)
+                        bno085_rst_n_delayed <= 1'b0;
+                        rst_delay_counter <= rst_delay_counter + 1;
+                    end else begin
+                        bno085_rst_n_delayed <= 1'b1;  // Stay HIGH (off/released)
+                        // Stay in this phase - sequence complete
+                    end
+                end
+                default: begin
+                    rst_phase <= 2'd0;
+                    bno085_rst_n_delayed <= 1'b0;
+                end
+            endcase
         end
     end
     
