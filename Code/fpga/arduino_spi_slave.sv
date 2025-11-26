@@ -187,21 +187,24 @@ module arduino_spi_slave(
     // Use multiplication operator - synthesis tool will infer DSP blocks
     // iCE40UP5k has 8 DSP blocks, each supports 18x18 signed multiply
     
-    // Intermediate products - synthesis will map to DSP blocks
+    // Intermediate products - explicitly use DSP blocks
+    // Use synthesis attributes to force DSP block usage for iCE40UP5k
+    (* use_dsp = "yes" *)
     logic signed [35:0] wx_prod, yz_prod, wy_prod, zx_prod, wz_prod, xy_prod;
+    (* use_dsp = "yes" *)
     logic signed [35:0] xx_prod, yy_prod, zz_prod;
     
-    // Use multiplication operator - will infer DSP blocks
+    // DSP block multiplications - synthesis will map to SB_MAC16 primitives
     always_ff @(posedge clk) begin
-        wx_prod <= quat_w * quat_x;  // w*x
-        yz_prod <= quat_y * quat_z;  // y*z
-        wy_prod <= quat_w * quat_y;  // w*y
-        zx_prod <= quat_z * quat_x;  // z*x
-        wz_prod <= quat_w * quat_z;  // w*z
-        xy_prod <= quat_x * quat_y;  // x*y
-        xx_prod <= quat_x * quat_x;  // x*x
-        yy_prod <= quat_y * quat_y;  // y*y
-        zz_prod <= quat_z * quat_z;  // z*z
+        wx_prod <= quat_w * quat_x;  // w*x - uses DSP block
+        yz_prod <= quat_y * quat_z;  // y*z - uses DSP block
+        wy_prod <= quat_w * quat_y;  // w*y - uses DSP block
+        zx_prod <= quat_z * quat_x;  // z*x - uses DSP block
+        wz_prod <= quat_w * quat_z;  // w*z - uses DSP block
+        xy_prod <= quat_x * quat_y;  // x*y - uses DSP block
+        xx_prod <= quat_x * quat_x;  // x*x - uses DSP block
+        yy_prod <= quat_y * quat_y;  // y*y - uses DSP block
+        zz_prod <= quat_z * quat_z;  // z*z - uses DSP block
     end
     
     // Calculate intermediate values for Euler angles
@@ -247,15 +250,26 @@ module arduino_spi_slave(
     // Convert to Euler angles (int16_t scaled by 100, 0.01 degree resolution)
     // Simplified conversion: Use quaternion components scaled to degrees
     // In production, this would use proper atan2/asin via CORDIC
+    // Use DSP blocks for scaling multiplications
+    (* use_dsp = "yes" *)
+    logic signed [35:0] roll_mult, pitch_mult, yaw_mult;
     logic signed [15:0] roll_scaled, pitch_scaled, yaw_scaled;
     
     always_ff @(posedge clk) begin
         // Simplified approximation: Scale quaternion-based values to degrees
         // Q14 format: 16384 = 1.0, so multiply by 18000/16384 to get degrees*100
         // Use the numerator values as approximation of the angles
-        roll_scaled <= (roll_numerator * 18'd18000) / 18'd16384;
-        pitch_scaled <= (pitch_value * 18'd18000) / 18'd16384;
-        yaw_scaled <= (yaw_numerator * 18'd18000) / 18'd16384;
+        // Use DSP blocks for these multiplications
+        roll_mult <= roll_numerator * 18'd18000;   // DSP block multiplication
+        pitch_mult <= pitch_value * 18'd18000;     // DSP block multiplication
+        yaw_mult <= yaw_numerator * 18'd18000;      // DSP block multiplication
+    end
+    
+    // Division by 16384 (right shift by 14 bits) - extract result
+    always_ff @(posedge clk) begin
+        roll_scaled <= roll_mult[29:14];   // Divide by 16384 (2^14)
+        pitch_scaled <= pitch_mult[29:14]; // Divide by 16384 (2^14)
+        yaw_scaled <= yaw_mult[29:14];     // Divide by 16384 (2^14)
     end
     
     // Reconstruct output packet with Euler angles
