@@ -28,87 +28,53 @@ module spi_test_top (
     logic signed [15:0] gyro_x, gyro_y, gyro_z;
     logic initialized, error;
     
-    // BNO085 Reset Two-Stage Sequence:
-    // Stage 1: imu_rst=1 (HIGH), FPGA reset pulse -> INT oscillates
-    // Stage 2: imu_rst=0 (LOW), FPGA reset pulse -> protocol starts
-    localparam [22:0] DELAY_2SEC = 23'd6_000_000;
+    // BNO085 Reset Delay Counter
+    // Per datasheet 6.5.3: After NRST release, BNO085 needs:
+    //   - t1 = 90ms for internal initialization
+    //   - t2 = 4ms for internal configuration  
+    //   - Total: ~94ms minimum, we use 100ms for safety
+    // Clock is 3MHz, so 100ms = 300,000 cycles
+    // We add 2 seconds total delay as requested
+    localparam [22:0] DELAY_100MS = 23'd300_000;  // 100ms for BNO085 initialization
+    localparam [22:0] DELAY_2SEC = 23'd6_000_000;  // 2 seconds total delay
     logic [22:0] rst_delay_counter;
     logic bno085_rst_n_delayed;
-    logic fpga_rst_n_sync, fpga_rst_n_prev;
-    logic [1:0] reset_stage;  // 0=initial, 1=first pulse done, 2=second pulse active
+    logic controller_rst_n;  // Controller reset synchronized with BNO085 reset
     
-    // Connect FPGA reset to internal reset
-    assign rst_n = fpga_rst_n;
-    
-    // Synchronize FPGA reset for edge detection
+    // BNO085 Reset with delay after FPGA reset release
+    // Per datasheet 6.5.3: BNO085 needs ~94ms after NRST release before ready
+    // Sequence: FPGA reset releases -> wait 100ms -> release BNO085 reset -> wait 1.9s -> release controller reset
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
-            fpga_rst_n_sync <= 1'b0;
-            fpga_rst_n_prev <= 1'b0;
-        end else begin
-            fpga_rst_n_prev <= fpga_rst_n_sync;
-            fpga_rst_n_sync <= fpga_rst_n;
-        end
-    end
-    
-    // Detect FPGA reset rising edge (reset pulse complete: was LOW, now HIGH)
-    logic fpga_rst_rising_edge;
-    assign fpga_rst_rising_edge = !fpga_rst_n_prev && fpga_rst_n_sync;
-    
-    // BNO085 Reset Two-Stage State Machine
-    // Note: reset_stage persists across FPGA reset pulses to track which stage we're in
-    always_ff @(posedge clk or negedge fpga_rst_n) begin
-        if (!fpga_rst_n) begin
-            // FPGA reset is active (LOW)
+            // FPGA reset is active: keep BNO085 in reset and reset counter
             rst_delay_counter <= 23'd0;
-            // Don't reset reset_stage - it needs to persist to track which pulse we're on
-            
-            if (reset_stage == 2'd0) begin
-                // Stage 0: First reset pulse - keep imu_rst HIGH
-                bno085_rst_n_delayed <= 1'b1;  // Drive HIGH (imu_rst=1) -> INT oscillates
-            end else if (reset_stage == 2'd1) begin
-                // Stage 1: Second reset pulse - drive imu_rst LOW
-                bno085_rst_n_delayed <= 1'b0;  // Drive LOW (imu_rst=0)
-            end else begin
-                // Stage 2: Protocol running - keep LOW during reset
-                bno085_rst_n_delayed <= 1'b0;
-            end
+            bno085_rst_n_delayed <= 1'b0;
+            controller_rst_n <= 1'b0;  // Keep controller in reset too
         end else begin
-            // FPGA reset released (HIGH)
-            if (reset_stage == 2'd0) begin
-                // Stage 0: Waiting for first reset pulse to complete
-                if (fpga_rst_rising_edge) begin
-                    // First reset pulse complete -> move to stage 1, set imu_rst LOW
-                    reset_stage <= 2'd1;
-                    bno085_rst_n_delayed <= 1'b0;  // Drive LOW (imu_rst=0) for second stage
-                end else begin
-                    // Keep HIGH until first pulse completes
-                    bno085_rst_n_delayed <= 1'b1;
-                end
-            end else if (reset_stage == 2'd1) begin
-                // Stage 1: Waiting for second reset pulse
-                if (fpga_rst_rising_edge) begin
-                    // Second reset pulse detected -> start delay counter
-                    reset_stage <= 2'd2;
-                    rst_delay_counter <= 23'd0;
-                    bno085_rst_n_delayed <= 1'b0;  // Keep LOW during delay
-                end else begin
-                    // Keep LOW while waiting for second pulse
-                    bno085_rst_n_delayed <= 1'b0;
-                end
-            end else if (reset_stage == 2'd2) begin
-                // Stage 2: Count delay, then release to start protocol
-                if (rst_delay_counter < DELAY_2SEC) begin
-                    rst_delay_counter <= rst_delay_counter + 1;
-                    bno085_rst_n_delayed <= 1'b0;  // Keep LOW during delay
-                end else begin
-                    bno085_rst_n_delayed <= 1'b1;  // Drive HIGH - protocol starts
-                end
+            // FPGA reset released: count up to delay
+            if (rst_delay_counter < DELAY_2SEC) begin
+                rst_delay_counter <= rst_delay_counter + 1;
+            end
+            
+            // Release BNO085 reset after 100ms (allows BNO085 to initialize per datasheet)
+            if (rst_delay_counter >= DELAY_100MS) begin
+                bno085_rst_n_delayed <= 1'b1;  // Release BNO085 reset
+            end else begin
+                bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset
+            end
+            
+            // Release controller reset after full 2-second delay
+            // This ensures BNO085 has completed initialization before controller starts
+            if (rst_delay_counter >= DELAY_2SEC) begin
+                controller_rst_n <= 1'b1;  // Release controller reset
+            end else begin
+                controller_rst_n <= 1'b0;  // Keep controller in reset
             end
         end
     end
     
     assign bno085_rst_n1 = bno085_rst_n_delayed;
+    assign rst_n = controller_rst_n;  // Controller reset synchronized with BNO085 reset release
 
     // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
     // CLKHF_DIV(2'b11) = divide by 16 to get 3MHz from 48MHz
