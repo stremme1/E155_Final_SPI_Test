@@ -33,23 +33,34 @@ module spi_test_top (
     localparam [22:0] DELAY_2SEC = 23'd6_000_000;
     logic [22:0] rst_delay_counter;
     logic bno085_rst_n_delayed;
+    logic reset_sequence_started;  // Track if we've seen FPGA reset go LOW at least once
     
     // Connect FPGA reset to internal reset
     assign rst_n = fpga_rst_n;
     
-    // BNO085 Reset with 2-second delay after FPGA reset release
+    // BNO085 Reset Sequence (recreates manual sequence):
+    // 1. Start with bno085_rst_n LOW (grounded) - initial state
+    // 2. When fpga_rst_n goes LOW: keep bno085_rst_n LOW, mark sequence started
+    // 3. When fpga_rst_n goes HIGH: after delay, release bno085_rst_n HIGH (starts INT and data)
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
             // FPGA reset is active: keep BNO085 in reset and reset counter
             rst_delay_counter <= 23'd0;
-            bno085_rst_n_delayed <= 1'b0;
+            bno085_rst_n_delayed <= 1'b0;  // Keep LOW during FPGA reset
+            reset_sequence_started <= 1'b1;  // Mark that we've seen reset
         end else begin
-            // FPGA reset released: count up to 2 seconds
-            if (rst_delay_counter < DELAY_2SEC) begin
-                rst_delay_counter <= rst_delay_counter + 1;
-                bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset during delay
+            // FPGA reset released: only start delay sequence if we've seen reset go LOW first
+            if (reset_sequence_started) begin
+                if (rst_delay_counter < DELAY_2SEC) begin
+                    rst_delay_counter <= rst_delay_counter + 1;
+                    bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset during delay
+                end else begin
+                    bno085_rst_n_delayed <= 1'b1;  // Release BNO085 reset after 2 seconds (starts INT and data)
+                end
             end else begin
-                bno085_rst_n_delayed <= 1'b1;  // Release BNO085 reset after 2 seconds
+                // Haven't seen reset yet, keep BNO085 in reset (initial state)
+                bno085_rst_n_delayed <= 1'b0;
+                rst_delay_counter <= 23'd0;
             end
         end
     end
