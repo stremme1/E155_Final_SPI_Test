@@ -28,65 +28,83 @@ module spi_test_top (
     logic signed [15:0] gyro_x, gyro_y, gyro_z;
     logic initialized, error;
     
-    // BNO085 Reset Sequence Counter
-    // Clock is 3MHz, 2 seconds = 6,000,000 cycles
+    // BNO085 Reset Two-Stage Sequence:
+    // Stage 1: imu_rst=1 (HIGH), FPGA reset pulse -> INT oscillates
+    // Stage 2: imu_rst=0 (LOW), FPGA reset pulse -> protocol starts
     localparam [22:0] DELAY_2SEC = 23'd6_000_000;
     logic [22:0] rst_delay_counter;
-    logic [1:0] rst_phase;  // 0=LOW delay1, 1=HIGH delay2, 2=LOW (final, stay here)
     logic bno085_rst_n_delayed;
+    logic fpga_rst_n_sync, fpga_rst_n_prev;
+    logic [1:0] reset_stage;  // 0=initial, 1=first pulse done, 2=second pulse active
     
     // Connect FPGA reset to internal reset
     assign rst_n = fpga_rst_n;
     
-    // BNO085 Reset Sequence (automatic on single FPGA reset press):
-    // 1. Start LOW (grounded) - during FPGA reset
-    // 2. After FPGA reset released: stay LOW for delay
-    // 3. Drive HIGH (release BNO085 reset) for delay  
-    // 4. Drive LOW again (assert) briefly, then HIGH (off/released) - triggers initialization
+    // Synchronize FPGA reset for edge detection
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
-            // FPGA reset active: reset everything, start with BNO085 reset LOW
-            rst_delay_counter <= 23'd0;
-            rst_phase <= 2'd0;
-            bno085_rst_n_delayed <= 1'b0;  // LOW (grounded)
+            fpga_rst_n_sync <= 1'b0;
+            fpga_rst_n_prev <= 1'b0;
         end else begin
-            case (rst_phase)
-                2'd0: begin
-                    // Phase 0: Keep LOW, count delay
-                    bno085_rst_n_delayed <= 1'b0;
-                    if (rst_delay_counter < DELAY_2SEC) begin
-                        rst_delay_counter <= rst_delay_counter + 1;
-                    end else begin
-                        rst_delay_counter <= 23'd0;
-                        rst_phase <= 2'd1;  // Move to Phase 1 (go HIGH)
-                    end
-                end
-                2'd1: begin
-                    // Phase 1: Drive HIGH (release BNO085 reset), count delay
+            fpga_rst_n_prev <= fpga_rst_n_sync;
+            fpga_rst_n_sync <= fpga_rst_n;
+        end
+    end
+    
+    // Detect FPGA reset rising edge (reset pulse complete: was LOW, now HIGH)
+    logic fpga_rst_rising_edge;
+    assign fpga_rst_rising_edge = !fpga_rst_n_prev && fpga_rst_n_sync;
+    
+    // BNO085 Reset Two-Stage State Machine
+    // Note: reset_stage persists across FPGA reset pulses to track which stage we're in
+    always_ff @(posedge clk or negedge fpga_rst_n) begin
+        if (!fpga_rst_n) begin
+            // FPGA reset is active (LOW)
+            rst_delay_counter <= 23'd0;
+            // Don't reset reset_stage - it needs to persist to track which pulse we're on
+            
+            if (reset_stage == 2'd0) begin
+                // Stage 0: First reset pulse - keep imu_rst HIGH
+                bno085_rst_n_delayed <= 1'b1;  // Drive HIGH (imu_rst=1) -> INT oscillates
+            end else if (reset_stage == 2'd1) begin
+                // Stage 1: Second reset pulse - drive imu_rst LOW
+                bno085_rst_n_delayed <= 1'b0;  // Drive LOW (imu_rst=0)
+            end else begin
+                // Stage 2: Protocol running - keep LOW during reset
+                bno085_rst_n_delayed <= 1'b0;
+            end
+        end else begin
+            // FPGA reset released (HIGH)
+            if (reset_stage == 2'd0) begin
+                // Stage 0: Waiting for first reset pulse to complete
+                if (fpga_rst_rising_edge) begin
+                    // First reset pulse complete -> move to stage 1, set imu_rst LOW
+                    reset_stage <= 2'd1;
+                    bno085_rst_n_delayed <= 1'b0;  // Drive LOW (imu_rst=0) for second stage
+                end else begin
+                    // Keep HIGH until first pulse completes
                     bno085_rst_n_delayed <= 1'b1;
-                    if (rst_delay_counter < DELAY_2SEC) begin
-                        rst_delay_counter <= rst_delay_counter + 1;
-                    end else begin
-                        rst_delay_counter <= 23'd0;
-                        rst_phase <= 2'd2;  // Move to Phase 2 (go LOW briefly then HIGH)
-                    end
                 end
-                2'd2: begin
-                    // Phase 2: Drive LOW briefly (assert), then HIGH (off/released)
-                    // Brief LOW pulse, then stay HIGH - BNO085 controller handles initialization
-                    if (rst_delay_counter < 23'd1000) begin  // Brief LOW pulse (~333us at 3MHz)
-                        bno085_rst_n_delayed <= 1'b0;
-                        rst_delay_counter <= rst_delay_counter + 1;
-                    end else begin
-                        bno085_rst_n_delayed <= 1'b1;  // Stay HIGH (off/released)
-                        // Stay in this phase - sequence complete
-                    end
-                end
-                default: begin
-                    rst_phase <= 2'd0;
+            end else if (reset_stage == 2'd1) begin
+                // Stage 1: Waiting for second reset pulse
+                if (fpga_rst_rising_edge) begin
+                    // Second reset pulse detected -> start delay counter
+                    reset_stage <= 2'd2;
+                    rst_delay_counter <= 23'd0;
+                    bno085_rst_n_delayed <= 1'b0;  // Keep LOW during delay
+                end else begin
+                    // Keep LOW while waiting for second pulse
                     bno085_rst_n_delayed <= 1'b0;
                 end
-            endcase
+            end else if (reset_stage == 2'd2) begin
+                // Stage 2: Count delay, then release to start protocol
+                if (rst_delay_counter < DELAY_2SEC) begin
+                    rst_delay_counter <= rst_delay_counter + 1;
+                    bno085_rst_n_delayed <= 1'b0;  // Keep LOW during delay
+                end else begin
+                    bno085_rst_n_delayed <= 1'b1;  // Drive HIGH - protocol starts
+                end
+            end
         end
     end
     
