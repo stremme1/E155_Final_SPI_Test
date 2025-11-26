@@ -48,15 +48,16 @@ module bno085_controller (
     localparam [7:0] CHANNEL_WAKE_REPORTS = 8'h04; // Wake input sensor reports
     localparam [7:0] CHANNEL_GYRO_RV = 8'h05;       // Gyro rotation vector
     
-    // Report IDs (per datasheet Section 1.3.2, Figure 1-30)
+    // Report IDs (per datasheet Section 1.3.2, Figure 1-34)
     localparam [7:0] REPORT_ID_ROTATION_VECTOR = 8'h05;
-    localparam [7:0] REPORT_ID_GYROSCOPE = 8'h01;
+    localparam [7:0] REPORT_ID_GYROSCOPE = 8'h02;  // Fixed: Calibrated gyroscope per Fig 1-34
     
     typedef enum logic [3:0] {
         IDLE,
         INIT_WAIT_RESET,
         INIT_WAKE,
         INIT_WAIT_INT,
+        INIT_CS_SETUP,      // Added: CS setup before SPI transaction
         INIT_SEND_BODY,
         INIT_DONE_CHECK,
         WAIT_DATA,
@@ -78,14 +79,18 @@ module bno085_controller (
     // Command selection
     logic [1:0] cmd_select; // 0=ProdID, 1=Rot, 2=Gyro
     
-    // Handshake state for SPI
-    logic [1:0] spi_handshake;
-    
-    // Temporary storage for parsing
+    // Temporary storage for parsing (little-endian: LSB first)
     logic [7:0] temp_byte_lsb;
     
     // INT pin handling
     logic int_n_sync, int_n_prev;
+    
+    // Sequence number tracking (per datasheet 1.3.5.2)
+    logic [7:0] last_seq_num;
+    
+    // Status and delay fields
+    logic [7:0] report_status;
+    logic [7:0] report_delay;
     
     // ========================================================================
     // Initialization Command ROM
@@ -106,7 +111,7 @@ module bno085_controller (
                 endcase
             end
             // Enable Rotation Vector (17 bytes)
-            // 17 00 02 01 FD 05 00 00 00 32 00 00 00 00 00 00 00
+            // Report interval: 0x00004E20 = 20,000 µs = 50 Hz (within 400 Hz max per datasheet 6.9)
             2'd1: begin
                 case (idx)
                     0: get_init_byte = 8'd17;
@@ -118,15 +123,15 @@ module bno085_controller (
                     6: get_init_byte = 8'h00; // Flags
                     7: get_init_byte = 8'h00; // Sensitivity LSB
                     8: get_init_byte = 8'h00; // Sensitivity MSB
-                    9: get_init_byte = 8'h32; // Report Interval LSB (50)
-                    10: get_init_byte = 8'h00;
+                    9: get_init_byte = 8'h20; // Report Interval LSB (20,000 µs = 50 Hz)
+                    10: get_init_byte = 8'h4E;
                     11: get_init_byte = 8'h00;
                     12: get_init_byte = 8'h00; // Report Interval MSB
                     default: get_init_byte = 8'h00;
                 endcase
             end
             // Enable Gyroscope (17 bytes)
-            // 17 00 02 02 FD 01 00 00 00 32 00 00 00 00 00 00 00
+            // Report interval: 0x00004E20 = 20,000 µs = 50 Hz (within 400 Hz max per datasheet 6.9)
             2'd2: begin
                 case (idx)
                     0: get_init_byte = 8'd17;
@@ -134,12 +139,12 @@ module bno085_controller (
                     2: get_init_byte = 8'h02; // Channel Control
                     3: get_init_byte = 8'd2;  // Seq 2
                     4: get_init_byte = 8'hFD; // Set Feature
-                    5: get_init_byte = 8'h01; // Report ID (Gyro)
+                    5: get_init_byte = 8'h02; // Report ID (Calibrated Gyro per Fig 1-34)
                     6: get_init_byte = 8'h00; // Flags
                     7: get_init_byte = 8'h00; // Sensitivity LSB
                     8: get_init_byte = 8'h00; // Sensitivity MSB
-                    9: get_init_byte = 8'h32; // Report Interval LSB (50)
-                    10: get_init_byte = 8'h00;
+                    9: get_init_byte = 8'h20; // Report Interval LSB (20,000 µs = 50 Hz)
+                    10: get_init_byte = 8'h4E;
                     11: get_init_byte = 8'h00;
                     12: get_init_byte = 8'h00; // Report Interval MSB
                     default: get_init_byte = 8'h00;
@@ -182,10 +187,12 @@ module bno085_controller (
             ps0_wake <= 1'b1; // Must be high at reset for SPI mode
             quat_valid <= 1'b0;
             gyro_valid <= 1'b0;
-            spi_handshake <= 2'd0;
             current_report_id <= 8'd0;
             temp_byte_lsb <= 8'd0;
             cmd_select <= 2'd0;
+            last_seq_num <= 8'd0;
+            report_status <= 8'd0;
+            report_delay <= 8'd0;
             
             quat_w <= 16'd0;
             quat_x <= 16'd0;
@@ -197,11 +204,8 @@ module bno085_controller (
             
         end else begin
             // Default assignments
-            if (spi_handshake == 0 || spi_handshake == 2) begin
-                spi_start <= 1'b0;
-                spi_tx_valid <= 1'b0;
-            end
-            
+            spi_start <= 1'b0;
+            spi_tx_valid <= 1'b0;
             quat_valid <= 1'b0;
             gyro_valid <= 1'b0;
             
@@ -219,62 +223,60 @@ module bno085_controller (
                     end
                 end
 
-                // 2. Wake the sensor (PS0 Low)
+                // 2. Wake the sensor (PS0 Low) - per datasheet 1.2.4.3
                 INIT_WAKE: begin
                     ps0_wake <= 1'b0; // Drive Low to wake
                     delay_counter <= 19'd0;
-                    // If INT is already low, sensor is awake, proceed
-                    if (!int_n_sync) begin
-                        state <= INIT_WAIT_INT;
-                    end else begin
-                        // Otherwise wait for INT to go low
-                        // Add timeout? For now just wait.
-                        state <= INIT_WAIT_INT;
-                    end
+                    state <= INIT_WAIT_INT;
                 end
 
-                // 3. Wait for INT low (Sensor Ready)
+                // 3. Wait for INT low (Sensor Ready) with timeout - per datasheet 6.5.4 (twk = 150 µs max)
                 INIT_WAIT_INT: begin
                     if (!int_n_sync) begin
-                        cs_n <= 1'b0; // Select chip
-                        ps0_wake <= 1'b1; // Release Wake (optional, but good practice once CS is asserted)
-                        byte_cnt <= 8'd0;
-                        spi_handshake <= 0;
-                        state <= INIT_SEND_BODY;
+                        // INT asserted, sensor is ready
+                        delay_counter <= 19'd0;
+                        state <= INIT_CS_SETUP; // Setup CS before starting SPI
+                    end else if (delay_counter >= 19'd600) begin
+                        // Timeout: 600 cycles @ 3MHz = 200 µs (exceeds 150 µs max)
+                        state <= ERROR_STATE;
+                    end else begin
+                        delay_counter <= delay_counter + 1;
                     end
                 end
                 
-                // 4. Send Command Body
+                // CS setup before SPI transaction - per datasheet 6.5.2 (tcssu = 0.1 µs min)
+                INIT_CS_SETUP: begin
+                    cs_n <= 1'b0; // Assert CS
+                    ps0_wake <= 1'b1; // Release Wake once CS is asserted
+                    delay_counter <= 19'd0;
+                    byte_cnt <= 8'd0;
+                    state <= INIT_SEND_BODY;
+                end
+                
+                // 4. Send Command Body (simplified SPI handshake)
                 INIT_SEND_BODY: begin
                     cs_n <= 1'b0;
                     
-                    if (spi_handshake == 0) begin
+                    if (byte_cnt < get_cmd_len(cmd_select)) begin
                         if (!spi_busy && spi_tx_ready) begin
-                            if (byte_cnt < get_cmd_len(cmd_select)) begin
-                                spi_tx_data <= get_init_byte(cmd_select, byte_cnt);
-                                spi_tx_valid <= 1'b1;
-                                spi_start <= 1'b1;
-                                spi_handshake <= 1;
-                            end else begin
-                                // Done sending
-                                cs_n <= 1'b1;
-                                byte_cnt <= 8'd0;
-                                state <= INIT_DONE_CHECK;
-                                delay_counter <= 19'd0;
-                            end
-                        end
-                    end else if (spi_handshake == 1) begin
-                        spi_start <= 1'b1; // Hold start
-                        spi_tx_valid <= 1'b1;
-                        if (spi_busy) begin
+                            // Start new byte transfer
+                            spi_tx_data <= get_init_byte(cmd_select, byte_cnt);
+                            spi_tx_valid <= 1'b1;
+                            spi_start <= 1'b1;
+                        end else if (spi_busy) begin
+                            // Transfer in progress, release start after first cycle
                             spi_start <= 1'b0;
-                            spi_handshake <= 2;
-                        end
-                    end else if (spi_handshake == 2) begin
-                        if (!spi_busy) begin
+                        end else if (!spi_busy && spi_rx_valid) begin
+                            // Transfer complete, advance to next byte
                             byte_cnt <= byte_cnt + 1;
-                            spi_handshake <= 0;
+                            spi_tx_valid <= 1'b0;
                         end
+                    end else begin
+                        // Done sending all bytes
+                        cs_n <= 1'b1;
+                        byte_cnt <= 8'd0;
+                        state <= INIT_DONE_CHECK;
+                        delay_counter <= 19'd0;
                     end
                 end
                 
@@ -307,107 +309,167 @@ module bno085_controller (
                 end
 
                 READ_HEADER_START: begin
+                    // CS setup before SPI - per datasheet 6.5.2
                     cs_n <= 1'b0;
                     if (!int_n_sync) begin
-                        state <= READ_HEADER;
+                        // Start first SPI transaction to read header
                         spi_tx_data <= 8'h00; 
                         spi_tx_valid <= 1'b1; 
                         spi_start <= 1'b1;
                         byte_cnt <= 8'd0;
-                        spi_handshake <= 0; // Re-use handshake logic if needed, or rely on master auto-seq
+                        state <= READ_HEADER;
+                    end else begin
+                        // INT deasserted, no data
+                        cs_n <= 1'b1;
+                        state <= WAIT_DATA;
                     end
                 end
                 
                 READ_HEADER: begin
+                    cs_n <= 1'b0;
                     if (spi_rx_valid && !spi_busy) begin
                         case (byte_cnt)
                             0: begin
                                 packet_length[7:0] <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
-                                spi_tx_data <= 8'h00; spi_tx_valid <= 1; spi_start <= 1;
+                                spi_tx_data <= 8'h00; 
+                                spi_tx_valid <= 1'b1; 
+                                spi_start <= 1'b1;
                             end
                             1: begin
+                                // Mask continuation bit (bit 15) per datasheet 1.3.1
                                 packet_length[15:8] <= spi_rx_data;
+                                packet_length[15] <= 1'b0; // Clear continuation bit
                                 byte_cnt <= byte_cnt + 1;
-                                spi_tx_data <= 8'h00; spi_tx_valid <= 1; spi_start <= 1;
+                                spi_tx_data <= 8'h00; 
+                                spi_tx_valid <= 1'b1; 
+                                spi_start <= 1'b1;
                             end
                             2: begin
                                 channel <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
-                                spi_tx_data <= 8'h00; spi_tx_valid <= 1; spi_start <= 1;
+                                spi_tx_data <= 8'h00; 
+                                spi_tx_valid <= 1'b1; 
+                                spi_start <= 1'b1;
                             end
                             3: begin
-                                byte_cnt <= 8'd0;
-                                if (packet_length > 4) begin
+                                // Validate packet length (max 32766 per datasheet 1.3.1)
+                                if (packet_length > 16'd4 && packet_length < 16'd32767) begin
+                                    byte_cnt <= 8'd0;
                                     state <= READ_PAYLOAD;
-                                    spi_tx_data <= 8'h00; spi_tx_valid <= 1; spi_start <= 1;
+                                    spi_tx_data <= 8'h00; 
+                                    spi_tx_valid <= 1'b1; 
+                                    spi_start <= 1'b1;
                                 end else begin
+                                    // Invalid length
                                     cs_n <= 1'b1; 
                                     state <= WAIT_DATA;
                                 end
                             end
                         endcase
+                    end else if (!spi_busy && byte_cnt < 4) begin
+                        // Continue reading header
+                        spi_tx_data <= 8'h00; 
+                        spi_tx_valid <= 1'b1; 
+                        spi_start <= 1'b1;
                     end
                 end
                 
                 READ_PAYLOAD: begin
+                    cs_n <= 1'b0;
                     if (spi_rx_valid && !spi_busy) begin
-                        if (byte_cnt < packet_length - 4 && byte_cnt < 64) begin
-                            // Parse on the fly
-                            // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
-                            // Per datasheet Section 1.3.1: Channel 3 = input sensor reports, Channel 5 = gyro rotation vector
-                            if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
-                                if (byte_cnt == 0) begin
-                                    current_report_id <= spi_rx_data;
-                                end else if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                    case (byte_cnt)
-                                        4: temp_byte_lsb <= spi_rx_data;
-                                        5: quat_x <= {spi_rx_data, temp_byte_lsb};
-                                        6: temp_byte_lsb <= spi_rx_data;
-                                        7: quat_y <= {spi_rx_data, temp_byte_lsb};
-                                        8: temp_byte_lsb <= spi_rx_data;
-                                        9: quat_z <= {spi_rx_data, temp_byte_lsb};
-                                        10: temp_byte_lsb <= spi_rx_data;
-                                        11: begin
-                                            quat_w <= {spi_rx_data, temp_byte_lsb};
-                                            quat_valid <= 1'b1; 
-                                        end
-                                    endcase
-                                end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
-                                    case (byte_cnt)
-                                        4: temp_byte_lsb <= spi_rx_data;
-                                        5: gyro_x <= {spi_rx_data, temp_byte_lsb};
-                                        6: temp_byte_lsb <= spi_rx_data;
-                                        7: gyro_y <= {spi_rx_data, temp_byte_lsb};
-                                        8: temp_byte_lsb <= spi_rx_data;
-                                        9: begin
-                                            gyro_z <= {spi_rx_data, temp_byte_lsb};
-                                            gyro_valid <= 1'b1;
-                                        end
-                                    endcase
+                        // Parse on the fly - per datasheet 1.3.5.2
+                        // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
+                        if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
+                            case (byte_cnt)
+                                0: current_report_id <= spi_rx_data;
+                                1: last_seq_num <= spi_rx_data; // Sequence number (for drop detection)
+                                2: report_status <= spi_rx_data; // Status (accuracy in bits 1:0)
+                                3: report_delay <= spi_rx_data;  // Delay (lower 8 bits)
+                                4: begin
+                                    // Rotation Vector: X-axis LSB (little-endian per datasheet 1.2.2.2)
+                                    if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
+                                        temp_byte_lsb <= spi_rx_data;
+                                    end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
+                                        temp_byte_lsb <= spi_rx_data; // Gyro X LSB
+                                    end
                                 end
-                            end
+                                5: begin
+                                    if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
+                                        quat_x <= {spi_rx_data, temp_byte_lsb}; // X-axis MSB,LSB
+                                    end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
+                                        gyro_x <= {spi_rx_data, temp_byte_lsb}; // X-axis MSB,LSB
+                                    end
+                                end
+                                6: begin
+                                    if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
+                                        temp_byte_lsb <= spi_rx_data; // Y-axis LSB
+                                    end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
+                                        temp_byte_lsb <= spi_rx_data; // Gyro Y LSB
+                                    end
+                                end
+                                7: begin
+                                    if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
+                                        quat_y <= {spi_rx_data, temp_byte_lsb}; // Y-axis MSB,LSB
+                                    end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
+                                        gyro_y <= {spi_rx_data, temp_byte_lsb}; // Y-axis MSB,LSB
+                                    end
+                                end
+                                8: begin
+                                    if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
+                                        temp_byte_lsb <= spi_rx_data; // Z-axis LSB
+                                    end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
+                                        temp_byte_lsb <= spi_rx_data; // Gyro Z LSB
+                                    end
+                                end
+                                9: begin
+                                    if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
+                                        quat_z <= {spi_rx_data, temp_byte_lsb}; // Z-axis MSB,LSB
+                                    end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
+                                        gyro_z <= {spi_rx_data, temp_byte_lsb}; // Z-axis MSB,LSB
+                                        gyro_valid <= 1'b1; // Gyro complete
+                                    end
+                                end
+                                10: begin
+                                    if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
+                                        temp_byte_lsb <= spi_rx_data; // W-axis LSB
+                                    end
+                                end
+                                11: begin
+                                    if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
+                                        quat_w <= {spi_rx_data, temp_byte_lsb}; // W-axis MSB,LSB
+                                        quat_valid <= 1'b1; // Quaternion complete
+                                    end
+                                end
+                            endcase
+                        end
 
-                            byte_cnt <= byte_cnt + 1;
-                            
-                            if (byte_cnt < packet_length - 5 && byte_cnt < 63) begin
-                                spi_tx_data <= 8'h00; spi_tx_valid <= 1; spi_start <= 1;
-                            end else begin
-                                cs_n <= 1'b1;
-                                byte_cnt <= 8'd0;
-                                state <= WAIT_DATA;
-                            end
+                        byte_cnt <= byte_cnt + 1;
+                        
+                        // Continue reading if more data
+                        if (byte_cnt < (packet_length - 5)) begin
+                            spi_tx_data <= 8'h00; 
+                            spi_tx_valid <= 1'b1; 
+                            spi_start <= 1'b1;
                         end else begin
+                            // Packet complete
                             cs_n <= 1'b1;
                             byte_cnt <= 8'd0;
                             state <= WAIT_DATA;
                         end
+                    end else if (!spi_busy && byte_cnt < (packet_length - 4)) begin
+                        // Continue reading payload
+                        spi_tx_data <= 8'h00; 
+                        spi_tx_valid <= 1'b1; 
+                        spi_start <= 1'b1;
                     end
                 end
                 
                 ERROR_STATE: begin
                     error <= 1'b1;
                     cs_n <= 1'b1;
+                    ps0_wake <= 1'b1;
+                    // Could add recovery logic here (e.g., reset and retry)
                     state <= ERROR_STATE;
                 end
                 

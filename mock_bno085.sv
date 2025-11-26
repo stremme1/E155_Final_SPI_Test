@@ -258,6 +258,14 @@ module mock_bno085 (
             if (received_channel == 8'h02) begin // Control channel
                 // Check for Set Feature (0xFD)
                 if (rx_buffer[4] == 8'hFD) begin
+                    // Verify report interval is reasonable (should be 0x00004E20 = 20,000 µs = 50 Hz)
+                    // Bytes 9-12 contain report interval (little-endian)
+                    logic [31:0] report_interval;
+                    report_interval[7:0] = rx_buffer[9];
+                    report_interval[15:8] = rx_buffer[10];
+                    report_interval[23:16] = rx_buffer[11];
+                    report_interval[31:24] = rx_buffer[12];
+                    
                     // Per datasheet Fig 1-30: Set Feature Command (0xFD) gets Get Feature Response (0xFC)
                     // Send Get Feature Response (simplified - just acknowledge)
                     response_queue[0] = 8'h05; // Length LSB (5 bytes: 4 header + 1 payload)
@@ -271,6 +279,10 @@ module mock_bno085 (
                     // Assert INT to indicate response ready
                     #500;
                     int_n = 1'b0;
+                    
+                    // Debug: Print report interval
+                    $display("[MOCK] Set Feature received - Report Interval: %0d µs (%0d Hz)", 
+                             report_interval, (report_interval > 0 ? 1000000 / report_interval : 0));
                 end
             end
         end
@@ -282,6 +294,9 @@ module mock_bno085 (
     // Payload: Report ID, Sequence, Status, Delay, Data...
     task send_rotation_vector;
         input [15:0] x, y, z, w; // Quaternions (little-endian 16-bit)
+        input [7:0] seq_num;     // Sequence number for testing
+        input [7:0] status;      // Status byte (accuracy in bits 1:0)
+        input [7:0] delay;       // Delay byte
         integer i;
         begin
             // Header (18 bytes total)
@@ -293,9 +308,9 @@ module mock_bno085 (
             
             // Report Body
             response_queue[4] = 8'h05; // Report ID (Rotation Vector)
-            response_queue[5] = 8'h00; // Sequence
-            response_queue[6] = 8'h00; // Status
-            response_queue[7] = 8'h00; // Delay
+            response_queue[5] = seq_num; // Sequence number
+            response_queue[6] = status;   // Status (accuracy bits 1:0)
+            response_queue[7] = delay;    // Delay (lower 8 bits)
             
             // Quaternion data (little-endian)
             response_queue[8] = x[7:0];   // X LSB
@@ -320,9 +335,12 @@ module mock_bno085 (
         end
     endtask
     
-    // Task to queue a gyroscope report
+    // Task to queue a gyroscope report (with optional parameters)
     task send_gyroscope;
         input [15:0] x, y, z; // Angular velocity (little-endian 16-bit)
+        input [7:0] seq_num;  // Sequence number for testing
+        input [7:0] status;  // Status byte (accuracy in bits 1:0)
+        input [7:0] delay;   // Delay byte
         begin
             // Header (14 bytes total)
             // Per datasheet: Gyroscope reports go on Channel 3 (input sensor reports)
@@ -331,11 +349,11 @@ module mock_bno085 (
             response_queue[2] = 8'h03; // Channel 3 (input sensor reports per Section 1.3.1)
             response_queue[3] = 8'h00; // Sequence
             
-            // Report Body
-            response_queue[4] = 8'h01; // Report ID (Gyroscope)
-            response_queue[5] = 8'h00; // Sequence
-            response_queue[6] = 8'h00; // Status
-            response_queue[7] = 8'h00; // Delay
+            // Report Body per datasheet Figure 1-34
+            response_queue[4] = 8'h02; // Report ID (Calibrated Gyroscope per datasheet Fig 1-34)
+            response_queue[5] = seq_num; // Sequence number
+            response_queue[6] = status;  // Status (accuracy bits 1:0)
+            response_queue[7] = delay;    // Delay (lower 8 bits)
             
             // Gyro data (little-endian)
             response_queue[8] = x[7:0];   // X LSB
@@ -352,6 +370,14 @@ module mock_bno085 (
             // Indicate data ready
             #1000;
             int_n = 1'b0;
+        end
+    endtask
+    
+    // Wrapper task for backward compatibility (3 parameters)
+    task send_gyroscope_simple;
+        input [15:0] x, y, z;
+        begin
+            send_gyroscope(x, y, z, 8'h00, 8'h03, 8'h00); // Default: seq=0, status=high accuracy, delay=0
         end
     endtask
 
