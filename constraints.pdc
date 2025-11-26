@@ -1,5 +1,11 @@
 # Constraints for SPI Test Module
 
+# Clock Constraint - CRITICAL for HSOSC to work
+# HSOSC generates 3MHz clock (48MHz / 16)
+# Period = 1/3MHz = 333.333ns
+create_clock -name {clk} -period 333.333 [get_nets {clk}]
+set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets {clk}]
+
 # System Reset
 ldc_set_location -site {43} [get_ports rst_n]
 

@@ -26,12 +26,22 @@ module spi_test_top (
     logic signed [15:0] gyro_x, gyro_y, gyro_z;
     logic initialized, error;
 
-    // Clock Generation (HSOSC for iCE40UP5k)
-    // 48MHz / 16 = 3MHz
+    // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
+    // CLKHF_DIV(2'b11) = divide by 16 to get 3MHz from 48MHz
+    // For 48MHz HSOSC: divide by 16 = 3MHz (suitable for SPI)
+    // For different frequencies, adjust CLKHF_DIV:
+    //   2'b00 = divide by 2
+    //   2'b01 = divide by 4  
+    //   2'b10 = divide by 8
+    //   2'b11 = divide by 16
+    
+    // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
+    // Note: HSOSC is a built-in primitive for iCE40UP5k
+    // Make sure your synthesis tool recognizes this primitive
     HSOSC #(.CLKHF_DIV(2'b11)) hf_osc (
-        .CLKHFPU(1'b1),
-        .CLKHFEN(1'b1),
-        .CLKHF(clk)
+        .CLKHFPU(1'b1),   // Power up (must be 1)
+        .CLKHFEN(1'b1),   // Enable (must be 1)
+        .CLKHF(clk)       // Output clock (3MHz from 48MHz / 16)
     );
 
     // Heartbeat LED (1Hz approx)
