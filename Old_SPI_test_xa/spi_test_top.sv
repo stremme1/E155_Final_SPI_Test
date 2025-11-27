@@ -12,6 +12,15 @@ module spi_test_top (
     output logic        bno085_rst_n1, // BNO085 Reset pin (active low)
     input  logic        int1,
     
+    // Button Inputs (EXACT from C code)
+    input  logic        calibrate_btn_n,  // Button 2: Calibration (active low, with pull-up)
+    input  logic        kick_btn_n,       // Button 1: Kick drum (active low, with pull-up)
+    
+    // Drum Trigger Outputs
+    output logic        drum_trigger_valid,
+    output logic [3:0]  drum_code,       // 0-7 (matches C code exactly)
+    output logic        drum_hand,        // 0=right, 1=left
+    
     // Debug / Status LEDs
     output logic        led_initialized, // ON when BNO085 init complete
     output logic        led_error,       // ON if error state
@@ -149,5 +158,46 @@ module spi_test_top (
     // Status LEDs
     assign led_initialized = initialized;
     assign led_error = error;
+    
+    // Button Debouncers (EXACT from C code: 50ms debounce)
+    logic calibrate_btn_pulse, kick_btn_pulse;
+    
+    button_debouncer #(.DEBOUNCE_CYCLES(150000)) calibrate_debouncer (
+        .clk(clk),
+        .rst_n(rst_n),
+        .btn_n(calibrate_btn_n),
+        .btn_pressed(calibrate_btn_pulse),
+        .btn_released(),
+        .btn_state()
+    );
+    
+    button_debouncer #(.DEBOUNCE_CYCLES(150000)) kick_debouncer (
+        .clk(clk),
+        .rst_n(rst_n),
+        .btn_n(kick_btn_n),
+        .btn_pressed(kick_btn_pulse),
+        .btn_released(),
+        .btn_state()
+    );
+    
+    // Drum Trigger Processor
+    drum_trigger_processor drum_processor (
+        .clk(clk),
+        .rst_n(rst_n),
+        .quat1_valid(quat_valid),
+        .quat1_w(quat_w),
+        .quat1_x(quat_x),
+        .quat1_y(quat_y),
+        .quat1_z(quat_z),
+        .gyro1_valid(gyro_valid),
+        .gyro1_x(gyro_x),
+        .gyro1_y(gyro_y),
+        .gyro1_z(gyro_z),
+        .calibrate_btn_pulse(calibrate_btn_pulse),
+        .kick_btn_pulse(kick_btn_pulse),
+        .drum_trigger_valid(drum_trigger_valid),
+        .drum_code(drum_code),
+        .drum_hand(drum_hand)
+    );
 
 endmodule
