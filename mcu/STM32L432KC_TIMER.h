@@ -11,55 +11,20 @@
 #define STM32L4_TIMER_H
 
 #include <stdint.h>
+#include "STM32L4xx/Device/Include/stm32l432xx.h" // Include STM32 definitions for TIM_TypeDef, GPIO_TypeDef, GPIOA, TIM2
 
 // Timer definitions
 #define __IO volatile
 
-// Base addresses
+// Base addresses (only define if not already defined)
+#ifndef TIM2_BASE
 #define TIM2_BASE (0x40000000UL)
+#endif
+#ifndef GPIOA_BASE
 #define GPIOA_BASE (0x48000000UL)
+#endif
 
-// Timer register structure
-typedef struct {
-    __IO uint32_t CR1;      // Control register 1
-    __IO uint32_t CR2;      // Control register 2
-    __IO uint32_t SMCR;     // Slave mode control register
-    __IO uint32_t DIER;     // DMA/interrupt enable register
-    __IO uint32_t SR;       // Status register
-    __IO uint32_t EGR;      // Event generation register
-    __IO uint32_t CCMR1;    // Capture/compare mode register 1
-    __IO uint32_t CCMR2;    // Capture/compare mode register 2
-    __IO uint32_t CCER;     // Capture/compare enable register
-    __IO uint32_t CNT;      // Counter
-    __IO uint32_t PSC;      // Prescaler
-    __IO uint32_t ARR;      // Auto-reload register
-    uint32_t      RESERVED1; // Reserved
-    __IO uint32_t CCR1;     // Capture/compare register 1
-    __IO uint32_t CCR2;     // Capture/compare register 2
-    __IO uint32_t CCR3;     // Capture/compare register 3
-    __IO uint32_t CCR4;     // Capture/compare register 4
-    uint32_t      RESERVED2; // Reserved
-    __IO uint32_t DCR;      // DMA control register
-    __IO uint32_t DMAR;     // DMA address for full transfer
-} TIM_TypeDef;
-
-#define TIM2 ((TIM_TypeDef *) TIM2_BASE)
-
-// GPIO register structure for direct access
-typedef struct {
-    __IO uint32_t MODER;   // GPIO Offset 0x00 GPIO port mode register
-    __IO uint32_t OTYPER;  // GPIO Offset 0x04
-    __IO uint32_t OSPEEDR; // GPIO Offset 0x08
-    __IO uint32_t PURPDR;  // GPIO Offset 0x0C
-    __IO uint32_t IDR;     // GPIO Offset 0x10
-    __IO uint32_t ODR;     // GPIO Offset 0x14
-    __IO uint32_t BSRR;    // GPIO Offset 0x18
-    __IO uint32_t LCKR;    // GPIO Offset 0x1C
-    __IO uint32_t AFRL;    // GPIO Offset 0x20
-    __IO uint32_t AFRH;    // GPIO Offset 0x24
-} GPIO_TypeDef;
-
-#define GPIOA ((GPIO_TypeDef *) GPIOA_BASE)
+// TIM_TypeDef, TIM2, GPIO_TypeDef, and GPIOA are now defined in stm32l432xx.h
 
 // Function prototypes
 void TIM2_Init(void);

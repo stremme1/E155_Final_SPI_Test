@@ -119,11 +119,15 @@ module mock_bno085 (
     logic ps0_falling_edge;
     assign ps0_falling_edge = ps0_prev && !ps0_sync;
     
+    // Counter for INT deassertion delay
+    logic [7:0] int_deassert_cnt;
+    
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             wake_triggered <= 0;
             state <= ASLEEP;
             int_n <= 1'b1;
+            int_deassert_cnt <= 8'd0;
         end else begin
             // Detect PS0 falling edge
             if (ps0_falling_edge) begin
@@ -135,21 +139,50 @@ module mock_bno085 (
             // Deassert INT when CS goes low (per datasheet: "deassert as soon as CS is detected")
             if (cs_n_prev && !cs_n_sync && int_n == 0) begin
                 int_n <= 1'b1;
+                int_deassert_cnt <= 8'd0;
+            end
+            
+            // Also deassert INT after a delay if CS goes high (transaction complete)
+            if (cs_n_sync && !cs_n_prev && int_n == 0) begin
+                // Start counter to deassert INT after delay
+                int_deassert_cnt <= 8'd10; // ~3.3us at 3MHz
+            end else if (int_deassert_cnt > 0) begin
+                int_deassert_cnt <= int_deassert_cnt - 1;
+                if (int_deassert_cnt == 1) begin
+                    int_n <= 1'b1;
+                end
             end
         end
     end
     
     // Handle INT assertion with delay when PS0 goes low
     // Use edge detection on the actual ps0_wake signal
-    always @(negedge ps0_wake) begin
-        fork
-            begin
-                #1000; // 1us delay per datasheet
-                if (int_n == 1'b1) begin // Only assert if not already asserted
-                    int_n <= 1'b0;
+    logic ps0_wake_prev;
+    always_ff @(posedge clk) begin
+        ps0_wake_prev <= ps0_wake;
+    end
+    
+    logic ps0_falling;
+    assign ps0_falling = ps0_wake_prev && !ps0_wake;
+    
+    logic [7:0] int_assert_delay;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            int_assert_delay <= 8'd0;
+            int_n <= 1'b1;
+        end else begin
+            if (ps0_falling) begin
+                // PS0 went low, start delay counter to assert INT
+                int_assert_delay <= 8'd3; // ~1us at 3MHz
+                // Also deassert any pending deassert counter
+                int_deassert_cnt <= 8'd0;
+            end else if (int_assert_delay > 0) begin
+                int_assert_delay <= int_assert_delay - 1;
+                if (int_assert_delay == 1) begin
+                    int_n <= 1'b0; // Assert INT after delay
                 end
             end
-        join_none
+        end
     end
 
     // SPI Receive Logic (Mode 3: CPOL=1, CPHA=1)
@@ -253,9 +286,8 @@ module mock_bno085 (
                     response_len = 5;
                     response_ptr = 0;
                     tx_byte = response_queue[0];
-                    // Assert INT to indicate response ready
-                    #500;
-                    int_n = 1'b0;
+                    // Don't assert INT for ACK - controller doesn't read it during init
+                    // The controller will wait for data reports later
                 end
             end
         end
@@ -315,7 +347,7 @@ module mock_bno085 (
             response_queue[3] = 8'h00; // Sequence
             
             // Report Body
-            response_queue[4] = 8'h01; // Report ID (Gyroscope)
+            response_queue[4] = 8'h02; // Report ID (Calibrated Gyroscope per Fig 1-34)
             response_queue[5] = 8'h00; // Sequence
             response_queue[6] = 8'h00; // Status
             response_queue[7] = 8'h00; // Delay

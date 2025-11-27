@@ -51,8 +51,8 @@ void DAC_ConfigureGPIO(int channel) {
     GPIOA->MODER |= (0b11 << (2 * pin));
     
     // Disable pull-up/pull-down (set to no pull)
-    // PURPDR bits for PA4 are bits 8-9
-    GPIOA->PURPDR &= ~(0b11 << (2 * pin));
+    // PUPDR bits for PA4 are bits 8-9
+    GPIOA->PUPDR &= ~(0b11 << (2 * pin));
     
     // Also clear OTYPER (output type) and OSPEEDR (speed) to ensure clean state
     GPIOA->OTYPER &= ~(1 << pin);  // Push-pull (not open-drain)
@@ -473,7 +473,9 @@ void DAC_PlaySineWave(float frequency, uint32_t duration_ms, uint32_t sample_rat
     // Test 1: 440 Hz target sounded like 330 Hz -> (20 × 330) / 440 = 15 MHz
     // Test 2: 262 Hz target sounded like 197 Hz -> (20 × 197) / 262 = 15.04 MHz
     // Average: 15 MHz (confirmed accurate)
+    #ifndef CPU_FREQ_MHZ
     #define CPU_FREQ_MHZ 18  // Calibrated CPU frequency in MHz
+    #endif
     uint32_t us_per_sample = 1000000UL / sample_rate;
     uint32_t total_cycles_needed = us_per_sample * CPU_FREQ_MHZ;
     
@@ -540,7 +542,9 @@ void DAC_PlayWAV(const int16_t* sample_data, uint32_t sample_length, uint32_t sa
     }
     
     // Calculate timing - using calibrated CPU frequency
+    #ifndef CPU_FREQ_MHZ
     #define CPU_FREQ_MHZ 15  // Calibrated CPU frequency in MHz
+    #endif
     uint32_t us_per_sample = 1000000UL / sample_rate;
     uint32_t total_cycles_needed = us_per_sample * CPU_FREQ_MHZ;
     

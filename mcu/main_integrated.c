@@ -10,6 +10,7 @@
 // - Plays corresponding WAV drum samples using DAC
 // - Maps FPGA drum codes (0-7) to Lab4 drum samples
 
+#include <stddef.h>  // For NULL
 #include "STM32L432KC_RCC.h"
 #include "STM32L432KC_GPIO.h"
 #include "STM32L432KC_FLASH.h"
@@ -37,7 +38,7 @@
 static volatile uint8_t is_playing = 0;
 
 // Function to play a drum sample
-void play_drum_sample(const int16_t* data, uint32_t length, uint32_t sample_rate) {
+static void play_drum_sample(const int16_t* data, uint32_t length, uint32_t sample_rate) {
     if (data == NULL || length == 0) {
         return;
     }
@@ -101,6 +102,12 @@ void handle_drum_command(uint8_t command) {
 }
 
 // Main function
+// NOTE: Only ONE main() function should be active at a time!
+// This is the ACTIVE main() - receives drum commands from FPGA via SPI
+// To use main_sensor_data.c instead:
+//   1. Comment out this main() function
+//   2. Uncomment main() in main_sensor_data.c
+//   3. Rebuild the project
 int main(void) {
     // Initialize system
     configureFlash();

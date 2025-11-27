@@ -283,6 +283,7 @@ module bno085_controller (
                 // 5. Check if more commands or done
                 INIT_DONE_CHECK: begin
                     cs_n <= 1'b1;
+                    ps0_wake <= 1'b1; // Release PS0 before next command
                     // Delay 10ms between commands
                     if (delay_counter < 19'd30_000) begin
                         delay_counter <= delay_counter + 1;

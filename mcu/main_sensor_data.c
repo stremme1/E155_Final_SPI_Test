@@ -7,13 +7,14 @@
 // - Processes data using existing C code logic (quaternion→euler, zone detection, etc.)
 // - Plays corresponding WAV drum samples using DAC
 
+#include <stddef.h>  // For NULL
+#include <math.h>
 #include "STM32L432KC_RCC.h"
 #include "STM32L432KC_GPIO.h"
 #include "STM32L432KC_FLASH.h"
 #include "STM32L432KC_DAC.h"
 #include "STM32L432KC_TIMER.h"
 #include "STM32L432KC_SPI.h"
-#include <math.h>
 
 // Include drum sample arrays header
 #include "wav_arrays/drum_samples.h"
@@ -91,7 +92,7 @@ void quaternion_to_euler(int16_t qw, int16_t qx, int16_t qy, int16_t qz,
 }
 
 // Function to play a drum sample
-void play_drum_sample(const int16_t* data, uint32_t length, uint32_t sample_rate) {
+static void play_drum_sample(const int16_t* data, uint32_t length, uint32_t sample_rate) {
     if (data == NULL || length == 0 || is_playing) {
         return;
     }
@@ -302,6 +303,12 @@ void readSensorDataPacket(sensor_data_t *data) {
 }
 
 // Main function
+// NOTE: Only ONE main() function should be active at a time!
+// To use this version:
+//   1. Comment out main() in main_integrated.c
+//   2. Uncomment this main() function
+//   3. Rebuild the project
+/*
 int main(void) {
     sensor_data_t sensor_data;
     
@@ -327,4 +334,5 @@ int main(void) {
     
     return 0;
 }
+*/
 

@@ -18,7 +18,11 @@ Purpose : Generic application start
 *
 *  Function description
 *   Application entry point.
+*
+*  NOTE: This is a template file. Use main_integrated.c or main_sensor_data.c instead.
+*        Exclude this file from the build to avoid multiple main() definitions.
 */
+/*
 int main(void) {
   int i;
 
@@ -29,5 +33,6 @@ int main(void) {
     i++;
   } while (1);
 }
+*/
 
 /*************************** End of file ****************************/

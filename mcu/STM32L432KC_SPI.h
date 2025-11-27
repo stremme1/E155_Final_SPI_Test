@@ -6,7 +6,7 @@
 #define STM32L4_SPI_H
 
 #include <stdint.h>
-#include <stm32l432xx.h>
+#include "STM32L4xx/Device/Include/stm32l432xx.h"
 
 // SPI pin definitions
 #define SPI_CE PA11
