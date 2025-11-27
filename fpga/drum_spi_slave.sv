@@ -35,15 +35,6 @@ module drum_spi_slave(
     logic       command_acknowledged;  // Command has been acknowledged
     logic       load_prev;            // Previous load state
     
-    // Initialize signals
-    initial begin
-        tx_shift_reg = 8'h00;
-        sdodelayed = 1'b0;
-        wasdone = 1'b0;
-        command_ready = 1'b0;
-        command_acknowledged = 1'b0;
-    end
-    
     // Command handling: Latch command when trigger detected
     // Handle rapid triggers by updating command even if previous one is still ready
     always_ff @(posedge clk) begin
@@ -76,7 +67,7 @@ module drum_spi_slave(
     always_ff @(posedge sck) begin
         if (!wasdone) begin
             // First posedge: load buffer and shift in one operation (like Lab07)
-            // Lab07 does: {cyphertextcaptured, plaintext, key} = {cyphertext, plaintext[126:0], key, sdi}
+            // Lab07: {cyphertextcaptured, plaintext, key} = {cyphertext, plaintext[126:0], key, sdi}
             // For us: load tx_buffer and shift it
             tx_shift_reg <= {tx_buffer[6:0], 1'b0};  // Load and shift in one step
         end else begin
@@ -86,14 +77,10 @@ module drum_spi_slave(
     end
     
     // Track previous done state (for edge detection - like Lab07)
-    // Lab07 uses blocking assignment for immediate update
-    // Reset wasdone when new command comes in
-    always @(negedge sck or posedge drum_trigger_valid) begin
-        if (drum_trigger_valid) begin
-            wasdone = 1'b0;  // Reset when new command arrives
-        end else begin
-            wasdone = done;
-        end
+    // Lab07 uses always_ff @(negedge sck) with blocking assignments for immediate update
+    // This is synthesizable - blocking assignments in always_ff are allowed for immediate combinational update
+    always_ff @(negedge sck) begin
+        wasdone = done;  // Track done state (like Lab07)
         sdodelayed = tx_shift_reg[7];  // Current MSB (will be output next)
     end
     
