@@ -174,15 +174,13 @@ module drum_trigger_top_integrated (
         .sclk(sclk),
         .mosi(mosi),
         .miso(miso1),
-        .cs_n(cs_n1),
-        .start_transfer(spi1_start),
-        .write_en(spi1_tx_valid),
-        .data_length(16'd1),
+        .start(spi1_start),
+        .tx_valid(spi1_tx_valid),
         .tx_data(spi1_tx_data),
+        .tx_ready(spi1_tx_ready),
         .rx_data(spi1_rx_data),
-        .data_valid(spi1_rx_valid),
-        .transfer_done(!spi1_busy),
-        .transfer_busy(spi1_busy)
+        .rx_valid(spi1_rx_valid),
+        .busy(spi1_busy)
     );
     
     // BNO085 Controller for Sensor 1
@@ -228,15 +226,13 @@ module drum_trigger_top_integrated (
         .sclk(sclk),
         .mosi(mosi),
         .miso(miso2),
-        .cs_n(cs_n2),
-        .start_transfer(spi2_start),
-        .write_en(spi2_tx_valid),
-        .data_length(16'd1),
+        .start(spi2_start),
+        .tx_valid(spi2_tx_valid),
         .tx_data(spi2_tx_data),
+        .tx_ready(spi2_tx_ready),
         .rx_data(spi2_rx_data),
-        .data_valid(spi2_rx_valid),
-        .transfer_done(!spi2_busy),
-        .transfer_busy(spi2_busy)
+        .rx_valid(spi2_rx_valid),
+        .busy(spi2_busy)
     );
     
     // BNO085 Controller for Sensor 2
