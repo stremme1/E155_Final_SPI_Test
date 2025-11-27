@@ -27,15 +27,15 @@ module drum_spi_slave(
 );
 
     // Internal signals - following Lab07 pattern exactly
-    logic [7:0] tx_buffer;           // Transmit buffer (drum command)
-    logic [7:0] tx_shift_reg;         // Shift register for transmission
+    logic [7:0] tx_buffer;           // Transmit buffer (drum command) - updated in clk domain
+    logic [7:0] tx_shift_reg;         // Shift register for transmission - ONLY updated in sck domain
     logic       sdodelayed;           // Delayed SDO (like Lab07)
     logic       wasdone;              // Previous done state (like Lab07)
     logic       command_ready;        // Command ready to send
     logic       command_acknowledged;  // Command has been acknowledged
     logic       load_prev;            // Previous load state
     
-    // Command handling: Latch command when trigger detected
+    // Command handling: Latch command when trigger detected (clk domain)
     // Handle rapid triggers by updating command even if previous one is still ready
     always_ff @(posedge clk) begin
         load_prev <= load;
@@ -43,8 +43,8 @@ module drum_spi_slave(
         if (drum_trigger_valid) begin
             // Latch new command when trigger detected (even if previous command is still ready)
             // This allows rapid triggers to update the command
+            // Only update tx_buffer here - tx_shift_reg is updated in sck domain
             tx_buffer <= {4'h0, drum_code};
-            tx_shift_reg <= {4'h0, drum_code};  // Initialize shift register
             command_ready <= 1'b1;
             command_acknowledged <= 1'b0;
         end else if (command_ready && load && !load_prev) begin
@@ -56,14 +56,15 @@ module drum_spi_slave(
         end
     end
     
-    // Done signal: Assert when command is ready and not yet acknowledged
+    // Done signal: Assert when command is ready and not yet acknowledged (clk domain)
     always_ff @(posedge clk) begin
         done <= command_ready && !command_acknowledged;
     end
     
-    // SPI transmission: Shift on posedge sck (like Lab07)
+    // SPI transmission: Shift on posedge sck (sck domain)
     // Following Lab07 pattern exactly: on first posedge (!wasdone), load AND shift
     // On subsequent posedges (wasdone), shift left
+    // CRITICAL: tx_shift_reg is ONLY driven in this always block (sck domain)
     always_ff @(posedge sck) begin
         if (!wasdone) begin
             // First posedge: load buffer and shift in one operation (like Lab07)
@@ -78,10 +79,10 @@ module drum_spi_slave(
     
     // Track previous done state (for edge detection - like Lab07)
     // Lab07 uses always_ff @(negedge sck) with blocking assignments for immediate update
-    // This is synthesizable - blocking assignments in always_ff are allowed for immediate combinational update
+    // For synthesis compatibility, using non-blocking assignments
     always_ff @(negedge sck) begin
-        wasdone = done;  // Track done state (like Lab07)
-        sdodelayed = tx_shift_reg[7];  // Current MSB (will be output next)
+        wasdone <= done;  // Track done state (like Lab07)
+        sdodelayed <= tx_shift_reg[7];  // Current MSB (will be output next)
     end
     
     // SDO output: Following Lab07 pattern exactly
