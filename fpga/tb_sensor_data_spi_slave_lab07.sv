@@ -85,16 +85,19 @@ module tb_sensor_data_spi_slave_lab07;
         
         $display("\n=== Test 1: Known Data Pattern (0x00-0x1F) ===");
         
-        // Set known data
+        // Set known data FIRST (before asserting data_ready)
         for (i = 0; i < 32; i = i + 1) begin
             data_bytes[i] = i;
         end
+        #(CLK_PERIOD);  // Ensure data_bytes is stable
+        
+        // Now assert data_ready
         data_ready = 1;
         #(CLK_PERIOD);
         data_ready = 0;
         
-        // Wait for data to be ready
-        #(10 * CLK_PERIOD);
+        // Wait for data to be ready and done to assert
+        #(20 * CLK_PERIOD);
         
         // Read packet
         mcu_read_packet();
