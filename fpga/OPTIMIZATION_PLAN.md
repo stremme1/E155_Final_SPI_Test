@@ -1,69 +1,55 @@
 # FPGA Resource Optimization Plan
 
 ## Problem
-Design synthesizes but doesn't map to device - too large for available resources.
+- **Available DSP blocks**: 8
+- **Current usage**: ~24 DSP blocks (2x quaternion_to_euler_dsp with ~12 DSP each)
+- **Design doesn't fit**: Need to reduce to ≤8 DSP blocks
 
-## Root Cause Analysis
+## Solution: Time-Multiplexed + Pipelined DSP
 
-### Current Resource Usage:
-1. **Dual Sensor Processing (2x everything)**:
-   - 2x `quaternion_to_euler_dsp` - ~9 DSP blocks each = 18 DSP blocks
-   - 2x `yaw_normalizer` - Multiple pipeline stages
-   - 2x `drum_zone_detector` - Comparison logic
-   - 2x `strike_detector` - Simple
-   - 2x `drum_selector` - Simple
-   - 2x `bno085_controller` - State machines
-   - 2x `spi_master` - Simple
+### Strategy
+1. **Time-multiplex quaternion processing**: Use 1 shared module instead of 2 (saves 12 DSP)
+2. **Pipeline multiplications**: Process 9 multiplications in 3 cycles using 3 DSP blocks (saves 6 DSP)
+3. **Total DSP usage**: 6 blocks ✅ (fits in 8 limit!)
 
-2. **Complex Operations**:
-   - Quaternion to Euler: 5 pipeline stages, 9 multiplications per sensor
-   - Yaw normalization: 3 pipeline stages
-   - Total: ~8 pipeline stages per sensor = 16 stages total
+### Implementation
 
-## Solution: Time-Multiplexed Processing
+#### 1. Optimized Quaternion Module (`quaternion_to_euler_dsp_optimized.sv`)
+- **Stage 1**: 9 multiplications pipelined into 3 cycles using 3 DSP blocks
+  - Cycle 1: w_x, y_z, w_y (3 DSP)
+  - Cycle 2: z_x, w_z, x_y (3 DSP, reused)
+  - Cycle 3: x_sq, y_sq, z_sq (3 DSP, reused)
+- **Stage 5**: 3 multiplications in 1 cycle using 3 DSP blocks
+- **Total**: 3 DSP (stage 1) + 3 DSP (stage 5) = **6 DSP blocks**
 
-### Approach
-Process sensors **sequentially** instead of in parallel:
-- Use a single processing pipeline
-- Alternate between sensor 1 and sensor 2
-- Store intermediate results for each sensor
-- Combine outputs at the end
+#### 2. Time-Multiplexed Processor (`drum_trigger_processor_optimized.sv`)
+- Single shared `quaternion_to_euler_dsp_optimized` instance
+- Time-multiplexes between sensor 1 and sensor 2
+- Buffers outputs for each sensor
+- Rest of pipeline unchanged (yaw_normalizer, zone_detector, etc.)
 
-### Resource Savings:
-- **~50% reduction** in DSP blocks (18 → 9)
-- **~50% reduction** in pipeline registers
-- **~50% reduction** in comparison logic
-- **Minimal overhead**: Small mux logic and state storage
+### DSP Block Allocation
+- **quaternion_to_euler_dsp_optimized**: 6 DSP blocks (pipelined)
+- **Other modules**: 0 DSP blocks
+- **Total**: **6 DSP blocks** ✅ (fits in 8!)
 
-### Implementation Strategy:
-1. Add sensor select signal (alternates each cycle)
-2. Mux sensor inputs to single processing pipeline
-3. Store pipeline outputs for each sensor separately
-4. Process sensor 1, then sensor 2, alternating
-5. Combine final outputs (prioritize sensor 1 if both trigger)
+### Files Created
+1. `quaternion_to_euler_dsp_optimized.sv` - Pipelined version (6 DSP blocks)
+2. `drum_trigger_processor_optimized.sv` - Time-multiplexed version
+3. Testbench (to be created)
 
-### Testability:
-- Can test mux logic independently
-- Can test each sensor path independently  
-- Full system testbench still works
-- Can verify alternating behavior
+### Testing Strategy
+1. **Unit test**: `quaternion_to_euler_dsp_optimized` with pipelined multiplications
+2. **Integration test**: Time-multiplexed dual sensor processing
+3. **System test**: Full drum trigger system with optimized DSP usage
 
-## Implementation Steps
+### Usage Instructions
+1. Replace `quaternion_to_euler_dsp` with `quaternion_to_euler_dsp_optimized` in top module
+2. Replace `drum_trigger_processor` with `drum_trigger_processor_optimized` in top module
+3. Update top module instantiation
 
-1. **Create time-multiplexed drum_trigger_processor**:
-   - Add sensor_select signal
-   - Mux quaternion/gyro inputs
-   - Single instance of each processing module
-   - Store results per sensor
-   - Output mux
-
-2. **Update top-level module**:
-   - Keep dual BNO085 controllers (they can run in parallel)
-   - Use time-multiplexed processor
-   - All other logic stays the same
-
-3. **Benefits**:
-   - Same functionality
-   - ~50% resource reduction
-   - Easier to test (can isolate each sensor)
-   - Still supports both sensors
+### Expected Results
+- **DSP blocks used**: 6 (within 8 limit) ✅
+- **Latency**: Slightly increased (3 cycles for multiplications instead of 1, but shared)
+- **Functionality**: Same (both sensors still processed)
+- **Testability**: Maintained (can test with testbench)
