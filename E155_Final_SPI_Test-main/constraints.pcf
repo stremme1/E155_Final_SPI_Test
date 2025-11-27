@@ -1,0 +1,18 @@
+# Constraints for SPI Test Module (PCF format)
+
+# System Reset
+set_io rst_n   P43
+
+# BNO085 Sensor 1 (Right Hand)
+set_io sclk1   P20
+set_io mosi1   P13
+set_io miso1   P12
+set_io cs_n1   P18
+set_io int1    P9
+
+# Status LEDs
+set_io led_initialized P28
+set_io led_error       P38
+# For UPduino v3.x RGB Blue LED
+set_io led_heartbeat   P41
+
