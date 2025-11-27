@@ -100,21 +100,68 @@ void play_drum_sample(const int16_t* data, uint32_t length, uint32_t sample_rate
     is_playing = 0;
 }
 
+// Button debouncing (from C code - Code_for_C_imp pattern)
+static uint8_t button1_prev = 0;
+static uint8_t button2_prev = 0;
+static uint32_t lastDebounceTime1 = 0;
+static uint32_t lastDebounceTime2 = 0;
+#define DEBOUNCE_DELAY 50  // 50ms debounce delay
+
+// Simple timer - would use actual timer in real implementation
+static uint32_t get_time_ms(void) {
+    // In real implementation, use timer interrupt or SysTick
+    // For now, approximate based on loop iterations
+    static uint32_t time_counter = 0;
+    time_counter++;  // Increment each time called
+    return time_counter;  // Rough approximation
+}
+
+// Debounce button (returns 1 on press, 0 otherwise)
+// Based on Code_for_C_imp/src/main.c debounce pattern
+uint8_t debounce_button(uint8_t button_state, uint8_t *prev_state, uint32_t *last_time) {
+    uint32_t current_time = get_time_ms();
+    uint8_t pressed = 0;
+    
+    if (button_state != *prev_state) {
+        *last_time = current_time;  // Reset debounce timer
+    }
+    
+    if ((current_time - *last_time) > DEBOUNCE_DELAY) {
+        if (button_state && !*prev_state) {
+            pressed = 1;  // Button press detected
+        }
+        *prev_state = button_state;
+    }
+    
+    return pressed;
+}
+
 // Process sensor data and play drum sounds (from C code logic)
 void process_sensor_data(sensor_data_t *data) {
     float roll1, pitch1, yaw1;
     float roll2, pitch2, yaw2;
     
+    // Debounce buttons (MCU handles this now)
+    uint8_t calibrate_pressed = debounce_button(data->calibrate_btn, &button2_prev, &lastDebounceTime2);
+    uint8_t kick_pressed = debounce_button(data->kick_btn, &button1_prev, &lastDebounceTime1);
+    
     // Handle calibration button
-    if (data->calibrate_btn) {
-        // Set yaw offset (simplified - would need current yaw reading)
-        // For now, just reset offsets
-        yawOffset1 = 0.0f;
-        yawOffset2 = 0.0f;
+    if (calibrate_pressed) {
+        // Set yaw offset to current yaw reading (if valid)
+        if (data->quat1_valid) {
+            quaternion_to_euler(data->quat1_w, data->quat1_x, data->quat1_y, data->quat1_z,
+                               &roll1, &pitch1, &yaw1);
+            yawOffset1 = yaw1;
+        }
+        if (data->quat2_valid) {
+            quaternion_to_euler(data->quat2_w, data->quat2_x, data->quat2_y, data->quat2_z,
+                               &roll2, &pitch2, &yaw2);
+            yawOffset2 = yaw2;
+        }
     }
     
     // Handle kick button (highest priority)
-    if (data->kick_btn) {
+    if (kick_pressed) {
         play_drum_sample(kick_sample_data, kick_sample_length, kick_sample_sample_rate);
         return;
     }

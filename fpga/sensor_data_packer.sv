@@ -29,9 +29,9 @@ module sensor_data_packer (
     input  logic        gyro2_valid,
     input  logic signed [15:0] gyro2_x, gyro2_y, gyro2_z,
     
-    // Button inputs
-    input  logic        calibrate_btn_pulse,
-    input  logic        kick_btn_pulse,
+    // Button inputs (raw button states, not debounced - MCU will handle debouncing)
+    input  logic        calibrate_btn_n,  // Raw button state (active low)
+    input  logic        kick_btn_n,        // Raw button state (active low)
     
     // Packed data output (32 bytes total)
     output logic [7:0] data_bytes [0:31],
@@ -48,7 +48,7 @@ module sensor_data_packer (
     logic signed [15:0] gyro2_x_reg, gyro2_y_reg, gyro2_z_reg;
     logic               quat2_valid_reg, gyro2_valid_reg;
     
-    logic               calibrate_btn_reg, kick_btn_reg;
+    // No need to register buttons - just pass raw state to MCU
     
     // Latch sensor data when valid
     always_ff @(posedge clk or negedge rst_n) begin
@@ -109,23 +109,12 @@ module sensor_data_packer (
                 gyro2_valid_reg <= 1'b1;
             end
             
-            // Latch button pulses (edge detect)
-            if (calibrate_btn_pulse) begin
-                calibrate_btn_reg <= 1'b1;
-            end
-            if (kick_btn_pulse) begin
-                kick_btn_reg <= 1'b1;
-            end
-            
-            // Update data_ready when new data arrives
-            if (quat1_valid || quat2_valid || gyro1_valid || gyro2_valid || 
-                calibrate_btn_pulse || kick_btn_pulse) begin
+            // Update data_ready when new sensor data arrives
+            // Buttons are always included in packet, no need to trigger on button change
+            if (quat1_valid || quat2_valid || gyro1_valid || gyro2_valid) begin
                 data_ready <= 1'b1;
             end else if (data_ack) begin
                 data_ready <= 1'b0;
-                // Clear button flags after acknowledgment
-                calibrate_btn_reg <= 1'b0;
-                kick_btn_reg <= 1'b0;
             end
         end
     end
@@ -179,9 +168,10 @@ module sensor_data_packer (
         // Sensor 2 Flags (1 byte)
         assign data_bytes[29] = {6'b0, gyro2_valid_reg, quat2_valid_reg};
         
-        // Buttons (2 bytes)
-        assign data_bytes[30] = {7'b0, kick_btn_reg};
-        assign data_bytes[31] = {7'b0, calibrate_btn_reg};
+        // Buttons (2 bytes) - send raw button states (active low, so invert)
+        // MCU will handle debouncing and processing
+        assign data_bytes[30] = {7'b0, !kick_btn_n};        // 1 when button pressed
+        assign data_bytes[31] = {7'b0, !calibrate_btn_n};   // 1 when button pressed
     endgenerate
     
 endmodule

@@ -5,8 +5,7 @@
  * Based on Lab07 aes_spi pattern, adapted for 32-byte data packets
  * 
  * Protocol:
- * - MCU pulls LOAD low to request data
- * - FPGA asserts DONE when data is ready
+ * - MCU waits for DONE signal
  * - MCU reads 32 bytes via SPI (256 bits total)
  * - MCU pulls LOAD high to acknowledge
  * 
@@ -20,7 +19,7 @@ module sensor_data_spi_slave(
     input  logic        sck,           // SPI clock from MCU
     input  logic        sdi,           // SPI data in (MOSI from MCU, not used)
     output logic        sdo,           // SPI data out (MISO to MCU)
-    input  logic        load,          // Load signal from MCU (request/acknowledge)
+    input  logic        load,          // Load signal from MCU (acknowledge)
     output logic        done,          // Done signal to MCU (data ready)
     
     // Sensor data interface
@@ -29,7 +28,7 @@ module sensor_data_spi_slave(
     output logic        data_ack             // Data has been sent
 );
 
-    // Internal signals - following Lab07 pattern
+    // Internal signals - following Lab07 pattern exactly
     logic [7:0] tx_buffer [0:31];      // Transmit buffer (32 bytes) - clk domain
     logic [7:0] tx_shift_reg;          // Shift register for current byte - sck domain
     logic [5:0] byte_index;            // Current byte index (0-31) - sck domain
@@ -39,6 +38,11 @@ module sensor_data_spi_slave(
     logic       packet_ready;          // Packet ready to send - clk domain
     logic       packet_acknowledged;   // Packet has been acknowledged - clk domain
     logic       load_prev;             // Previous load state
+    
+    // Initialize wasdone to 0 (important for first transmission)
+    initial begin
+        wasdone = 1'b0;
+    end
     
     // Latch data packet when ready (clk domain)
     always_ff @(posedge clk) begin
@@ -66,7 +70,8 @@ module sensor_data_spi_slave(
     end
     
     // SPI transmission: Shift on posedge sck (sck domain)
-    // Following Lab07 pattern: shift out bytes MSB first
+    // Following Lab07 pattern exactly: on first posedge (!wasdone), load AND shift
+    // On subsequent posedges (wasdone), shift left
     always_ff @(posedge sck) begin
         if (!wasdone && done) begin
             // First posedge: load first byte and shift in one operation (like Lab07)
@@ -95,12 +100,13 @@ module sensor_data_spi_slave(
     end
     
     // Track previous done state (for edge detection - like Lab07)
+    // Use non-blocking for synthesis, but update immediately for simulation
     always_ff @(negedge sck) begin
-        wasdone <= done;
+        wasdone <= done;  // Track done state
         sdodelayed <= tx_shift_reg[7];  // Current MSB (will be output next)
     end
     
-    // SDO output: Following Lab07 pattern
+    // SDO output: Following Lab07 pattern exactly
     // When done is first asserted (!wasdone), output MSB before first clock edge
     // After first negedge, wasdone becomes true, so use sdodelayed
     assign sdo = (done & !wasdone) ? tx_buffer[0][7] : sdodelayed;

@@ -81,8 +81,7 @@ module drum_trigger_top_simplified (
     logic ps0_wake2;
     logic spi2_tx_ready_internal;
     
-    // Button debounced signals
-    logic calibrate_btn_pulse, kick_btn_pulse;
+    // Buttons - pass raw states directly to packer (MCU will handle debouncing)
     
     // Sensor data packing
     logic [7:0] sensor_data_bytes [0:31];
@@ -147,24 +146,8 @@ module drum_trigger_top_simplified (
         end
     end
     
-    // Button Debouncers
-    button_debouncer #(.DEBOUNCE_CYCLES(150000)) calibrate_debouncer (
-        .clk(clk),
-        .rst_n(rst_n),
-        .btn_n(calibrate_btn_n),
-        .btn_pressed(calibrate_btn_pulse),
-        .btn_released(),
-        .btn_state()
-    );
-    
-    button_debouncer #(.DEBOUNCE_CYCLES(150000)) kick_debouncer (
-        .clk(clk),
-        .rst_n(rst_n),
-        .btn_n(kick_btn_n),
-        .btn_pressed(kick_btn_pulse),
-        .btn_released(),
-        .btn_state()
-    );
+    // Buttons: Pass raw states directly to packer
+    // MCU will handle debouncing and processing
     
     // ============================================
     // BNO085 Sensor 1 (Right Hand)
@@ -298,8 +281,8 @@ module drum_trigger_top_simplified (
         .gyro2_x(gyro2_x),
         .gyro2_y(gyro2_y),
         .gyro2_z(gyro2_z),
-        .calibrate_btn_pulse(calibrate_btn_pulse),
-        .kick_btn_pulse(kick_btn_pulse),
+        .calibrate_btn_n(calibrate_btn_n),
+        .kick_btn_n(kick_btn_n),
         .data_bytes(sensor_data_bytes),
         .data_ready(sensor_data_ready),
         .data_ack(sensor_data_ack)
