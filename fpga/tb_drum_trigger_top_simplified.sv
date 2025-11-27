@@ -22,8 +22,9 @@ module tb_drum_trigger_top_simplified;
     
     // Test signals
     logic clk;
-    int test_passed_count = 0;
-    int test_failed_count = 0;
+    int test_passed_count;
+    int test_failed_count;
+    logic [7:0] test_packet [0:31];
     
     // Clock generation
     initial begin
@@ -31,7 +32,7 @@ module tb_drum_trigger_top_simplified;
         forever #(CLK_PERIOD/2) clk = ~clk;
     end
     
-    // Instantiate DUT (with HSOSC mock for simulation)
+    // Instantiate DUT
     drum_trigger_top_simplified dut (
         .fpga_rst_n(fpga_rst_n),
         .mcu_sck(mcu_sck),
@@ -55,9 +56,6 @@ module tb_drum_trigger_top_simplified;
         .led_heartbeat(led_heartbeat)
     );
     
-    // Mock HSOSC (for simulation)
-    assign dut.clk = clk;  // Direct clock assignment for simulation
-    
     // MCU SPI clock generation (5MHz = 200ns period)
     localparam MCU_SCK_PERIOD = 200;
     initial begin
@@ -66,9 +64,11 @@ module tb_drum_trigger_top_simplified;
     end
     
     // Task to read 32-byte sensor data packet from FPGA
-    task mcu_read_sensor_data(output logic [7:0] packet [0:31]);
-        int i;
-        int timeout_count = 0;
+    // Note: iverilog doesn't support unpacked arrays in task ports, so we'll use a different approach
+    task mcu_read_sensor_data;
+        int i, j;
+        int timeout_count;
+        logic [7:0] byte_data;
         
         // Ensure LOAD is low before waiting for DONE
         mcu_load = 0;
@@ -79,10 +79,12 @@ module tb_drum_trigger_top_simplified;
             timeout_count = timeout_count + 1;
         end
         
+        timeout_count = 0;
+        
         if (!mcu_done) begin
             $display("[%0t] ERROR: DONE signal never asserted!", $time);
             for (i = 0; i < 32; i = i + 1) begin
-                packet[i] = 8'hFF;  // Error code
+                test_packet[i] = 8'hFF;  // Error code
             end
         end else begin
             $display("[%0t] MCU: DONE signal detected, starting SPI read", $time);
@@ -92,9 +94,6 @@ module tb_drum_trigger_top_simplified;
             
             // Read 32 bytes - MCU samples on rising edge in SPI Mode 0
             for (i = 0; i < 32; i = i + 1) begin
-                logic [7:0] byte_data;
-                int j;
-                
                 // Read 8 bits
                 for (j = 7; j >= 0; j = j - 1) begin
                     @(posedge mcu_sck);  // Wait for rising edge
@@ -102,7 +101,7 @@ module tb_drum_trigger_top_simplified;
                     byte_data[j] = mcu_sdo;
                 end
                 
-                packet[i] = byte_data;
+                test_packet[i] = byte_data;
                 $display("[%0t] MCU: Byte %0d = 0x%02X", $time, i, byte_data);
             end
             
@@ -138,9 +137,12 @@ module tb_drum_trigger_top_simplified;
         // Wait for initialization (2 seconds)
         #(2_000_000 * CLK_PERIOD);
         
+        // Initialize test counters
+        test_passed_count = 0;
+        test_failed_count = 0;
+        
         $display("\n=== Test 1: Read Sensor Data Packet ===");
-        logic [7:0] test_packet [0:31];
-        mcu_read_sensor_data(test_packet);
+        mcu_read_sensor_data();
         
         // Verify packet structure
         $display("Packet structure:");
@@ -164,7 +166,7 @@ module tb_drum_trigger_top_simplified;
         kick_btn_n = 1;  // Release button
         #(200 * CLK_PERIOD);
         
-        mcu_read_sensor_data(test_packet);
+        mcu_read_sensor_data();
         if (test_packet[30] & 1) begin
             test_passed_count++;
             $display("Test 2 PASSED: Kick button detected\n");

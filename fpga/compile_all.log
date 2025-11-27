@@ -1,0 +1,5 @@
+drum_trigger_top_integrated.sv:127: error: Unknown module type: HSOSC
+2 error(s) during elaboration.
+*** These modules were missing:
+        HSOSC referenced 1 times.
+***

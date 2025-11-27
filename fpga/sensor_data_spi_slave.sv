@@ -69,20 +69,21 @@ module sensor_data_spi_slave(
     // Following Lab07 pattern: shift out bytes MSB first
     always_ff @(posedge sck) begin
         if (!wasdone && done) begin
-            // First posedge: load first byte
-            tx_shift_reg <= tx_buffer[0];
+            // First posedge: load first byte and shift in one operation (like Lab07)
+            tx_shift_reg <= {tx_buffer[0][6:0], 1'b0};
             byte_index <= 6'd1;
-            bit_index <= 3'd0;
+            bit_index <= 3'd1;  // Already shifted once
         end else if (wasdone && done) begin
             // Continue transmission
             if (bit_index == 3'd7) begin
                 // Byte complete, load next byte
                 if (byte_index < 32) begin
-                    tx_shift_reg <= tx_buffer[byte_index];
+                    tx_shift_reg <= {tx_buffer[byte_index][6:0], 1'b0};  // Load and shift
                     byte_index <= byte_index + 1;
-                    bit_index <= 3'd0;
+                    bit_index <= 3'd1;  // Already shifted once
                 end else begin
-                    // All bytes sent, keep last byte
+                    // All bytes sent, keep shifting last byte
+                    tx_shift_reg <= {tx_shift_reg[6:0], 1'b0};
                     bit_index <= 3'd0;
                 end
             end else begin

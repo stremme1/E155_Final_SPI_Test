@@ -134,53 +134,55 @@ module sensor_data_packer (
     // Byte order: Sensor 1 quat (8 bytes), Sensor 1 gyro (6 bytes), Sensor 1 flags (1 byte),
     //             Sensor 2 quat (8 bytes), Sensor 2 gyro (6 bytes), Sensor 2 flags (1 byte),
     //             Buttons (2 bytes)
-    always_comb begin
+    // Using generate to avoid iverilog constant select issues
+    genvar i;
+    generate
         // Sensor 1 Quaternion (8 bytes: w, x, y, z - MSB first)
-        data_bytes[0] = quat1_w_reg[15:8];  // W MSB
-        data_bytes[1] = quat1_w_reg[7:0];   // W LSB
-        data_bytes[2] = quat1_x_reg[15:8];  // X MSB
-        data_bytes[3] = quat1_x_reg[7:0];   // X LSB
-        data_bytes[4] = quat1_y_reg[15:8];  // Y MSB
-        data_bytes[5] = quat1_y_reg[7:0];   // Y LSB
-        data_bytes[6] = quat1_z_reg[15:8];  // Z MSB
-        data_bytes[7] = quat1_z_reg[7:0];   // Z LSB
+        assign data_bytes[0] = quat1_w_reg[15:8];  // W MSB
+        assign data_bytes[1] = quat1_w_reg[7:0];   // W LSB
+        assign data_bytes[2] = quat1_x_reg[15:8];  // X MSB
+        assign data_bytes[3] = quat1_x_reg[7:0];   // X LSB
+        assign data_bytes[4] = quat1_y_reg[15:8];  // Y MSB
+        assign data_bytes[5] = quat1_y_reg[7:0];   // Y LSB
+        assign data_bytes[6] = quat1_z_reg[15:8];  // Z MSB
+        assign data_bytes[7] = quat1_z_reg[7:0];   // Z LSB
         
         // Sensor 1 Gyroscope (6 bytes: x, y, z - MSB first)
-        data_bytes[8]  = gyro1_x_reg[15:8];  // X MSB
-        data_bytes[9]  = gyro1_x_reg[7:0];   // X LSB
-        data_bytes[10] = gyro1_y_reg[15:8];  // Y MSB
-        data_bytes[11] = gyro1_y_reg[7:0];   // Y LSB
-        data_bytes[12] = gyro1_z_reg[15:8];  // Z MSB
-        data_bytes[13] = gyro1_z_reg[7:0];   // Z LSB
+        assign data_bytes[8]  = gyro1_x_reg[15:8];  // X MSB
+        assign data_bytes[9]  = gyro1_x_reg[7:0];   // X LSB
+        assign data_bytes[10] = gyro1_y_reg[15:8];  // Y MSB
+        assign data_bytes[11] = gyro1_y_reg[7:0];   // Y LSB
+        assign data_bytes[12] = gyro1_z_reg[15:8];  // Z MSB
+        assign data_bytes[13] = gyro1_z_reg[7:0];   // Z LSB
         
         // Sensor 1 Flags (1 byte)
-        data_bytes[14] = {6'b0, gyro1_valid_reg, quat1_valid_reg};
+        assign data_bytes[14] = {6'b0, gyro1_valid_reg, quat1_valid_reg};
         
         // Sensor 2 Quaternion (8 bytes: w, x, y, z - MSB first)
-        data_bytes[15] = quat2_w_reg[15:8];  // W MSB
-        data_bytes[16] = quat2_w_reg[7:0];   // W LSB
-        data_bytes[17] = quat2_x_reg[15:8];  // X MSB
-        data_bytes[18] = quat2_x_reg[7:0];   // X LSB
-        data_bytes[19] = quat2_y_reg[15:8];  // Y MSB
-        data_bytes[20] = quat2_y_reg[7:0];   // Y LSB
-        data_bytes[21] = quat2_z_reg[15:8];  // Z MSB
-        data_bytes[22] = quat2_z_reg[7:0];   // Z LSB
+        assign data_bytes[15] = quat2_w_reg[15:8];  // W MSB
+        assign data_bytes[16] = quat2_w_reg[7:0];   // W LSB
+        assign data_bytes[17] = quat2_x_reg[15:8];  // X MSB
+        assign data_bytes[18] = quat2_x_reg[7:0];   // X LSB
+        assign data_bytes[19] = quat2_y_reg[15:8];  // Y MSB
+        assign data_bytes[20] = quat2_y_reg[7:0];   // Y LSB
+        assign data_bytes[21] = quat2_z_reg[15:8];  // Z MSB
+        assign data_bytes[22] = quat2_z_reg[7:0];   // Z LSB
         
         // Sensor 2 Gyroscope (6 bytes: x, y, z - MSB first)
-        data_bytes[23] = gyro2_x_reg[15:8];  // X MSB
-        data_bytes[24] = gyro2_x_reg[7:0];   // X LSB
-        data_bytes[25] = gyro2_y_reg[15:8];  // Y MSB
-        data_bytes[26] = gyro2_y_reg[7:0];   // Y LSB
-        data_bytes[27] = gyro2_z_reg[15:8];  // Z MSB
-        data_bytes[28] = gyro2_z_reg[7:0];   // Z LSB
+        assign data_bytes[23] = gyro2_x_reg[15:8];  // X MSB
+        assign data_bytes[24] = gyro2_x_reg[7:0];   // X LSB
+        assign data_bytes[25] = gyro2_y_reg[15:8];  // Y MSB
+        assign data_bytes[26] = gyro2_y_reg[7:0];   // Y LSB
+        assign data_bytes[27] = gyro2_z_reg[15:8];  // Z MSB
+        assign data_bytes[28] = gyro2_z_reg[7:0];   // Z LSB
         
         // Sensor 2 Flags (1 byte)
-        data_bytes[29] = {6'b0, gyro2_valid_reg, quat2_valid_reg};
+        assign data_bytes[29] = {6'b0, gyro2_valid_reg, quat2_valid_reg};
         
         // Buttons (2 bytes)
-        data_bytes[30] = {7'b0, kick_btn_reg};
-        data_bytes[31] = {7'b0, calibrate_btn_reg};
-    end
+        assign data_bytes[30] = {7'b0, kick_btn_reg};
+        assign data_bytes[31] = {7'b0, calibrate_btn_reg};
+    endgenerate
     
 endmodule
 

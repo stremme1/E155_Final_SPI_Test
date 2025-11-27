@@ -55,7 +55,7 @@ module button_debouncer #(
                     if (btn_sync2_prev && !btn_sync2) begin
                         // Button just pressed, start debouncing
                         current_state <= DEBOUNCING;
-                        debounce_counter <= 18'd0;
+                debounce_counter <= 18'd0;
                     end
                 end
                 
@@ -68,7 +68,7 @@ module button_debouncer #(
                         current_state <= BUTTON_HELD;
                     end else begin
                         // Continue debouncing
-                        debounce_counter <= debounce_counter + 1;
+                debounce_counter <= debounce_counter + 1;
                     end
                 end
                 
@@ -83,7 +83,7 @@ module button_debouncer #(
                 
                 default: begin
                     current_state <= IDLE;
-                end
+            end
             endcase
         end
     end
