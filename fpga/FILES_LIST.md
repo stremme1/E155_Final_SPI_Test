@@ -1,27 +1,40 @@
 # FPGA Files List
 
-## Top-Level Module (Flash This)
-- **`drum_trigger_top_integrated.sv`** - Main top-level module
+## SystemVerilog Source Files (11 modules)
 
-## Core Modules
-- **`drum_spi_slave.sv`** - SPI slave for MCU communication
-- **`drum_trigger_processor.sv`** - Dual sensor drum trigger processing
+### Top-Level Module
+- `drum_trigger_top_integrated.sv` - Main top-level module integrating all components
 
-## BNO085 Interface
-- **`bno085_controller.sv`** - BNO085 sensor controller (used x2)
-- **`spi_master.sv`** - SPI master for BNO085 (used x2)
+### Core Modules
+- `drum_trigger_processor.sv` - Processes BNO085 data and button inputs to detect drum triggers
+- `drum_spi_slave.sv` - SPI slave for MCU communication (sends drum commands)
+- `button_debouncer.sv` - Debounces button inputs (FSM pattern)
 
-## Signal Processing
-- **`quaternion_to_euler_dsp.sv`** - Quaternion to Euler conversion (used x2)
-- **`yaw_normalizer.sv`** - Yaw normalization with calibration (used x2)
-- **`drum_zone_detector.sv`** - Zone detection based on yaw (used x2)
-- **`strike_detector.sv`** - Strike detection from gyroscope (used x2)
-- **`drum_selector.sv`** - Final drum code selection (used x2)
+### BNO085 Sensor Interface
+- `bno085_controller.sv` - BNO085 sensor controller
+- `spi_master.sv` - SPI master for BNO085 communication
 
-## Utilities
-- **`button_debouncer.sv`** - Button debouncing (used x2)
+### Signal Processing
+- `quaternion_to_euler_dsp.sv` - Converts quaternion to Euler angles
+- `yaw_normalizer.sv` - Normalizes yaw angle with calibration
+- `drum_zone_detector.sv` - Detects drum zones from yaw angle
+- `strike_detector.sv` - Detects drum strikes from gyroscope
+- `drum_selector.sv` - Selects drum type based on zone, pitch, and gyro
 
-## Total: 11 SystemVerilog files
+## Testbenches
 
-All files are required for synthesis. Add all `.sv` files to your FPGA project.
+### Unit Tests
+- `tb_drum_spi_slave.sv` - Unit test for SPI slave module (all tests pass)
 
+### System Tests
+- `tb_drum_trigger_top_integrated.sv` - Full system testbench with timeout
+
+## Scripts
+- `run_tb_with_timeout.sh` - Testbench runner with automatic timeout
+
+## Documentation
+- `README.md` - FPGA project documentation
+- `FILES_LIST.md` - This file
+
+## Mock/Support Files
+- `hsosc_mock.sv` - Mock HSOSC for simulation (if needed)
