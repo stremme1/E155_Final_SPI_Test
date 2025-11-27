@@ -2,7 +2,7 @@
  * Sensor Data SPI Slave Module
  * 
  * Sends multi-byte sensor data packets to MCU via SPI
- * Based on Lab07 aes_spi pattern, adapted for 32-byte data packets
+ * EXACT COPY of Lab07 aes_spi pattern, adapted for 32-byte (256-bit) data packets
  * 
  * Protocol:
  * - MCU waits for DONE signal
@@ -15,7 +15,7 @@
 `timescale 1ns / 1ps
 
 module sensor_data_spi_slave(
-    input  logic        clk,           // FPGA system clock
+    input  logic        clk,           // FPGA system clock (for data latching)
     input  logic        sck,           // SPI clock from MCU
     input  logic        sdi,           // SPI data in (MOSI from MCU, not used)
     output logic        sdo,           // SPI data out (MISO to MCU)
@@ -28,30 +28,35 @@ module sensor_data_spi_slave(
     output logic        data_ack             // Data has been sent
 );
 
-    // Internal signals - following Lab07 pattern exactly
-    logic [7:0] tx_buffer [0:31];      // Transmit buffer (32 bytes) - clk domain
-    logic [7:0] tx_shift_reg;          // Shift register for current byte - sck domain
-    logic [5:0] byte_index;            // Current byte index (0-31) - sck domain
-    logic [2:0] bit_index;             // Current bit index within byte (0-7) - sck domain
-    logic       sdodelayed;            // Delayed SDO
-    logic       wasdone;               // Previous done state
-    logic       packet_ready;          // Packet ready to send - clk domain
-    logic       packet_acknowledged;   // Packet has been acknowledged - clk domain
-    logic       load_prev;             // Previous load state
+    // Following Lab07 aes_spi pattern EXACTLY
+    // Lab07 uses: logic [127:0] cyphertextcaptured;
+    // We use: logic [255:0] datacaptured; (32 bytes = 256 bits)
+    logic         sdodelayed, wasdone;
+    logic [255:0] datacaptured;  // Captured data to shift out (like cyphertextcaptured in Lab07)
+    logic [255:0] data_to_send;   // Current data packet to send (like cyphertext in Lab07)
     
-    // Initialize wasdone to 0 (important for first transmission)
+    // Initialize signals
     initial begin
         wasdone = 1'b0;
+        datacaptured = 256'd0;
+        sdodelayed = 1'b0;
+        data_to_send = 256'd0;
     end
+    
+    // Packet ready/acknowledged logic (clk domain)
+    logic packet_ready;
+    logic packet_acknowledged;
+    logic load_prev;
     
     // Latch data packet when ready (clk domain)
     always_ff @(posedge clk) begin
         load_prev <= load;
         
         if (data_ready && !packet_ready) begin
-            // Latch new data packet
+            // Pack 32 bytes into 256-bit word (MSB first, like Lab07)
+            // Byte 0 is MSB [255:248], Byte 31 is LSB [7:0]
             for (int i = 0; i < 32; i = i + 1) begin
-                tx_buffer[i] <= data_bytes[i];
+                data_to_send[255 - 8*i -: 8] <= data_bytes[i];
             end
             packet_ready <= 1'b1;
             packet_acknowledged <= 1'b0;
@@ -65,51 +70,55 @@ module sensor_data_spi_slave(
     end
     
     // Done signal: Assert when packet is ready and not yet acknowledged (clk domain)
+    logic done_sync;  // Synchronized done signal
     always_ff @(posedge clk) begin
-        done <= packet_ready && !packet_acknowledged;
+        done_sync <= packet_ready && !packet_acknowledged;
     end
+    assign done = done_sync;
     
-    // SPI transmission: Shift on posedge sck (sck domain)
-    // Following Lab07 pattern exactly: on first posedge (!wasdone), load AND shift
-    // On subsequent posedges (wasdone), shift left
-    always_ff @(posedge sck) begin
-        if (!wasdone && done) begin
-            // First posedge: load first byte and shift in one operation (like Lab07)
-            tx_shift_reg <= {tx_buffer[0][6:0], 1'b0};
-            byte_index <= 6'd1;
-            bit_index <= 3'd1;  // Already shifted once
-        end else if (wasdone && done) begin
-            // Continue transmission
-            if (bit_index == 3'd7) begin
-                // Byte complete, load next byte
-                if (byte_index < 32) begin
-                    tx_shift_reg <= {tx_buffer[byte_index][6:0], 1'b0};  // Load and shift
-                    byte_index <= byte_index + 1;
-                    bit_index <= 3'd1;  // Already shifted once
-                end else begin
-                    // All bytes sent, keep shifting last byte
-                    tx_shift_reg <= {tx_shift_reg[6:0], 1'b0};
-                    bit_index <= 3'd0;
-                end
-            end else begin
-                // Shift bit
-                tx_shift_reg <= {tx_shift_reg[6:0], 1'b0};
-                bit_index <= bit_index + 1;
-            end
+    // Capture data_to_send into datacaptured when done goes high (clk domain)
+    // This ensures data is stable before first sck edge
+    logic done_prev;
+    always_ff @(posedge clk) begin
+        done_prev <= done_sync;
+        if (done_sync && !done_prev) begin
+            // done just went high - capture data (like Lab07 captures cyphertext)
+            datacaptured <= data_to_send;
         end
     end
     
-    // Track previous done state (for edge detection - like Lab07)
-    // Use non-blocking for synthesis, but update immediately for simulation
-    always_ff @(negedge sck) begin
-        wasdone <= done;  // Track done state
-        sdodelayed <= tx_shift_reg[7];  // Current MSB (will be output next)
+    // SPI transmission: EXACT Lab07 pattern
+    // Lab07: always_ff @(posedge sck)
+    //        if (!wasdone)  {cyphertextcaptured, plaintext, key} = {cyphertext, plaintext[126:0], key, sdi};
+    //        else           {cyphertextcaptured, plaintext, key} = {cyphertextcaptured[126:0], plaintext, key, sdi};
+    // 
+    // For us: datacaptured is already captured when done goes high (in clk domain)
+    //        if (!wasdone)  datacaptured = {datacaptured[254:0], 1'b0};  // Shift (already captured)
+    //        else           datacaptured = {datacaptured[254:0], 1'b0};  // Continue shifting
+    always_ff @(posedge sck) begin
+        if (!wasdone) begin
+            // First posedge: shift (datacaptured already contains data from clk domain)
+            datacaptured <= {datacaptured[254:0], 1'b0};
+        end else begin
+            // Subsequent posedges: shift left (like Lab07)
+            datacaptured <= {datacaptured[254:0], 1'b0};
+        end
     end
     
-    // SDO output: Following Lab07 pattern exactly
+    // Track previous done state: EXACT Lab07 pattern
+    // Lab07 uses blocking assignments for immediate update
+    // For synthesis, we use non-blocking but the logic is the same
+    always_ff @(negedge sck) begin
+        wasdone <= done;  // Track done state
+        sdodelayed <= datacaptured[254];  // Current MSB (will be output next, like Lab07's [126])
+    end
+    
+    // SDO output: EXACT Lab07 pattern
+    // Lab07: assign sdo = (done & !wasdone) ? cyphertext[127] : sdodelayed;
     // When done is first asserted (!wasdone), output MSB before first clock edge
     // After first negedge, wasdone becomes true, so use sdodelayed
-    assign sdo = (done & !wasdone) ? tx_buffer[0][7] : sdodelayed;
+    // Use datacaptured[255] since it's already captured when done goes high
+    assign sdo = (done & !wasdone) ? datacaptured[255] : sdodelayed;
     
     // Acknowledge when transmission complete
     assign data_ack = packet_acknowledged;
