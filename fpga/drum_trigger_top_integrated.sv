@@ -78,10 +78,12 @@ module drum_trigger_top_integrated (
     // SPI master signals for Sensor 1
     logic spi1_start, spi1_tx_valid, spi1_tx_ready, spi1_rx_valid, spi1_busy;
     logic [7:0] spi1_tx_data, spi1_rx_data;
+    logic spi1_tx_ready_internal;  // Internal signal from spi_master
     
     // SPI master signals for Sensor 2
     logic spi2_start, spi2_tx_valid, spi2_tx_ready, spi2_rx_valid, spi2_busy;
     logic [7:0] spi2_tx_data, spi2_rx_data;
+    logic spi2_tx_ready_internal;  // Internal signal from spi_master
     
     // Internal ps0_wake signals (not exposed as pins)
     logic ps0_wake1, ps0_wake2;
@@ -168,16 +170,17 @@ module drum_trigger_top_integrated (
     // ============================================
     
     // SPI Master for BNO085 Sensor 1
+    logic sclk1, mosi1;
     spi_master spi_master_inst1 (
         .clk(clk),
         .rst_n(rst_n),
-        .sclk(sclk),
-        .mosi(mosi),
+        .sclk(sclk1),
+        .mosi(mosi1),
         .miso(miso1),
         .start(spi1_start),
         .tx_valid(spi1_tx_valid),
         .tx_data(spi1_tx_data),
-        .tx_ready(spi1_tx_ready),
+        .tx_ready(spi1_tx_ready_internal),
         .rx_data(spi1_rx_data),
         .rx_valid(spi1_rx_valid),
         .busy(spi1_busy)
@@ -187,12 +190,6 @@ module drum_trigger_top_integrated (
     bno085_controller bno085_ctrl_inst1 (
         .clk(clk),
         .rst_n(rst_n),
-        .sclk(sclk),
-        .mosi(mosi),
-        .miso(miso1),
-        .cs_n(cs_n1),
-        .ps0_wake(ps0_wake1),  // Internal signal, not exposed as pin
-        .int_n(int1),
         .spi_start(spi1_start),
         .spi_tx_valid(spi1_tx_valid),
         .spi_tx_ready(spi1_tx_ready),
@@ -200,6 +197,9 @@ module drum_trigger_top_integrated (
         .spi_rx_data(spi1_rx_data),
         .spi_busy(spi1_busy),
         .spi_tx_data(spi1_tx_data),
+        .cs_n(cs_n1),
+        .ps0_wake(ps0_wake1),  // Internal signal, not exposed as pin
+        .int_n(int1),
         .quat_valid(quat1_valid),
         .quat_w(quat1_w),
         .quat_x(quat1_x),
@@ -213,38 +213,39 @@ module drum_trigger_top_integrated (
         .error(error1)
     );
     
-    assign spi1_tx_ready = !spi1_busy;
+    // Note: sclk1/mosi1 connected to spi_master_inst1 above
+    
+    assign spi1_tx_ready = spi1_tx_ready_internal;
     
     // ============================================
     // BNO085 Sensor 2 (Left Hand)
     // ============================================
     
     // SPI Master for BNO085 Sensor 2
+    logic sclk2, mosi2;
     spi_master spi_master_inst2 (
         .clk(clk),
         .rst_n(rst_n),
-        .sclk(sclk),
-        .mosi(mosi),
+        .sclk(sclk2),
+        .mosi(mosi2),
         .miso(miso2),
         .start(spi2_start),
         .tx_valid(spi2_tx_valid),
         .tx_data(spi2_tx_data),
-        .tx_ready(spi2_tx_ready),
+        .tx_ready(spi2_tx_ready_internal),
         .rx_data(spi2_rx_data),
         .rx_valid(spi2_rx_valid),
         .busy(spi2_busy)
     );
     
+    // Mux shared SPI signals (only one sensor active at a time via cs_n)
+    assign sclk = cs_n1 ? sclk2 : sclk1;  // Sensor 1 active when cs_n1 is low
+    assign mosi = cs_n1 ? mosi2 : mosi1;  // Sensor 1 active when cs_n1 is low
+    
     // BNO085 Controller for Sensor 2
     bno085_controller bno085_ctrl_inst2 (
         .clk(clk),
         .rst_n(rst_n),
-        .sclk(sclk),
-        .mosi(mosi),
-        .miso(miso2),
-        .cs_n(cs_n2),
-        .ps0_wake(ps0_wake2),  // Internal signal, not exposed as pin
-        .int_n(int2),
         .spi_start(spi2_start),
         .spi_tx_valid(spi2_tx_valid),
         .spi_tx_ready(spi2_tx_ready),
@@ -252,6 +253,9 @@ module drum_trigger_top_integrated (
         .spi_rx_data(spi2_rx_data),
         .spi_busy(spi2_busy),
         .spi_tx_data(spi2_tx_data),
+        .cs_n(cs_n2),
+        .ps0_wake(ps0_wake2),  // Internal signal, not exposed as pin
+        .int_n(int2),
         .quat_valid(quat2_valid),
         .quat_w(quat2_w),
         .quat_x(quat2_x),
@@ -265,7 +269,9 @@ module drum_trigger_top_integrated (
         .error(error2)
     );
     
-    assign spi2_tx_ready = !spi2_busy;
+    // Note: sclk2/mosi2 connected to spi_master_inst2 above
+    
+    assign spi2_tx_ready = spi2_tx_ready_internal;
     
     // Status LEDs (both sensors must be initialized)
     assign led_initialized = initialized1 && initialized2;

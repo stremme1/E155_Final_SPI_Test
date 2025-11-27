@@ -87,8 +87,13 @@ module drum_spi_slave(
     
     // Track previous done state (for edge detection - like Lab07)
     // Lab07 uses blocking assignment for immediate update
-    always @(negedge sck) begin
-        wasdone = done;
+    // Reset wasdone when new command comes in
+    always @(negedge sck or posedge drum_trigger_valid) begin
+        if (drum_trigger_valid) begin
+            wasdone = 1'b0;  // Reset when new command arrives
+        end else begin
+            wasdone = done;
+        end
         sdodelayed = tx_shift_reg[7];  // Current MSB (will be output next)
     end
     

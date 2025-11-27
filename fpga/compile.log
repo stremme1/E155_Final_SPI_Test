@@ -1,0 +1,9 @@
+drum_trigger_top_integrated.sv:213: error: Unresolved net/uwire spi1_tx_ready cannot have multiple drivers.
+drum_trigger_top_integrated.sv:223: error: Unresolved net/uwire sclk cannot have multiple drivers.
+drum_trigger_top_integrated.sv:223: error: Output port expression must support continuous assignment.
+drum_trigger_top_integrated.sv:223:      : Port 10 (sclk) of spi_master is connected to sclk
+drum_trigger_top_integrated.sv:224: error: Unresolved net/uwire mosi cannot have multiple drivers.
+drum_trigger_top_integrated.sv:224: error: Output port expression must support continuous assignment.
+drum_trigger_top_integrated.sv:224:      : Port 11 (mosi) of spi_master is connected to mosi
+drum_trigger_top_integrated.sv:262: error: Unresolved net/uwire spi2_tx_ready cannot have multiple drivers.
+6 error(s) during elaboration.

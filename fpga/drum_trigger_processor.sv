@@ -222,29 +222,42 @@ module drum_trigger_processor (
     // Priority: Kick button > Sensor 1 > Sensor 2
     // ============================================
     
+    // Hold trigger valid until SPI slave acknowledges (via command_ready in drum_spi_slave)
+    // Since we don't have direct feedback, we hold it for multiple cycles to ensure SPI slave catches it
+    logic [2:0] trigger_hold_counter;
+    
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             drum_trigger_valid <= 1'b0;
             drum_code <= 4'd0;
             drum_hand <= 1'b0;
+            trigger_hold_counter <= 3'd0;
         end else begin
             // Kick button has highest priority (matches C code: button1 -> code "2")
             if (kick_btn_pulse) begin
                 drum_trigger_valid <= 1'b1;
                 drum_code <= 4'd2;  // Kick drum
                 drum_hand <= 1'b0;  // Right hand (arbitrary)
+                trigger_hold_counter <= 3'd5;  // Hold for 5 cycles to ensure SPI slave catches it
             end
             // Sensor 1 (Right Hand) trigger
             else if (drum_sel1_valid) begin
                 drum_trigger_valid <= 1'b1;
                 drum_code <= drum_code1;
                 drum_hand <= 1'b0;  // Right hand
+                trigger_hold_counter <= 3'd5;  // Hold for 5 cycles
             end
             // Sensor 2 (Left Hand) trigger
             else if (drum_sel2_valid) begin
                 drum_trigger_valid <= 1'b1;
                 drum_code <= drum_code2;
                 drum_hand <= 1'b1;  // Left hand
+                trigger_hold_counter <= 3'd5;  // Hold for 5 cycles
+            end
+            // Hold valid for a few cycles, then clear
+            else if (trigger_hold_counter > 0) begin
+                trigger_hold_counter <= trigger_hold_counter - 1;
+                // Keep valid high while counter is counting down
             end else begin
                 drum_trigger_valid <= 1'b0;
             end

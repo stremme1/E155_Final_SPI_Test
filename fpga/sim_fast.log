@@ -1,0 +1,38 @@
+[HSOSC] Clock started
+
+Waiting for system to stabilize (fast test - shorter delay)...
+=== Fast System Testbench Started ===
+Time: 66600000
+[3363300000] Starting tests (assuming system is ready)
+
+=== Test 1: Kick Drum via Button ===
+[3363300000] Simulating kick drum button press
+[136563300000] Button press complete
+[369663300000] Waiting for DONE signal...
+[536163300000] ERROR: DONE signal never asserted! done=0
+ERROR: tb_drum_trigger_top_fast.sv:183: Test 1 failed: DONE signal timeout
+       Time: 536163300000  Scope: tb_drum_trigger_top_fast
+=== Test 2: Second Kick Trigger ===
+[536229900000] Simulating kick drum button press
+[669429900000] Button press complete
+[902529900000] Waiting for DONE signal...
+[1069029900000] ERROR: DONE signal never asserted! done=0
+ERROR: tb_drum_trigger_top_fast.sv:211: Test 2 failed: DONE signal timeout
+       Time: 1069029900000  Scope: tb_drum_trigger_top_fast
+=== Test 3: Third Kick Trigger ===
+[1069096500000] Simulating kick drum button press
+[1202296500000] Button press complete
+[1435396500000] Waiting for DONE signal...
+[1601896500000] ERROR: DONE signal never asserted! done=0
+ERROR: tb_drum_trigger_top_fast.sv:231: Test 3 failed: DONE signal timeout
+       Time: 1601896500000  Scope: tb_drum_trigger_top_fast
+
+==========================================
+Fast Test Results Summary:
+  Passed: 0
+  Failed: 3
+❌ Some tests failed
+Time: 1601896500000
+==========================================
+
+tb_drum_trigger_top_fast.sv:249: $finish called at 1602063000000 (1ps)
