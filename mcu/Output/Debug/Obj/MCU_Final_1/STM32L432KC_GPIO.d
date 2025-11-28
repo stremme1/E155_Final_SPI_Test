@@ -12,4 +12,5 @@ Output/Debug/Obj/MCU_Final_1/STM32L432KC_GPIO.o: \
   /Users/emmettstralka/Desktop/E155_SPI_Final\ Project/mcu/CMSIS_5/CMSIS/Core/Include/cmsis_compiler.h \
   /Users/emmettstralka/Desktop/E155_SPI_Final\ Project/mcu/CMSIS_5/CMSIS/Core/Include/cmsis_gcc.h \
   /Users/emmettstralka/Desktop/E155_SPI_Final\ Project/mcu/CMSIS_5/CMSIS/Core/Include/mpu_armv7.h \
-  /Users/emmettstralka/Desktop/E155_SPI_Final\ Project/mcu/STM32L4xx/Device/Include/system_stm32l4xx.h
+  /Users/emmettstralka/Desktop/E155_SPI_Final\ Project/mcu/STM32L4xx/Device/Include/system_stm32l4xx.h \
+  /Users/emmettstralka/Desktop/E155_SPI_Final\ Project/mcu/STM32L432KC_RCC.h

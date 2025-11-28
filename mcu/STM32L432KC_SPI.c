@@ -1,12 +1,12 @@
 // STM32L432KC_SPI.c
 // Source code for SPI functions
-// Copied from Lab07 and adapted for Lab4 project
+// Based on Lab07
 
 #include "STM32L432KC_SPI.h"
 #include "STM32L432KC_GPIO.h"
 #include "STM32L432KC_RCC.h"
 
-/* Enables the SPI peripheral and initializes its clock speed (baud rate), polarity, and phase.
+/* Enables the SPI peripheral and intializes its clock speed (baud rate), polarity, and phase.
  *    -- br: (0b000 - 0b111). The SPI clk will be the master clock / 2^(BR+1).
  *    -- cpol: clock polarity (0: inactive state is logical 0, 1: inactive state is logical 1).
  *    -- cpha: clock phase (0: data captured on leading edge of clk and changed on next edge, 
@@ -18,11 +18,11 @@ void initSPI(int br, int cpol, int cpha) {
     
     RCC->APB2ENR |= RCC_APB2ENR_SPI1EN; // Turn on SPI1 clock domain (SPI1EN bit in APB2ENR)
 
-    // Configure SPI pins on GPIOB
-    pinModePortB(SPI_SCK, GPIO_ALT); // SPI1_SCK
-    pinModePortB(SPI_MISO, GPIO_ALT); // SPI1_MISO
-    pinModePortB(SPI_MOSI, GPIO_ALT); // SPI1_MOSI
-    pinModePortA(SPI_CE, GPIO_OUTPUT); // Manual CS
+    // Initially assigning SPI pins
+    pinMode(SPI_SCK, GPIO_ALT); // SPI1_SCK
+    pinMode(SPI_MISO, GPIO_ALT); // SPI1_MISO
+    pinMode(SPI_MOSI, GPIO_ALT); // SPI1_MOSI
+    pinMode(SPI_CE, GPIO_OUTPUT); //  Manual CS (like Lab07)
 
     // Set output speed type to high for SCK
     GPIOB->OSPEEDR |= (GPIO_OSPEEDR_OSPEED3);
@@ -55,51 +55,79 @@ char spiSendReceive(char send) {
     return rec; // Return received character
 }
 
-/* Initialize SPI control pins (LOAD and DONE) */
+/* Initialize SPI control pins (LOAD and DONE) - Lab07 style */
 void initSPIControlPins(void) {
-    // Configure LOAD pin (PA5) as output, initially low
-    pinModePortA(SPI_LOAD, GPIO_OUTPUT);
-    digitalWritePortA(SPI_LOAD, GPIO_LOW);
-    
-    // Configure DONE pin (PA6) as input
-    pinModePortA(SPI_DONE, GPIO_INPUT);
-    
-    // Configure CE pin (PA11) as output, initially high
-    pinModePortA(SPI_CE, GPIO_OUTPUT);
-    digitalWritePortA(SPI_CE, GPIO_HIGH);
+    // This function is now redundant - pins are configured in main() like Lab07
+    // Keeping for compatibility but it's not needed
 }
 
-/* Read drum command from FPGA via SPI
- * Following Lab07 pattern: blocking wait for DONE, then read, then acknowledge
- */
+/* Read drum command from FPGA via SPI - Lab07 style */
 uint8_t readDrumCommand(void) {
-    uint8_t command = 0x00;
+    uint8_t command;
     
-    // Wait for DONE signal to be asserted by FPGA (blocking wait like Lab07)
-    // This naturally handles clock domain crossing - MCU will read multiple times
-    // until FPGA's DONE signal is stable
-    while(!digitalReadPortA(SPI_DONE)) {
-        // Wait - FPGA will assert DONE when command is ready
-    }
+    // Wait for DONE signal (like Lab07 line 133)
+    while(!digitalRead(PA6));
     
-    // FPGA has data ready, read command byte
-    digitalWritePortA(SPI_CE, GPIO_LOW);  // Lower CE to start transaction
+    // Read command byte (like Lab07 lines 136-138)
+    digitalWrite(PA11, 1);
+    command = spiSendReceive(0);
+    digitalWrite(PA11, 0);
     
-    // Read command byte from FPGA (send dummy, receive command)
-    command = (uint8_t)spiSendReceive(0x00);
+    while(SPI1->SR & SPI_SR_BSY); // Confirm all SPI transactions are completed (like Lab07 line 129)
     
-    // Wait for SPI transaction to complete (like Lab07 line 129)
-    while(SPI1->SR & SPI_SR_BSY);  // Confirm all SPI transactions are completed
-    
-    digitalWritePortA(SPI_CE, GPIO_HIGH);  // Raise CE to end transaction
-    
-    // Acknowledge by toggling LOAD (following Lab07 pattern)
-    // Lab07 sets LOAD high before sending, then low after sending
-    // For our case: set LOAD high to acknowledge, then low
-    // No delays needed - FPGA samples on its clock edge, blocking wait ensures stability
-    digitalWritePortA(SPI_LOAD, GPIO_HIGH);
-    digitalWritePortA(SPI_LOAD, GPIO_LOW);
+    // Acknowledge with LOAD
+    digitalWrite(PA5, 1);
+    digitalWrite(PA5, 0);
     
     return command;
+}
+
+/* Read 15-byte sensor data packet from FPGA via SPI - Lab07 style */
+void readSensorDataPacket15(uint8_t *packet) {
+    int i;
+    
+    // Wait for DONE signal (like Lab07 line 142)
+    while(!digitalRead(PA6));
+    
+    // Read 15 bytes (like Lab07 lines 144-148)
+    for(i = 0; i < 15; i++) {
+        digitalWrite(PA11, 1); // CE high (like Lab07 line 145)
+        packet[i] = spiSendReceive(0);  
+        digitalWrite(PA11, 0); // CE low (like Lab07 line 147)
+    }
+    
+    while(SPI1->SR & SPI_SR_BSY); // Confirm all SPI transactions are completed (like Lab07 line 138)
+    
+    // Acknowledge with LOAD (like Lab07 pattern)
+    digitalWrite(PA5, 1);
+    digitalWrite(PA5, 0);
+}
+
+/* Parse 15-byte sensor data packet into structured format
+ * Packet format: [Header(0xAA)][Quat W LSB][Quat W MSB][Quat X LSB][Quat X MSB]...
+ * All 16-bit values are little-endian (LSB first, MSB second)
+ */
+void parseSensorDataPacket15(const uint8_t *packet, 
+                              int16_t *quat_w, int16_t *quat_x, int16_t *quat_y, int16_t *quat_z,
+                              int16_t *gyro_x, int16_t *gyro_y, int16_t *gyro_z) {
+    // Verify header
+    if (packet[0] != 0xAA) {
+        // Invalid header - set all values to 0
+        *quat_w = *quat_x = *quat_y = *quat_z = 0;
+        *gyro_x = *gyro_y = *gyro_z = 0;
+        return;
+    }
+    
+    // Parse quaternion (little-endian: LSB first, MSB second)
+    // Byte 1 = LSB, Byte 2 = MSB
+    *quat_w = (int16_t)(packet[1] | (packet[2] << 8));
+    *quat_x = (int16_t)(packet[3] | (packet[4] << 8));
+    *quat_y = (int16_t)(packet[5] | (packet[6] << 8));
+    *quat_z = (int16_t)(packet[7] | (packet[8] << 8));
+    
+    // Parse gyroscope (little-endian: LSB first, MSB second)
+    *gyro_x = (int16_t)(packet[9]  | (packet[10] << 8));
+    *gyro_y = (int16_t)(packet[11] | (packet[12] << 8));
+    *gyro_z = (int16_t)(packet[13] | (packet[14] << 8));
 }
 

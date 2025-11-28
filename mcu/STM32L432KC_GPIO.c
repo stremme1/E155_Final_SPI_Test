@@ -1,7 +1,69 @@
 // STM32L432KC_GPIO.c
 // Source code for GPIO functions
+// Updated to match starter code from e155-lab7-main
 
 #include "STM32L432KC_GPIO.h"
+#include "STM32L432KC_RCC.h"
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// PIO Helper Functions (from starter code)
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void gpioEnable(int port_id) {
+  switch (port_id) {
+    case GPIO_PORT_A:
+      RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
+      break;
+    case GPIO_PORT_B:
+      RCC->AHB2ENR |= RCC_AHB2ENR_GPIOBEN;
+      break;
+    case GPIO_PORT_C:
+      RCC->AHB2ENR |= RCC_AHB2ENR_GPIOCEN;
+      break;
+  }
+}
+
+/* Returns the port ID that corresponds to a given pin.
+ *    -- pin: a GPIO pin ID, e.g. PA3
+ *    -- return: a GPIO port ID, e.g. GPIO_PORT_ID_A */
+int gpioPinOffset(int gpio_pin) {
+  // Returns offset of pin within port (given by 4 least significant bits)
+  return gpio_pin & 0x0F;
+}
+
+/* Returns the port ID that corresponds to a given pin.
+ *    -- pin: a GPIO pin ID, e.g. PA3
+ *    -- return: a GPIO port ID, e.g. GPIO_PORT_ID_A */
+int gpioPinToPort(int gpio_pin) {
+  // Shift to the right by 4 bits since there are 16 (2^4) pins per port
+  return gpio_pin >> 4;
+}
+
+/* Returns a pointer to the given port's base address.
+ *    -- port: a GPIO port ID, e.g. GPIO_PORT_ID_A
+ *    -- return: a pointer to a gpio-sized block of memory at the port "port" */
+GPIO_TypeDef * gpioPortToBase(int port) {
+  GPIO_TypeDef * port_id = 0x0;
+  switch (port) {
+    case GPIO_PORT_A:
+      port_id = (GPIO_TypeDef *) GPIOA_BASE;
+      break;
+    case GPIO_PORT_B:
+      port_id = (GPIO_TypeDef *) GPIOB_BASE;
+      break;
+    case GPIO_PORT_C:
+      port_id = (GPIO_TypeDef *) GPIOC_BASE;
+      break;
+  }
+  return port_id;
+}
+
+/* Given a pin, returns a pointer to the corresponding port's base address.
+ *    -- pin: a PIO pin ID, e.g. PIO_PA3
+ *    -- return: a pointer to a Pio-sized block of memory at the pin's port */
+GPIO_TypeDef * gpioPinToBase(int gpio_pin) {
+  return gpioPortToBase(gpioPinToPort(gpio_pin));
+}
 
 // Helper function to set pin mode on a specific port
 static void pinModeHelper(GPIO_TypeDef *port, int pin, int function) {
@@ -23,73 +85,95 @@ static void pinModeHelper(GPIO_TypeDef *port, int pin, int function) {
     }
 }
 
-// Legacy function (defaults to GPIOB for backward compatibility)
-void pinMode(int pin, int function) {
-    pinModePortB(pin, function);
+// Updated pinMode to decode port from pin number (like starter code)
+void pinMode(int gpio_pin, int function) {
+	// Get pointer to base address of the corresponding GPIO pin and pin offset
+	GPIO_TypeDef * GPIO_PORT_PTR = gpioPinToBase(gpio_pin);
+	int pin_offset = gpioPinOffset(gpio_pin);
+
+	switch(function) {
+		case GPIO_INPUT:
+			GPIO_PORT_PTR->MODER &= ~(0b11 << 2*pin_offset);
+			break;
+		case GPIO_OUTPUT:
+			GPIO_PORT_PTR->MODER |= (0b1 << 2*pin_offset);
+			GPIO_PORT_PTR->MODER &= ~(0b1 << (2*pin_offset+1));
+			break;
+		case GPIO_ALT:
+			GPIO_PORT_PTR->MODER &= ~(0b1 << 2*pin_offset);
+			GPIO_PORT_PTR->MODER |= (0b1 << (2*pin_offset+1));
+			break;
+		case GPIO_ANALOG:
+			GPIO_PORT_PTR->MODER |= (0b11 << 2*pin_offset);
+			break;
+	}
 }
 
+// Legacy functions for backward compatibility
 void pinModePortA(int pin, int function) {
-    pinModeHelper(GPIOA, pin, function);
+    pinMode(pin, function);  // Will decode port automatically (PA pins are 0-15)
 }
 
 void pinModePortB(int pin, int function) {
-    pinModeHelper(GPIOB, pin, function);
+    pinMode(pin + 16, function);  // Add 16 to get PB pin number (PB pins are 16-31)
 }
 
-// Helper function to read pin on a specific port
-static int digitalReadHelper(GPIO_TypeDef *port, int pin) {
-    return ((port->IDR) >> pin) & 1;
+// Updated digitalRead to decode port from pin number (like starter code)
+int digitalRead(int gpio_pin) {
+	// Get pointer to base address of the corresponding GPIO pin and pin offset
+	GPIO_TypeDef * GPIO_PORT_PTR = gpioPinToBase(gpio_pin);
+	int pin_offset = gpioPinOffset(gpio_pin);
+
+	return ((GPIO_PORT_PTR->IDR) >> pin_offset) & 1;
 }
 
-// Legacy function (defaults to GPIOB for backward compatibility)
-int digitalRead(int pin) {
-    return digitalReadPortB(pin);
-}
-
+// Legacy functions for backward compatibility
 int digitalReadPortA(int pin) {
-    return digitalReadHelper(GPIOA, pin);
+    return digitalRead(pin);  // Will decode port automatically
 }
 
 int digitalReadPortB(int pin) {
-    return digitalReadHelper(GPIOB, pin);
+    return digitalRead(pin + 16);  // Add 16 to get PB pin number
 }
 
-// Helper function to write pin on a specific port
-static void digitalWriteHelper(GPIO_TypeDef *port, int pin, int val) {
-    if (val) {
-        port->BSRR = (1 << pin);  // Set bit
-    } else {
-        port->BSRR = (1 << (pin + 16));  // Reset bit
-    }
+// Updated digitalWrite to decode port from pin number (like starter code)
+void digitalWrite(int gpio_pin, int val) {
+	// Get pointer to base address of the corresponding GPIO pin and pin offset
+	GPIO_TypeDef * GPIO_PORT_PTR = gpioPinToBase(gpio_pin);
+	int pin_offset = gpioPinOffset(gpio_pin);
+
+	if (val == 1) {
+		GPIO_PORT_PTR->ODR |= (1 << pin_offset);
+	}
+	else if (val == 0) {
+		GPIO_PORT_PTR->ODR &= ~(1 << pin_offset);
+	}
 }
 
-// Legacy function (defaults to GPIOB for backward compatibility)
-void digitalWrite(int pin, int val) {
-    digitalWritePortB(pin, val);
-}
-
+// Legacy functions for backward compatibility
 void digitalWritePortA(int pin, int val) {
-    digitalWriteHelper(GPIOA, pin, val);
+    digitalWrite(pin, val);  // Will decode port automatically
 }
 
 void digitalWritePortB(int pin, int val) {
-    digitalWriteHelper(GPIOB, pin, val);
+    digitalWrite(pin + 16, val);  // Add 16 to get PB pin number
 }
 
-// Helper function to toggle pin on a specific port
-static void togglePinHelper(GPIO_TypeDef *port, int pin) {
-    port->ODR ^= (1 << pin);
+// Updated togglePin to decode port from pin number (like starter code)
+void togglePin(int gpio_pin) {
+	// Get pointer to base address of the corresponding GPIO pin and pin offset
+	GPIO_TypeDef * GPIO_PORT_PTR = gpioPinToBase(gpio_pin);
+	int pin_offset = gpioPinOffset(gpio_pin);
+
+	// Use XOR to toggle
+	GPIO_PORT_PTR->ODR ^= (1 << pin_offset);
 }
 
-// Legacy function (defaults to GPIOB for backward compatibility)
-void togglePin(int pin) {
-    togglePinPortB(pin);
-}
-
+// Legacy functions for backward compatibility
 void togglePinPortA(int pin) {
-    togglePinHelper(GPIOA, pin);
+    togglePin(pin);  // Will decode port automatically
 }
 
 void togglePinPortB(int pin) {
-    togglePinHelper(GPIOB, pin);
+    togglePin(pin + 16);  // Add 16 to get PB pin number
 }

@@ -41,5 +41,13 @@ void initSPIControlPins(void);
 /* Read drum command from FPGA via SPI */
 uint8_t readDrumCommand(void);
 
+/* Read 15-byte sensor data packet from FPGA via SPI */
+void readSensorDataPacket15(uint8_t *packet);
+
+/* Parse 15-byte sensor data packet into structured format */
+void parseSensorDataPacket15(const uint8_t *packet, 
+                              int16_t *quat_w, int16_t *quat_x, int16_t *quat_y, int16_t *quat_z,
+                              int16_t *gyro_x, int16_t *gyro_y, int16_t *gyro_z);
+
 #endif
 
