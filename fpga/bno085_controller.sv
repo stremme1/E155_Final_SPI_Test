@@ -18,7 +18,7 @@ module bno085_controller (
     input  logic [7:0]  spi_rx_data,
     input  logic        spi_busy,
     output logic        cs_n,     // Chip Select (active low)
-    output logic        ps0_wake, // PS0/WAKE (active low)
+    // ps0_wake removed - not connected to pin
 
     // INT pin (REQUIRED for stable SPI operation per Adafruit documentation)
     input  logic        int_n,  // Active LOW interrupt - goes LOW when data ready
@@ -78,6 +78,9 @@ module bno085_controller (
     
     // Command selection
     logic [1:0] cmd_select; // 0=ProdID, 1=Rot, 2=Gyro
+    
+    // Internal ps0_wake signal (not connected to pin)
+    logic ps0_wake;
     
     // Temporary storage for parsing (little-endian: LSB first)
     logic [7:0] temp_byte_lsb;
@@ -224,8 +227,9 @@ module bno085_controller (
                 end
 
                 // 2. Wake the sensor (PS0 Low) - per datasheet 1.2.4.3
+                // Note: ps0_wake is now internal, always high (no pin connection)
                 INIT_WAKE: begin
-                    ps0_wake <= 1'b0; // Drive Low to wake
+                    ps0_wake <= 1'b1; // Keep high (no pin to drive)
                     delay_counter <= 19'd0;
                     state <= INIT_WAIT_INT;
                 end
