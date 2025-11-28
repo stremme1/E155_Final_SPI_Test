@@ -102,12 +102,6 @@ void handle_drum_command(uint8_t command) {
 }
 
 // Main function
-// NOTE: Only ONE main() function should be active at a time!
-// This is the ACTIVE main() - receives drum commands from FPGA via SPI
-// To use main_sensor_data.c instead:
-//   1. Comment out this main() function
-//   2. Uncomment main() in main_sensor_data.c
-//   3. Rebuild the project
 int main(void) {
     // Initialize system
     configureFlash();

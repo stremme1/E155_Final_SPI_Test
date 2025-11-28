@@ -64,7 +64,6 @@
       <file file_name="wav_arrays/hihat_closed_sample.c" />
       <file file_name="wav_arrays/hihat_open_sample.c" />
       <file file_name="wav_arrays/kick_sample.c" />
-      <file file_name="main.c" />
       <file file_name="main_integrated.c" />
       <file file_name="main_sensor_data.c" />
       <file file_name="wav_arrays/ride_sample.c" />
