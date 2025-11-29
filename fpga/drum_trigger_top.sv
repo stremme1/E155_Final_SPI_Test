@@ -34,12 +34,7 @@ module drum_trigger_top (
     output logic        cs_n1,       // Sensor 1 chip select (separate)
     input  logic        int1,        // Sensor 1 interrupt (separate)
     
-    // BNO085 Sensor 2 SPI Interface (Left Hand)
-    input  logic        miso2,       // Sensor 2 MISO (separate)
-    output logic        cs_n2,       // Sensor 2 chip select (separate)
-    input  logic        int2,        // Sensor 2 interrupt (separate)
-    
-    // Shared BNO085 Control
+    // Shared BNO085 Control (single BNO085 sensor configuration)
     output logic        bno085_rst_n, // Shared reset (both sensors)
     
     // Debug / Status LEDs
@@ -59,11 +54,10 @@ module drum_trigger_top (
     logic initialized1, error1;
     
     // BNO085 Sensor 2 signals (Left Hand) - UNUSED (single-sensor configuration)
-    // Kept for interface compatibility with mcu_spi_slave, but tied off below
+    // Kept ONLY for interface compatibility with mcu_spi_slave, but tied off below
     logic quat2_valid, gyro2_valid;
     logic signed [15:0] quat2_w, quat2_x, quat2_y, quat2_z;
     logic signed [15:0] gyro2_x, gyro2_y, gyro2_z;
-    logic initialized2, error2;
     
     // SPI master signals for Sensor 1
     logic spi1_start, spi1_tx_valid, spi1_tx_ready, spi1_rx_valid, spi1_busy;
@@ -178,15 +172,12 @@ module drum_trigger_top (
     );
     
     // ============================================
-    // BNO085 Sensor 2 (Left Hand) - TIED OFF
+    // BNO085 Sensor 2 (Left Hand) - TIED OFF (no external ports)
     // ============================================
     //
     // NOTE: For this build we only use a single BNO085 sensor.
     // Sensor 2 logic is removed to avoid multiple drivers on `sclk`/`mosi`.
     // We keep the signals for compatibility, but tie them to safe values.
-
-    // Keep second sensor chip select inactive and ignore its interrupt
-    assign cs_n2 = 1'b1;  // Never select sensor 2
 
     // Tie off all Sensor 2 data/flags so MCU knows this sensor is inactive
     assign quat2_valid = 1'b0;
@@ -198,8 +189,6 @@ module drum_trigger_top (
     assign gyro2_x = '0;
     assign gyro2_y = '0;
     assign gyro2_z = '0;
-    assign initialized2 = 1'b0;
-    assign error2 = 1'b0;
     
     // Status LEDs (only sensor 1 is used)
     assign led_initialized = initialized1;
