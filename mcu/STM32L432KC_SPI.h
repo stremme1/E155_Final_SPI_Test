@@ -49,5 +49,19 @@ void parseSensorDataPacket15(const uint8_t *packet,
                               int16_t *quat_w, int16_t *quat_x, int16_t *quat_y, int16_t *quat_z,
                               int16_t *gyro_x, int16_t *gyro_y, int16_t *gyro_z);
 
+/* Read 32-byte sensor data packet from FPGA via SPI */
+void readSensorDataPacket(uint8_t *packet);
+
+/* Parse 32-byte sensor data packet into structured format */
+void parseSensorDataPacket(const uint8_t *packet,
+                           // Sensor 1 (Right Hand)
+                           int16_t *quat1_w, int16_t *quat1_x, int16_t *quat1_y, int16_t *quat1_z,
+                           int16_t *gyro1_x, int16_t *gyro1_y, int16_t *gyro1_z,
+                           uint8_t *quat1_valid, uint8_t *gyro1_valid,
+                           // Sensor 2 (Left Hand)
+                           int16_t *quat2_w, int16_t *quat2_x, int16_t *quat2_y, int16_t *quat2_z,
+                           int16_t *gyro2_x, int16_t *gyro2_y, int16_t *gyro2_z,
+                           uint8_t *quat2_valid, uint8_t *gyro2_valid);
+
 #endif
 

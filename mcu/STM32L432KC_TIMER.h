@@ -11,20 +11,10 @@
 #define STM32L4_TIMER_H
 
 #include <stdint.h>
-#include "STM32L4xx/Device/Include/stm32l432xx.h" // Include STM32 definitions for TIM_TypeDef, GPIO_TypeDef, GPIOA, TIM2
+#include "STM32L4xx/Device/Include/stm32l432xx.h"  // Includes TIM_TypeDef, GPIO_TypeDef, TIM2, GPIOA, etc.
 
-// Timer definitions
-#define __IO volatile
-
-// Base addresses (only define if not already defined)
-#ifndef TIM2_BASE
-#define TIM2_BASE (0x40000000UL)
-#endif
-#ifndef GPIOA_BASE
-#define GPIOA_BASE (0x48000000UL)
-#endif
-
-// TIM_TypeDef, TIM2, GPIO_TypeDef, and GPIOA are now defined in stm32l432xx.h
+// All type definitions (TIM_TypeDef, GPIO_TypeDef) and macros (TIM2_BASE, GPIOA_BASE, TIM2, GPIOA)
+// are now provided by stm32l432xx.h - no need to redefine them
 
 // Function prototypes
 void TIM2_Init(void);

@@ -1,7 +1,7 @@
 # MCU Files List
 
 ## Main Application
-- **`main_integrated.c`** - Main application file (SPI + drum playback)
+- **`main.c`** - Main application file (SPI + sensor decoding + drum detection + audio playback)
 
 ## STM32L432KC Libraries
 - **`STM32L432KC_SPI.c/.h`** - SPI communication
@@ -37,5 +37,5 @@
 4. Add `CMSIS_5/CMSIS/Core/Include/` to includes
 5. Add `wav_arrays/` to includes
 6. Use `STM32L4xx_Flash.icf` as linker script
-7. Set `main_integrated.c` as main file
+7. Set `main.c` as main file
 

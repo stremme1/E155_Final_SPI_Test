@@ -59,13 +59,18 @@
     </folder>
     <folder Name="Source Files">
       <configuration Name="Common" filter="c;cpp;cxx;cc;h;s;asm;inc" />
+      <file file_name="audio_player.c" />
+      <file file_name="audio_player.h" />
+      <file file_name="bno085_decoder.c" />
+      <file file_name="bno085_decoder.h" />
       <file file_name="wav_arrays/crash_sample.c" />
+      <file file_name="drum_detector.c" />
+      <file file_name="drum_detector.h" />
       <file file_name="wav_arrays/drum_samples.h" />
       <file file_name="wav_arrays/hihat_closed_sample.c" />
       <file file_name="wav_arrays/hihat_open_sample.c" />
       <file file_name="wav_arrays/kick_sample.c" />
-      <file file_name="main_integrated.c" />
-      <file file_name="main_sensor_data.c" />
+      <file file_name="main.c" />
       <file file_name="wav_arrays/ride_sample.c" />
       <file file_name="wav_arrays/snare_sample.c" />
       <file file_name="STM32L432KC_DAC.c" />

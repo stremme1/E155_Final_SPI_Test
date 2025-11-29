@@ -11,18 +11,10 @@
 #define STM32L4_DAC_H
 
 #include <stdint.h>
-#include "STM32L4xx/Device/Include/stm32l432xx.h"  // Include STM32 definitions for DAC_TypeDef, GPIO_TypeDef, GPIOA, __IO
+#include "STM32L4xx/Device/Include/stm32l432xx.h"  // Includes DAC_TypeDef, DAC, GPIO_TypeDef, GPIOA, etc.
 
-// Base addresses (only define if not already defined)
-#ifndef APB1PERIPH_BASE
-#define APB1PERIPH_BASE (0x40000000UL)
-#endif
-#ifndef DAC_BASE
-#define DAC_BASE (APB1PERIPH_BASE + 0x7400UL)
-#endif
-
-// DAC_TypeDef and DAC are now defined in stm32l432xx.h
-// GPIO_TypeDef and GPIOA are also defined in stm32l432xx.h
+// All type definitions (DAC_TypeDef, GPIO_TypeDef) and macros (APB1PERIPH_BASE, DAC_BASE, DAC, GPIOA)
+// are now provided by stm32l432xx.h - no need to redefine them
 
 // DAC channel definitions
 #define DAC_CHANNEL_1 1

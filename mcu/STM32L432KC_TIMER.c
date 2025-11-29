@@ -82,8 +82,7 @@ void TIM2_ConfigurePA5(void) {
     GPIOA->MODER |= (0b10 << 10);   // Set bits 11:10 to 10 (alternate function)
     
     // Set alternate function to AF1 (TIM2_CH1)
-    // PA5 is in AFR[0] (low register, pins 0-7)
-    // PA5 bits are at position 20 (5 * 4 = 20)
+    // PA5 is pin 5, which uses AFR[0] (low register), bits 20-23 (5 * 4 = 20)
     GPIOA->AFR[0] &= ~(0b1111 << 20);  // Clear bits 23:20 (PA5)
     GPIOA->AFR[0] |= (0b0001 << 20);   // Set bits 23:20 to 0001 (AF1 = TIM2_CH1)
 }

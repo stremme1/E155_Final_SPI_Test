@@ -131,3 +131,83 @@ void parseSensorDataPacket15(const uint8_t *packet,
     *gyro_z = (int16_t)(packet[13] | (packet[14] << 8));
 }
 
+/* Read 32-byte sensor data packet from FPGA via SPI - Lab07 style
+ * Packet format: [Header(0xAA)][Sensor1_Quat][Sensor1_Gyro][Sensor2_Quat][Sensor2_Gyro][Flags]
+ * All 16-bit values are MSB,LSB format (MSB first, LSB second)
+ */
+void readSensorDataPacket(uint8_t *packet) {
+    int i;
+    
+    // Wait for DONE signal (like Lab07 line 142)
+    while(!digitalRead(PA6));
+    
+    // Read 32 bytes (like Lab07 lines 144-148)
+    for(i = 0; i < 32; i++) {
+        digitalWrite(PA11, 1); // CE high (like Lab07 line 145)
+        packet[i] = spiSendReceive(0);  
+        digitalWrite(PA11, 0); // CE low (like Lab07 line 147)
+    }
+    
+    while(SPI1->SR & SPI_SR_BSY); // Confirm all SPI transactions are completed (like Lab07 line 138)
+    
+    // Acknowledge with LOAD (like Lab07 pattern)
+    digitalWrite(PA5, 1);
+    digitalWrite(PA5, 0);
+}
+
+/* Parse 32-byte sensor data packet into structured format
+ * Packet format: [Header(0xAA)][Sensor1_Quat][Sensor1_Gyro][Sensor2_Quat][Sensor2_Gyro][Flags]
+ * All 16-bit values are MSB,LSB format (MSB first, LSB second)
+ */
+void parseSensorDataPacket(const uint8_t *packet,
+                           // Sensor 1 (Right Hand)
+                           int16_t *quat1_w, int16_t *quat1_x, int16_t *quat1_y, int16_t *quat1_z,
+                           int16_t *gyro1_x, int16_t *gyro1_y, int16_t *gyro1_z,
+                           uint8_t *quat1_valid, uint8_t *gyro1_valid,
+                           // Sensor 2 (Left Hand)
+                           int16_t *quat2_w, int16_t *quat2_x, int16_t *quat2_y, int16_t *quat2_z,
+                           int16_t *gyro2_x, int16_t *gyro2_y, int16_t *gyro2_z,
+                           uint8_t *quat2_valid, uint8_t *gyro2_valid) {
+    // Verify header
+    if (packet[0] != 0xAA) {
+        // Invalid header - set all values to 0
+        *quat1_w = *quat1_x = *quat1_y = *quat1_z = 0;
+        *gyro1_x = *gyro1_y = *gyro1_z = 0;
+        *quat1_valid = *gyro1_valid = 0;
+        *quat2_w = *quat2_x = *quat2_y = *quat2_z = 0;
+        *gyro2_x = *gyro2_y = *gyro2_z = 0;
+        *quat2_valid = *gyro2_valid = 0;
+        return;
+    }
+    
+    // Sensor 1 Quaternion (bytes 1-8, MSB,LSB format)
+    *quat1_w = (int16_t)((packet[1] << 8) | packet[2]);
+    *quat1_x = (int16_t)((packet[3] << 8) | packet[4]);
+    *quat1_y = (int16_t)((packet[5] << 8) | packet[6]);
+    *quat1_z = (int16_t)((packet[7] << 8) | packet[8]);
+    
+    // Sensor 1 Gyroscope (bytes 9-14, MSB,LSB format)
+    *gyro1_x = (int16_t)((packet[9] << 8) | packet[10]);
+    *gyro1_y = (int16_t)((packet[11] << 8) | packet[12]);
+    *gyro1_z = (int16_t)((packet[13] << 8) | packet[14]);
+    
+    // Sensor 1 Flags (byte 15)
+    *quat1_valid = packet[15] & 0x01;
+    *gyro1_valid = (packet[15] >> 1) & 0x01;
+    
+    // Sensor 2 Quaternion (bytes 16-23, MSB,LSB format)
+    *quat2_w = (int16_t)((packet[16] << 8) | packet[17]);
+    *quat2_x = (int16_t)((packet[18] << 8) | packet[19]);
+    *quat2_y = (int16_t)((packet[20] << 8) | packet[21]);
+    *quat2_z = (int16_t)((packet[22] << 8) | packet[23]);
+    
+    // Sensor 2 Gyroscope (bytes 24-29, MSB,LSB format)
+    *gyro2_x = (int16_t)((packet[24] << 8) | packet[25]);
+    *gyro2_y = (int16_t)((packet[26] << 8) | packet[27]);
+    *gyro2_z = (int16_t)((packet[28] << 8) | packet[29]);
+    
+    // Sensor 2 Flags (byte 30)
+    *quat2_valid = packet[30] & 0x01;
+    *gyro2_valid = (packet[30] >> 1) & 0x01;
+}
+

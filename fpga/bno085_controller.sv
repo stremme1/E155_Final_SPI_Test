@@ -4,6 +4,7 @@
 // Handles SHTP (Sensor Hub Transport Protocol) communication over SPI
 // Reads Rotation Vector (quaternion) and Gyroscope reports
 // Optimized for low resource usage (ROM-based initialization, no large buffers)
+// PS0/WAKE pin removed - always high, hardwired to 3.3V
 
 module bno085_controller (
     input  logic        clk,
@@ -18,7 +19,7 @@ module bno085_controller (
     input  logic [7:0]  spi_rx_data,
     input  logic        spi_busy,
     output logic        cs_n,     // Chip Select (active low)
-    output logic        ps0_wake, // PS0/WAKE (active low)
+    // PS0/WAKE pin removed - hardwired to 3.3V (always high)
 
     // INT pin (REQUIRED for stable SPI operation per Adafruit documentation)
     input  logic        int_n,  // Active LOW interrupt - goes LOW when data ready
@@ -55,9 +56,8 @@ module bno085_controller (
     typedef enum logic [3:0] {
         IDLE,
         INIT_WAIT_RESET,
-        INIT_WAKE,
-        INIT_WAIT_INT,
-        INIT_CS_SETUP,      // Added: CS setup before SPI transaction
+        INIT_WAIT_INT,  // Removed INIT_WAKE state - PS0 always high
+        INIT_CS_SETUP,
         INIT_SEND_BODY,
         INIT_DONE_CHECK,
         WAIT_DATA,
@@ -184,7 +184,6 @@ module bno085_controller (
             spi_tx_valid <= 1'b0;
             byte_cnt <= 8'd0;
             cs_n <= 1'b1;
-            ps0_wake <= 1'b1; // Must be high at reset for SPI mode
             quat_valid <= 1'b0;
             gyro_valid <= 1'b0;
             current_report_id <= 8'd0;
@@ -213,24 +212,18 @@ module bno085_controller (
                 // 1. Wait after reset to ensure sensor is ready (~100ms)
                 INIT_WAIT_RESET: begin
                     cs_n <= 1'b1;
-                    ps0_wake <= 1'b1;
+                    // PS0/WAKE is hardwired high, no need to control it
                     if (delay_counter < 19'd300_000) begin
                         delay_counter <= delay_counter + 1;
                     end else begin
-                        state <= INIT_WAKE;
+                        state <= INIT_WAIT_INT;  // Skip INIT_WAKE, go directly to wait for INT
                         delay_counter <= 19'd0;
                         cmd_select <= 2'd0; // Start with ProdID
                     end
                 end
 
-                // 2. Wake the sensor (PS0 Low) - per datasheet 1.2.4.3
-                INIT_WAKE: begin
-                    ps0_wake <= 1'b0; // Drive Low to wake
-                    delay_counter <= 19'd0;
-                    state <= INIT_WAIT_INT;
-                end
-
-                // 3. Wait for INT low (Sensor Ready) with timeout - per datasheet 6.5.4 (twk = 150 µs max)
+                // 2. Wait for INT low (Sensor Ready) with timeout - per datasheet 6.5.4 (twk = 150 µs max)
+                // PS0/WAKE is always high (hardwired), so sensor should be ready
                 INIT_WAIT_INT: begin
                     if (!int_n_sync) begin
                         // INT asserted, sensor is ready
@@ -247,13 +240,13 @@ module bno085_controller (
                 // CS setup before SPI transaction - per datasheet 6.5.2 (tcssu = 0.1 µs min)
                 INIT_CS_SETUP: begin
                     cs_n <= 1'b0; // Assert CS
-                    ps0_wake <= 1'b1; // Release Wake once CS is asserted
+                    // PS0/WAKE is hardwired high, no need to control it
                     delay_counter <= 19'd0;
                     byte_cnt <= 8'd0;
                     state <= INIT_SEND_BODY;
                 end
                 
-                // 4. Send Command Body (simplified SPI handshake)
+                // 3. Send Command Body (simplified SPI handshake)
                 INIT_SEND_BODY: begin
                     cs_n <= 1'b0;
                     
@@ -280,10 +273,9 @@ module bno085_controller (
                     end
                 end
                 
-                // 5. Check if more commands or done
+                // 4. Check if more commands or done
                 INIT_DONE_CHECK: begin
                     cs_n <= 1'b1;
-                    ps0_wake <= 1'b1; // Release PS0 before next command
                     // Delay 10ms between commands
                     if (delay_counter < 19'd30_000) begin
                         delay_counter <= delay_counter + 1;
@@ -291,7 +283,7 @@ module bno085_controller (
                         delay_counter <= 19'd0;
                         if (cmd_select < 2'd2) begin
                             cmd_select <= cmd_select + 1;
-                            state <= INIT_WAKE; // Go back to Wake for next command
+                            state <= INIT_WAIT_INT; // Go back to wait for INT for next command
                         end else begin
                             initialized <= 1'b1;
                             state <= WAIT_DATA;
@@ -299,10 +291,10 @@ module bno085_controller (
                     end
                 end
                 
-                // 6. Normal Operation: Wait for Data Ready
+                // 5. Normal Operation: Wait for Data Ready
                 WAIT_DATA: begin
                     cs_n <= 1'b1;
-                    ps0_wake <= 1'b1; // Ensure wake is released
+                    // PS0/WAKE is hardwired high, no need to control it
                     if (!int_n_sync) begin
                         state <= READ_HEADER_START;
                         byte_cnt <= 8'd0;
@@ -469,7 +461,7 @@ module bno085_controller (
                 ERROR_STATE: begin
                     error <= 1'b1;
                     cs_n <= 1'b1;
-                    ps0_wake <= 1'b1;
+                    // PS0/WAKE is hardwired high, no need to control it
                     // Could add recovery logic here (e.g., reset and retry)
                     state <= ERROR_STATE;
                 end
@@ -480,3 +472,4 @@ module bno085_controller (
     end
     
 endmodule
+
