@@ -18,14 +18,15 @@ void initSPI(int br, int cpol, int cpha) {
     
     RCC->APB2ENR |= RCC_APB2ENR_SPI1EN; // Turn on SPI1 clock domain (SPI1EN bit in APB2ENR)
 
+    // Set output speed type to high for SCK BEFORE configuring pins (for cleaner clock signal)
+    GPIOB->OSPEEDR &= ~(0b11 << 6); // Clear existing speed setting for PB3
+    GPIOB->OSPEEDR |= (0b11 << 6);  // Set to high speed (0b11 = very high speed)
+
     // Initially assigning SPI pins
     pinMode(SPI_SCK, GPIO_ALT); // SPI1_SCK
     pinMode(SPI_MISO, GPIO_ALT); // SPI1_MISO
     pinMode(SPI_MOSI, GPIO_ALT); // SPI1_MOSI
     pinMode(SPI_CE, GPIO_OUTPUT); //  Manual CS (like Lab07)
-
-    // Set output speed type to high for SCK
-    GPIOB->OSPEEDR |= (GPIO_OSPEEDR_OSPEED3);
 
     // Set to AF05 for SPI alternate functions
     GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL3, 5);
