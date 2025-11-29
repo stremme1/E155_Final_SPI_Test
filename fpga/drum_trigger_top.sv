@@ -58,7 +58,8 @@ module drum_trigger_top (
     logic signed [15:0] gyro1_x, gyro1_y, gyro1_z;
     logic initialized1, error1;
     
-    // BNO085 Sensor 2 signals (Left Hand)
+    // BNO085 Sensor 2 signals (Left Hand) - UNUSED (single-sensor configuration)
+    // Kept for interface compatibility with mcu_spi_slave, but tied off below
     logic quat2_valid, gyro2_valid;
     logic signed [15:0] quat2_w, quat2_x, quat2_y, quat2_z;
     logic signed [15:0] gyro2_x, gyro2_y, gyro2_z;
@@ -68,7 +69,7 @@ module drum_trigger_top (
     logic spi1_start, spi1_tx_valid, spi1_tx_ready, spi1_rx_valid, spi1_busy;
     logic [7:0] spi1_tx_data, spi1_rx_data;
     
-    // SPI master signals for Sensor 2
+    // SPI master signals for Sensor 2 - UNUSED in single-sensor configuration
     logic spi2_start, spi2_tx_valid, spi2_tx_ready, spi2_rx_valid, spi2_busy;
     logic [7:0] spi2_tx_data, spi2_rx_data;
     
@@ -177,54 +178,32 @@ module drum_trigger_top (
     );
     
     // ============================================
-    // BNO085 Sensor 2 (Left Hand)
+    // BNO085 Sensor 2 (Left Hand) - TIED OFF
     // ============================================
+    //
+    // NOTE: For this build we only use a single BNO085 sensor.
+    // Sensor 2 logic is removed to avoid multiple drivers on `sclk`/`mosi`.
+    // We keep the signals for compatibility, but tie them to safe values.
+
+    // Keep second sensor chip select inactive and ignore its interrupt
+    assign cs_n2 = 1'b1;  // Never select sensor 2
+
+    // Tie off all Sensor 2 data/flags so MCU knows this sensor is inactive
+    assign quat2_valid = 1'b0;
+    assign gyro2_valid = 1'b0;
+    assign quat2_w = '0;
+    assign quat2_x = '0;
+    assign quat2_y = '0;
+    assign quat2_z = '0;
+    assign gyro2_x = '0;
+    assign gyro2_y = '0;
+    assign gyro2_z = '0;
+    assign initialized2 = 1'b0;
+    assign error2 = 1'b0;
     
-    // SPI Master for BNO085 Sensor 2
-    spi_master spi_master_inst2 (
-        .clk(clk),
-        .rst_n(rst_n),
-        .start(spi2_start),
-        .tx_valid(spi2_tx_valid),
-        .tx_data(spi2_tx_data),
-        .tx_ready(spi2_tx_ready),
-        .rx_valid(spi2_rx_valid),
-        .rx_data(spi2_rx_data),
-        .busy(spi2_busy),
-        .sclk(sclk),
-        .mosi(mosi),
-        .miso(miso2)
-    );
-    
-    // BNO085 Controller for Sensor 2
-    bno085_controller bno085_ctrl_inst2 (
-        .clk(clk),
-        .rst_n(rst_n),
-        .spi_start(spi2_start),
-        .spi_tx_valid(spi2_tx_valid),
-        .spi_tx_data(spi2_tx_data),
-        .spi_tx_ready(spi2_tx_ready),
-        .spi_rx_valid(spi2_rx_valid),
-        .spi_rx_data(spi2_rx_data),
-        .spi_busy(spi2_busy),
-        .cs_n(cs_n2),
-        .int_n(int2),
-        .quat_valid(quat2_valid),
-        .quat_w(quat2_w),
-        .quat_x(quat2_x),
-        .quat_y(quat2_y),
-        .quat_z(quat2_z),
-        .gyro_valid(gyro2_valid),
-        .gyro_x(gyro2_x),
-        .gyro_y(gyro2_y),
-        .gyro_z(gyro2_z),
-        .initialized(initialized2),
-        .error(error2)
-    );
-    
-    // Status LEDs (both sensors must be initialized)
-    assign led_initialized = initialized1 && initialized2;
-    assign led_error = error1 || error2;
+    // Status LEDs (only sensor 1 is used)
+    assign led_initialized = initialized1;
+    assign led_error = error1;
     
     // ============================================
     // MCU SPI Slave for sending raw sensor data
