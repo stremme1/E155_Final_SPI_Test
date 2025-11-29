@@ -15,14 +15,11 @@
 module drum_trigger_top (
     input  logic        fpga_rst_n,  // Global FPGA reset pin (active low)
     
-    // MCU SPI Interface (FPGA is slave)
+    // MCU SPI Interface (FPGA is slave) - CS-only pattern
     input  logic        mcu_sck,     // SPI clock from MCU (PB3)
-    input  logic        mcu_sdi,     // SPI data in from MCU (PB5 MOSI, not used for commands)
+    input  logic        mcu_sdi,     // SPI data in from MCU (PB5 MOSI, ignored in read-only mode)
     output logic        mcu_sdo,     // SPI data out to MCU (PB4 MISO)
-    input  logic        mcu_cs,      // Chip select from MCU (PA11, active low - CS low = transaction active)
-    // Note: mcu_load and mcu_done not used in simple CS-based pattern, but kept for compatibility
-    input  logic        mcu_load,    // Load signal from MCU (PA5) - not used
-    output logic        mcu_done,    // Done signal to MCU (PA6) - not used
+    // Note: No LOAD/DONE handshaking - CS (PA11) controls transaction timing
     
     // BNO085 Sensor 1 SPI Interface (Right Hand)
     output logic        sclk,        // Shared SPI clock
@@ -187,14 +184,17 @@ module drum_trigger_top (
     // ============================================
     // Single sensor only - sends 16-byte packet with sensor 1 data
     
+    // CS-only pattern: LOAD/DONE not used, tie off
+    logic unused_load = 1'b0;
+    logic unused_done;
+    
     spi_slave_mcu spi_slave_mcu_inst (
         .clk(clk),
         .sck(mcu_sck),
         .sdi(mcu_sdi),
         .sdo(mcu_sdo),
-        .cs_n(mcu_cs),  // CS signal (active low: CS low = transaction active)
-        .load(mcu_load),  // Not used in simple CS pattern, but kept for compatibility
-        .done(mcu_done),  // Not used in simple CS pattern, but kept for compatibility
+        .load(unused_load),  // Not used in CS-only pattern
+        .done(unused_done),  // Not used in CS-only pattern
         // Sensor 1 (Right Hand) - single sensor only
         .quat1_valid(quat1_valid),
         .quat1_w(quat1_w),

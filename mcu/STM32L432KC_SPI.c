@@ -13,24 +13,24 @@
  *          1: data changed on leading edge of clk and captured on next edge)
  * Refer to the datasheet for more low-level details. */ 
 void initSPI(int br, int cpol, int cpha) {
-    // Turn on GPIOA and GPIOB clock domains (GPIOAEN and GPIOBEN bits in AHB1ENR)
+    // Turn on GPIOA and GPIOB clock domains (GPIOAEN and GPIOBEN bits in AHB2ENR)
     RCC->AHB2ENR |= (RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN);
     
     RCC->APB2ENR |= RCC_APB2ENR_SPI1EN; // Turn on SPI1 clock domain (SPI1EN bit in APB2ENR)
 
-    // Initially assigning SPI pins
-    pinMode(SPI_SCK, GPIO_ALT); // SPI1_SCK
-    pinMode(SPI_MISO, GPIO_ALT); // SPI1_MISO
-    pinMode(SPI_MOSI, GPIO_ALT); // SPI1_MOSI
-    pinMode(SPI_CE, GPIO_OUTPUT); //  Manual CS
+    // Configure SPI pins as alternate function (AF5)
+    pinMode(SPI_SCK, GPIO_ALT); // SPI1_SCK (PB3)
+    pinMode(SPI_MISO, GPIO_ALT); // SPI1_MISO (PB4)
+    pinMode(SPI_MOSI, GPIO_ALT); // SPI1_MOSI (PB5)
+    pinMode(SPI_CE, GPIO_OUTPUT); // Manual CS (PA11)
 
-    // Set output speed type to high for SCK
+    // Set output speed type to high for SCK (before setting alternate function)
     GPIOB->OSPEEDR |= (GPIO_OSPEEDR_OSPEED3);
 
+    // Clear AFR bits before setting (match working code pattern)
+    GPIOB->AFR[0] &= ~((0xF << (3 * 4)) | (0xF << (4 * 4)) | (0xF << (5 * 4)));
     // Set to AF05 for SPI alternate functions
-    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL3, 5);
-    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL4, 5);
-    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL5, 5);
+    GPIOB->AFR[0] |= ((5 << (3 * 4)) | (5 << (4 * 4)) | (5 << (5 * 4)));
     
     SPI1->CR1 |= _VAL2FLD(SPI_CR1_BR, br); // Set baud rate divider
 
@@ -131,28 +131,28 @@ void parseSensorDataPacket15(const uint8_t *packet,
     *gyro_z = (int16_t)(packet[13] | (packet[14] << 8));
 }
 
-/* Read 16-byte sensor data packet from FPGA via SPI - Simple CS-based pattern
+/* Read 16-byte sensor data packet from FPGA via SPI - CS-only pattern
  * Packet format: [Header(0xAA)][Sensor1_Quat][Sensor1_Gyro][Sensor1_Flags]
  * All 16-bit values are MSB,LSB format (MSB first, LSB second)
  * Single sensor only - sensor 2 data is not included in packet
  * 
- * Simple pattern matching working code:
- * - CS low, read all bytes, CS high
- * - No LOAD/DONE handshaking (FPGA always has data ready)
+ * Simple CS-based read: CS low → read bytes → CS high
+ * No LOAD/DONE handshaking needed
  */
 void readSensorDataPacket(uint8_t *packet) {
     int i;
     
     // CS low to start transaction
-    digitalWrite(PA11, 0);
+    digitalWrite(SPI_CE, 0);
     
     // Read 16 bytes (single sensor packet)
+    // MCU sends dummy bytes (0x00) to generate SCK, FPGA shifts out data on MISO
     for(i = 0; i < 16; i++) {
-        packet[i] = spiSendReceive(0x00);  // Send dummy byte, read data
+        packet[i] = spiSendReceive(0x00);
     }
     
     // CS high to end transaction
-    digitalWrite(PA11, 1);
+    digitalWrite(SPI_CE, 1);
 }
 
 /* Parse 16-byte sensor data packet into structured format
