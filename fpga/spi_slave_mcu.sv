@@ -39,7 +39,6 @@ module spi_slave_mcu(
     // Packet buffer - assembled from sensor data
     logic [7:0] packet_buffer [0:PACKET_SIZE-1];
     logic       sdodelayed;
-    logic       shift_reg_loaded = 1'b0;  // Track if shift register has been loaded in current transaction
     
     // Assemble packet from sensor data (using assign statements for iverilog compatibility)
     // Header
@@ -75,10 +74,12 @@ module spi_slave_mcu(
     
     // SPI Mode 0 (CPOL=0, CPHA=0): MCU samples on rising edge, FPGA changes on falling edge
     // CS-only operation: Shift register loads on first posedge, shifts on subsequent edges
-    // Reset shift_reg_loaded when SCK has been idle (CS high) - detected on system clock
+    // Use bit counter to track transaction - only driven from SCK clock domain
+    logic [7:0] bit_counter = 8'd0;
+    
     always_ff @(posedge sck) begin
-        if (!shift_reg_loaded) begin
-            // First posedge after idle: load packet buffer into shift register (MSB first)
+        if (bit_counter == 8'd0) begin
+            // First posedge: load packet buffer into shift register (MSB first)
             // Pack all bytes: packet_buffer[0] is MSB of first byte, goes to bit 127
             // Read-only mode: ignore SDI (MOSI), only shift out data
             packet_shift_reg = {
@@ -87,36 +88,23 @@ module spi_slave_mcu(
                 packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
                 packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
             };
-            shift_reg_loaded <= 1'b1;
+            bit_counter <= 8'd1;
         end else begin
             // Subsequent posedges: shift left (MSB first)
             // Read-only mode: ignore SDI, shift in 0
             packet_shift_reg = {packet_shift_reg[126:0], 1'b0};
+            if (bit_counter < 8'd127) begin
+                bit_counter <= bit_counter + 1;
+            end else begin
+                // After 128 bits, reset counter for next transaction
+                bit_counter <= 8'd0;
+            end
         end
     end
     
-    // Reset shift_reg_loaded when SCK has been idle (CS high)
-    // Detect SCK idle by monitoring on system clock - if SCK stays low for many cycles, transaction is over
-    logic sck_sync, sck_sync_prev;
-    logic [7:0] sck_idle_counter = 8'd0;
-    always_ff @(posedge clk) begin
-        sck_sync <= sck;  // Synchronize SCK to system clock
-        sck_sync_prev <= sck_sync;
-        
-        if (sck_sync && !sck_sync_prev) begin
-            // SCK rising edge detected - reset idle counter
-            sck_idle_counter <= 8'd0;
-        end else if (!sck_sync) begin
-            // SCK is low/idle - count up
-            if (sck_idle_counter < 8'd255) begin
-                sck_idle_counter <= sck_idle_counter + 1;
-            end
-            // If SCK has been idle for many cycles (>100), reset shift_reg_loaded for next transaction
-            if (sck_idle_counter > 8'd100) begin
-                shift_reg_loaded <= 1'b0;
-            end
-        end
-    end
+    // Note: bit_counter is only driven from SCK domain (posedge sck) to avoid multiple driver errors
+    // It naturally wraps to 0 after 128 bits, ready for the next transaction
+    // No need to reset from clk domain - CS control ensures proper transaction boundaries
     
     // Update output on negedge (when FPGA should change MISO for next bit)
     // SPI Mode 0: FPGA changes MISO on falling edge, MCU samples on rising edge
@@ -130,7 +118,7 @@ module spi_slave_mcu(
     // - Before first posedge: output MSB directly from packet_buffer[0][7]
     // - After first negedge: use sdodelayed (set on negedge)
     // packet_buffer[0][7] is MSB of first byte (bit 7 of byte 0), which is MSB of entire packet
-    assign sdo = (!shift_reg_loaded) ? packet_buffer[0][7] : sdodelayed;
+    assign sdo = (bit_counter == 8'd0) ? packet_buffer[0][7] : sdodelayed;
     
 endmodule
 
