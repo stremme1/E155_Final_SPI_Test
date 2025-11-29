@@ -74,6 +74,10 @@ module mcu_spi_slave(
         load_sync_prev <= load_sync2; // Previous value for edge detection
     end
     
+    // Detect rising edge of synchronized LOAD signal
+    logic load_edge;
+    assign load_edge = load_sync2 && !load_sync_prev;
+    
     // Data ready when either sensor has valid data
     // Simplified logic: set data_ready when valid data arrives, clear when LOAD is acknowledged
     logic data_ready_reg = 1'b0;
@@ -81,10 +85,6 @@ module mcu_spi_slave(
     logic has_valid;  // Combinational signal
     
     assign has_valid = (quat1_valid || gyro1_valid);
-    
-    // Detect rising edge of synchronized LOAD signal
-    logic load_edge;
-    assign load_edge = load_sync2 && !load_sync_prev;
     
     always_ff @(posedge clk) begin
         // Check for LOAD edge (acknowledgment) - highest priority
@@ -100,13 +100,12 @@ module mcu_spi_slave(
                 // New valid data detected - set data ready
                 data_ready_reg <= 1'b1;
                 has_valid_prev <= 1'b1;
-            end else if (!has_valid && has_valid_prev) begin
-                // Valid data was present but is now gone
-                // Clear tracking, but keep data_ready_reg set until LOAD acknowledges
+            end else if (!has_valid) begin
+                // No valid data - update tracking but keep data_ready_reg set
+                // (it will be cleared by LOAD acknowledgment)
                 has_valid_prev <= 1'b0;
             end
             // If has_valid && has_valid_prev, keep data_ready_reg set (already asserted)
-            // If !has_valid && !has_valid_prev, keep current state (waiting for LOAD or new data)
         end
     end
     
