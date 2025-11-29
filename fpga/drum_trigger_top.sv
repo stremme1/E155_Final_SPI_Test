@@ -184,17 +184,12 @@ module drum_trigger_top (
     // ============================================
     // Single sensor only - sends 16-byte packet with sensor 1 data
     
-    // CS-only pattern: LOAD/DONE not used, tie off
-    logic unused_load = 1'b0;
-    logic unused_done;
-    
+    // CS-only pattern: No LOAD/DONE ports needed
     spi_slave_mcu spi_slave_mcu_inst (
         .clk(clk),
         .sck(mcu_sck),
         .sdi(mcu_sdi),
         .sdo(mcu_sdo),
-        .load(unused_load),  // Not used in CS-only pattern
-        .done(unused_done),  // Not used in CS-only pattern
         // Sensor 1 (Right Hand) - single sensor only
         .quat1_valid(quat1_valid),
         .quat1_w(quat1_w),
