@@ -124,11 +124,13 @@ module mcu_spi_slave(
     // SPI transmission: Shift on posedge sck (like aes_spi.sv)
     // Following aes_spi pattern: on first posedge (!wasdone), load AND shift
     // On subsequent posedges (wasdone), shift left
+    // Note: Lab07 uses blocking assignments for immediate update
     always_ff @(posedge sck) begin
         if (!wasdone) begin
             // First posedge: load buffer and shift in one operation (like aes_spi)
             // Pack all bytes into shift register: MSB first (packet_buffer[0] is MSB)
-            packet_shift_reg <= {
+            // Use blocking assignment like Lab07 for immediate update
+            packet_shift_reg = {
                 packet_buffer[0], packet_buffer[1], packet_buffer[2], packet_buffer[3],
                 packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
                 packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
@@ -137,20 +139,21 @@ module mcu_spi_slave(
             };
         end else begin
             // Subsequent posedges: shift left (MSB first)
-            packet_shift_reg <= {packet_shift_reg[126:0], sdi};
+            packet_shift_reg = {packet_shift_reg[126:0], sdi};
         end
     end
     
     // Track previous done state (for edge detection - like aes_spi)
     // aes_spi uses blocking assignment for immediate update
-    always @(negedge sck) begin
-        wasdone = done;
+    always_ff @(negedge sck) begin
+        wasdone = done;  // Blocking assignment for immediate update (like aes_spi)
         sdodelayed = packet_shift_reg[126];  // Next bit to output (MSB of remaining data)
     end
     
     // SDO output: Following aes_spi pattern exactly
     // When done is first asserted (!wasdone), output MSB before first clock edge
     // After first negedge, wasdone becomes true, so use sdodelayed
+    // Note: packet_buffer[0][7] is MSB of first byte, which is MSB of packet (like cyphertext[127] in Lab07)
     assign sdo = (done & !wasdone) ? packet_buffer[0][7] : sdodelayed;
     
 endmodule

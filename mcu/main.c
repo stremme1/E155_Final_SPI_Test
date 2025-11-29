@@ -147,12 +147,12 @@ int main(void) {
     RCC->AHB2ENR |= (RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN | RCC_AHB2ENR_GPIOCEN);
     
     // Initialize SPI as MASTER for FPGA communication
-    // br=3 (divide by 16 = 80MHz/16 = 5MHz), cpol=0, cpha=0 (SPI Mode 0)
-    initSPI(3, 0, 0);
+    // br=1 (divide by 4 = 80MHz/4 = 20MHz), cpol=0, cpha=0 (SPI Mode 0) - matches Lab07
+    initSPI(1, 0, 0);
     
     // Load and done pins (Lab07 style)
     pinMode(PA5, GPIO_OUTPUT);  // LOAD
-    digitalWrite(PA5, 0);       // LOAD low initially (important!)
+    // Note: Lab07 doesn't explicitly initialize LOAD - it starts HIGH in encrypt() function
     pinMode(PA6, GPIO_INPUT);   // DONE
     
     // CE pin (Lab07 style)
