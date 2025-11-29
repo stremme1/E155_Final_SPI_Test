@@ -50,7 +50,7 @@ module tb_mcu_spi_slave;
     end
     
     // DUT
-    mcu_spi_slave dut (
+    spi_slave_mcu dut (
         .clk(clk),
         .sck(sck),
         .sdi(sdi),

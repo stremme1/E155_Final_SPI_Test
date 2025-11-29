@@ -40,7 +40,7 @@ module tb_fpga_mcu_spi;
     end
     
     // FPGA MCU SPI Slave DUT
-    mcu_spi_slave dut (
+    spi_slave_mcu dut (
         .clk(clk),
         .sck(mcu_sck),
         .sdi(mcu_sdi),

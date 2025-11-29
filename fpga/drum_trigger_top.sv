@@ -185,7 +185,7 @@ module drum_trigger_top (
     // ============================================
     // Single sensor only - sends 16-byte packet with sensor 1 data
     
-    mcu_spi_slave mcu_spi_slave_inst (
+    spi_slave_mcu spi_slave_mcu_inst (
         .clk(clk),
         .sck(mcu_sck),
         .sdi(mcu_sdi),

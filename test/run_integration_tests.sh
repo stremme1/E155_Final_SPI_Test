@@ -27,7 +27,7 @@ echo "Test 3.1: FPGA-MCU SPI Communication (tb_fpga_mcu_spi.sv)"
 echo "---------------------------------------------------"
 if iverilog -g2012 -o tb_fpga_mcu_spi.vvp \
     tb_fpga_mcu_spi.sv \
-    ../../fpga/mcu_spi_slave.sv \
+    ../../fpga/spi_slave_mcu.sv \
     ../mocks/mock_mcu_spi_master.sv 2>&1; then
     if vvp tb_fpga_mcu_spi.vvp 2>&1; then
         echo "[PASS] Test 3.1: FPGA-MCU SPI Communication"
@@ -51,7 +51,7 @@ if iverilog -g2012 -o tb_system_integration.vvp \
     ../../fpga/drum_trigger_top.sv \
     ../../fpga/bno085_controller.sv \
     ../../fpga/spi_master.sv \
-    ../../fpga/mcu_spi_slave.sv \
+    ../../fpga/spi_slave_mcu.sv \
     ../mocks/mock_bno085.sv \
     ../mocks/mock_mcu_spi_master.sv \
     ../mocks/hsosc_mock.sv 2>&1; then

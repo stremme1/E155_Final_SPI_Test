@@ -31,7 +31,7 @@ module tb_mcu_spi_slave_simple;
     end
     
     // DUT (single sensor only)
-    mcu_spi_slave dut (
+    spi_slave_mcu dut (
         .clk(clk),
         .sck(sck),
         .sdi(sdi),

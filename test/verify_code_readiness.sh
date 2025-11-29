@@ -30,7 +30,7 @@ cd "$PROJECT_ROOT/fpga"
 FPGA_FILES=(
     "bno085_controller.sv"
     "spi_master.sv"
-    "mcu_spi_slave.sv"
+    "spi_slave_mcu.sv"
     "drum_trigger_top.sv"
 )
 
@@ -112,7 +112,7 @@ echo "Verification 4.3: Check Packet Format Consistency"
 echo "---------------------------------------------------"
 
 # Check FPGA packet format
-FPGA_PACKET_FILE="$PROJECT_ROOT/fpga/mcu_spi_slave.sv"
+FPGA_PACKET_FILE="$PROJECT_ROOT/fpga/spi_slave_mcu.sv"
 MCU_PARSER_FILE="$PROJECT_ROOT/mcu/STM32L432KC_SPI.c"
 
 PACKET_FORMAT_OK=1

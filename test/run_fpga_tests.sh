@@ -49,7 +49,7 @@ echo "Test 2.2: MCU SPI Slave (tb_mcu_spi_slave_simple.sv)"
 echo "---------------------------------------------------"
 if iverilog -g2012 -o tb_mcu_spi_slave_simple.vvp \
     tb_mcu_spi_slave_simple.sv \
-    ../../fpga/mcu_spi_slave.sv 2>&1; then
+    ../../fpga/spi_slave_mcu.sv 2>&1; then
     TEST_OUTPUT=$(vvp tb_mcu_spi_slave_simple.vvp 2>&1)
     if echo "$TEST_OUTPUT" | grep -q "ALL TESTS PASSED"; then
         echo "[PASS] Test 2.2: MCU SPI Slave"

@@ -6,7 +6,7 @@
 // Based on e155-lab7-main 2/fpga/src/aes_spi.sv pattern
 // SPI Mode 0 (CPOL=0, CPHA=0): data sampled on rising edge, changed on falling edge
 
-module mcu_spi_slave(
+module spi_slave_mcu(
     input  logic        clk,           // FPGA system clock
     input  logic        sck,           // SPI clock from MCU
     input  logic        sdi,           // SPI data in (MOSI from MCU, not used for commands)
