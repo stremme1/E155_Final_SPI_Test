@@ -101,28 +101,32 @@ module drum_trigger_top (
     assign bno085_rst_n = bno085_rst_n_delayed;
     assign rst_n = controller_rst_n;  // Controller reset synchronized with BNO085 reset release
     
-    // Clock generation (3MHz from HSOSC)
+    // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
+    // CLKHF_DIV(2'b11) = divide by 16 to get 3MHz from 48MHz
+    // For 48MHz HSOSC: divide by 16 = 3MHz (suitable for SPI)
+    // For different frequencies, adjust CLKHF_DIV:
+    //   2'b00 = divide by 2
+    //   2'b01 = divide by 4  
+    //   2'b10 = divide by 8
+    //   2'b11 = divide by 16
+    
+    // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
+    // Note: HSOSC is a built-in primitive for iCE40UP5k
+    // Make sure your synthesis tool recognizes this primitive
     HSOSC #(.CLKHF_DIV(2'b11)) hf_osc (
-        .CLKHFEN(1'b1),
-        .CLKHFPU(1'b1),
-        .CLKHF(clk)
+        .CLKHFPU(1'b1),   // Power up (must be 1)
+        .CLKHFEN(1'b1),   // Enable (must be 1)
+        .CLKHF(clk)       // Output clock (3MHz from 48MHz / 16)
     );
     
-    // Heartbeat LED (blinks every ~1 second at 3MHz)
-    localparam [23:0] HEARTBEAT_DIV = 24'd3_000_000;
-    logic [23:0] heartbeat_counter;
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            heartbeat_counter <= 24'd0;
-            led_heartbeat <= 1'b0;
-        end else begin
-            heartbeat_counter <= heartbeat_counter + 1;
-            if (heartbeat_counter >= HEARTBEAT_DIV) begin
-                heartbeat_counter <= 24'd0;
-                led_heartbeat <= ~led_heartbeat;
-            end
-        end
+    // Heartbeat LED (1Hz approx)
+    // 3MHz = 3,000,000 cycles/sec. 2^22 = ~4M. Bit 21 toggles every ~0.7s
+    logic [21:0] heartbeat_cnt;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) heartbeat_cnt <= 0;
+        else heartbeat_cnt <= heartbeat_cnt + 1;
     end
+    assign led_heartbeat = heartbeat_cnt[21];
     
     // ============================================
     // BNO085 Sensor 1 (Right Hand)
