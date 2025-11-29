@@ -64,20 +64,31 @@ module mcu_spi_slave(
     // Sensor 1 Flags
     assign packet_buffer[15] = {6'h0, gyro1_valid, quat1_valid};
     
+    // Synchronize LOAD signal from MCU (different clock domain)
+    // 2-stage synchronizer to prevent metastability
+    logic load_sync1, load_sync2, load_sync_prev;
+    
+    always_ff @(posedge clk) begin
+        load_sync1 <= load;      // First stage
+        load_sync2 <= load_sync1; // Second stage (synchronized)
+        load_sync_prev <= load_sync2; // Previous value for edge detection
+    end
+    
     // Data ready when either sensor has valid data
     // Simplified logic: set data_ready when valid data arrives, clear when LOAD is acknowledged
     logic data_ready_reg = 1'b0;
-    logic load_prev = 1'b0;
     logic has_valid_prev = 1'b0;
     logic has_valid;  // Combinational signal
     
     assign has_valid = (quat1_valid || gyro1_valid);
     
+    // Detect rising edge of synchronized LOAD signal
+    logic load_edge;
+    assign load_edge = load_sync2 && !load_sync_prev;
+    
     always_ff @(posedge clk) begin
-        load_prev <= load;
-        
         // Check for LOAD edge (acknowledgment) - highest priority
-        if (load && !load_prev) begin
+        if (load_edge) begin
             // MCU acknowledged - clear data ready
             data_ready_reg <= 1'b0;
             has_valid_prev <= 1'b0;
