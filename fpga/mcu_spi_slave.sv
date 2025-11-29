@@ -65,52 +65,54 @@ module mcu_spi_slave(
     assign packet_buffer[15] = {6'h0, gyro1_valid, quat1_valid};
     
     // Data ready when either sensor has valid data
-    logic data_ready_reg = 1'b0;  // Initialize to 0
-    logic has_valid;  // Combinational signal for valid data detection
-    logic has_valid_prev = 1'b0;  // Store previous has_valid for edge detection (initialize to 0)
-    logic has_valid_prev_reg = 1'b0;  // Register to capture old value before update
+    // Simplified logic: detect 0->1 transition on has_valid, clear on LOAD acknowledgment
+    logic data_ready_reg = 1'b0;
+    logic has_valid;
+    logic has_valid_prev = 1'b0;
+    logic load_prev = 1'b0;
+    
+    // TEST MODE: Force DONE to assert after a delay (for testing SPI communication)
+    // Set to 1 to enable test mode, 0 for normal operation
+    localparam TEST_MODE = 1'b0;  // Change to 1'b1 to force DONE assertion
+    logic [23:0] init_delay_counter = 24'd0;
+    logic test_done = 1'b0;
     
     assign has_valid = (quat1_valid || gyro1_valid);
     
     always_ff @(posedge clk) begin
-        // Update load_prev first (non-blocking, so old value is used in conditions)
+        // Update previous values
         load_prev <= load;
+        has_valid_prev <= has_valid;
+        
+        // TEST MODE: Force DONE after initialization delay
+        if (TEST_MODE) begin
+            if (init_delay_counter < 24'd3_000_000) begin  // ~1 second @ 3MHz
+                init_delay_counter <= init_delay_counter + 1;
+                test_done <= 1'b0;
+            end else begin
+                test_done <= 1'b1;  // Force DONE high for testing
+            end
+        end else begin
+            test_done <= 1'b0;
+        end
         
         // Check for LOAD edge (acknowledgment) - highest priority
-        // load_prev is the OLD value (before the <= assignment above)
         if (load && !load_prev) begin
             // MCU acknowledged - clear data ready
             data_ready_reg <= 1'b0;
-            // Set has_valid_prev to current has_valid so we can detect transitions after ack
-            has_valid_prev <= has_valid;
-            // Update has_valid_prev_reg to track the old value for next cycle
-            has_valid_prev_reg <= has_valid_prev;
-        end else begin
-            // Check conditions using the OLD has_valid_prev value (from has_valid_prev_reg)
-            // has_valid_prev_reg contains the value from 2 cycles ago, which is what we need
-            // for edge detection (we want to detect when has_valid goes from 0 to 1)
-            if (!has_valid) begin
-                // No valid data - clear data ready and reset tracking
-                data_ready_reg <= 1'b0;
-                has_valid_prev <= 1'b0;
-                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
-            end else if (has_valid && !has_valid_prev_reg) begin
+        end else if (!TEST_MODE) begin
+            // Normal mode: detect 0->1 transition on has_valid
+            if (has_valid && !has_valid_prev) begin
                 // New data available (valid went from 0 to 1) - set data ready
-                // Use has_valid_prev_reg (old value from 2 cycles ago) to detect 0->1 transition
                 data_ready_reg <= 1'b1;
-                has_valid_prev <= 1'b1;
-                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
-            end else begin
-                // Valid data still present (has_valid && has_valid_prev_reg) - keep current state
-                // Update has_valid_prev to maintain tracking
-                has_valid_prev <= 1'b1;
-                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
             end
+            // If has_valid goes low, keep data_ready_reg until LOAD clears it
+            // This ensures MCU can read the data even if valid goes low briefly
         end
     end
     
-    // Done signal: Assert when data is ready
-    assign done = data_ready_reg;
+    // Done signal: Assert when data is ready (or in test mode)
+    assign done = TEST_MODE ? test_done : data_ready_reg;
     
     // Create a 128-bit shift register from packet buffer (16 bytes * 8 bits)
     logic [127:0] packet_shift_reg;
