@@ -57,7 +57,7 @@ module bno085_controller (
         INIT_WAIT_RESET,
         INIT_WAKE,
         INIT_WAIT_INT,
-        INIT_CS_SETUP,
+        INIT_CS_SETUP,      // Added: CS setup before SPI transaction
         INIT_SEND_BODY,
         INIT_DONE_CHECK,
         WAIT_DATA,
@@ -253,7 +253,7 @@ module bno085_controller (
                     state <= INIT_SEND_BODY;
                 end
                 
-                // 3. Send Command Body (simplified SPI handshake)
+                // 4. Send Command Body (simplified SPI handshake)
                 INIT_SEND_BODY: begin
                     cs_n <= 1'b0;
                     
@@ -280,7 +280,7 @@ module bno085_controller (
                     end
                 end
                 
-                // 4. Check if more commands or done
+                // 5. Check if more commands or done
                 INIT_DONE_CHECK: begin
                     cs_n <= 1'b1;
                     // Delay 10ms between commands
@@ -298,7 +298,7 @@ module bno085_controller (
                     end
                 end
                 
-                // 5. Normal Operation: Wait for Data Ready
+                // 6. Normal Operation: Wait for Data Ready
                 WAIT_DATA: begin
                     cs_n <= 1'b1;
                     ps0_wake <= 1'b1; // Ensure wake is released
@@ -479,4 +479,3 @@ module bno085_controller (
     end
     
 endmodule
-

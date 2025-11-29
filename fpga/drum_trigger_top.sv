@@ -53,40 +53,53 @@ module drum_trigger_top (
     logic spi1_start, spi1_tx_valid, spi1_tx_ready, spi1_rx_valid, spi1_busy;
     logic [7:0] spi1_tx_data, spi1_rx_data;
     
-    // Reset delay counter
-    localparam [22:0] DELAY_100MS = 23'd300_000;
-    localparam [22:0] DELAY_2SEC = 23'd6_000_000;
+    // BNO085 Reset Delay Counter
+    // Per datasheet 6.5.3: After NRST release, BNO085 needs:
+    //   - t1 = 90ms for internal initialization
+    //   - t2 = 4ms for internal configuration  
+    //   - Total: ~94ms minimum, we use 100ms for safety
+    // Clock is 3MHz, so 100ms = 300,000 cycles
+    // We add 2 seconds total delay as requested
+    localparam [22:0] DELAY_100MS = 23'd300_000;  // 100ms for BNO085 initialization
+    localparam [22:0] DELAY_2SEC = 23'd6_000_000;  // 2 seconds total delay
     logic [22:0] rst_delay_counter;
     logic bno085_rst_n_delayed;
-    logic controller_rst_n;
+    logic controller_rst_n;  // Controller reset synchronized with BNO085 reset
     
-    // BNO085 Reset with delay
+    // BNO085 Reset with delay after FPGA reset release
+    // Per datasheet 6.5.3: BNO085 needs ~94ms after NRST release before ready
+    // Sequence: FPGA reset releases -> wait 100ms -> release BNO085 reset -> wait 1.9s -> release controller reset
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
+            // FPGA reset is active: keep BNO085 in reset and reset counter
             rst_delay_counter <= 23'd0;
             bno085_rst_n_delayed <= 1'b0;
-            controller_rst_n <= 1'b0;
+            controller_rst_n <= 1'b0;  // Keep controller in reset too
         end else begin
+            // FPGA reset released: count up to delay
             if (rst_delay_counter < DELAY_2SEC) begin
                 rst_delay_counter <= rst_delay_counter + 1;
             end
             
+            // Release BNO085 reset after 100ms (allows BNO085 to initialize per datasheet)
             if (rst_delay_counter >= DELAY_100MS) begin
-                bno085_rst_n_delayed <= 1'b1;
+                bno085_rst_n_delayed <= 1'b1;  // Release BNO085 reset
             end else begin
-                bno085_rst_n_delayed <= 1'b0;
+                bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset
             end
             
+            // Release controller reset after full 2-second delay
+            // This ensures BNO085 has completed initialization before controller starts
             if (rst_delay_counter >= DELAY_2SEC) begin
-                controller_rst_n <= 1'b1;
+                controller_rst_n <= 1'b1;  // Release controller reset
             end else begin
-                controller_rst_n <= 1'b0;
+                controller_rst_n <= 1'b0;  // Keep controller in reset
             end
         end
     end
     
     assign bno085_rst_n = bno085_rst_n_delayed;
-    assign rst_n = controller_rst_n;
+    assign rst_n = controller_rst_n;  // Controller reset synchronized with BNO085 reset release
     
     // Clock generation (3MHz from HSOSC)
     HSOSC #(.CLKHF_DIV(2'b11)) hf_osc (
