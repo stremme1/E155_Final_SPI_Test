@@ -152,7 +152,6 @@ int main(void) {
     
     // Load and done pins (Lab07 style)
     pinMode(PA5, GPIO_OUTPUT);  // LOAD
-    // Note: Lab07 doesn't explicitly initialize LOAD - it starts HIGH in encrypt() function
     pinMode(PA6, GPIO_INPUT);   // DONE
     
     // CE pin (Lab07 style)

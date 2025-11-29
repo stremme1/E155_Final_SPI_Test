@@ -13,20 +13,19 @@
  *          1: data changed on leading edge of clk and captured on next edge)
  * Refer to the datasheet for more low-level details. */ 
 void initSPI(int br, int cpol, int cpha) {
-    // Turn on GPIOA and GPIOB clock domains (GPIOAEN and GPIOBEN bits in AHB2ENR)
+    // Turn on GPIOA and GPIOB clock domains (GPIOAEN and GPIOBEN bits in AHB1ENR)
     RCC->AHB2ENR |= (RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN);
     
     RCC->APB2ENR |= RCC_APB2ENR_SPI1EN; // Turn on SPI1 clock domain (SPI1EN bit in APB2ENR)
-
-    // Set output speed type to high for SCK BEFORE configuring pins (for cleaner clock signal)
-    GPIOB->OSPEEDR &= ~(0b11 << 6); // Clear existing speed setting for PB3
-    GPIOB->OSPEEDR |= (0b11 << 6);  // Set to high speed (0b11 = very high speed)
 
     // Initially assigning SPI pins
     pinMode(SPI_SCK, GPIO_ALT); // SPI1_SCK
     pinMode(SPI_MISO, GPIO_ALT); // SPI1_MISO
     pinMode(SPI_MOSI, GPIO_ALT); // SPI1_MOSI
-    pinMode(SPI_CE, GPIO_OUTPUT); //  Manual CS (like Lab07)
+    pinMode(SPI_CE, GPIO_OUTPUT); //  Manual CS
+
+    // Set output speed type to high for SCK
+    GPIOB->OSPEEDR |= (GPIO_OSPEEDR_OSPEED3);
 
     // Set to AF05 for SPI alternate functions
     GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL3, 5);
@@ -140,27 +139,27 @@ void parseSensorDataPacket15(const uint8_t *packet,
 void readSensorDataPacket(uint8_t *packet) {
     int i;
     
-    // Wait for DONE signal (like Lab07 line 142)
+    // Lab07 pattern: Write LOAD high first (like Lab07 line 122)
+    digitalWrite(PA5, 1);
+    
+    // In Lab07, data would be sent here (lines 124-136), but we only read sensor data
+    // So we skip the data sending phase
+    
+    // Wait for any pending SPI transactions to complete (like Lab07 line 138)
+    while(SPI1->SR & SPI_SR_BSY);
+    
+    // Write LOAD low to trigger FPGA (like Lab07 line 139)
+    digitalWrite(PA5, 0);
+    
+    // Wait for DONE signal to be asserted by FPGA signifying that the data is ready to be read out (like Lab07 line 142)
     while(!digitalRead(PA6));
     
-    // Read 16 bytes (single sensor packet)
+    // Read 16 bytes (single sensor packet) - exactly like Lab07 lines 144-148
     for(i = 0; i < 16; i++) {
-        digitalWrite(PA11, 1); // CE high (like Lab07 line 145)
+        digitalWrite(PA11, 1); // Arificial CE high (like Lab07 line 145)
         packet[i] = spiSendReceive(0);  
-        digitalWrite(PA11, 0); // CE low (like Lab07 line 147)
+        digitalWrite(PA11, 0); // Arificial CE low (like Lab07 line 147)
     }
-    
-    while(SPI1->SR & SPI_SR_BSY); // Confirm all SPI transactions are completed (like Lab07 line 138)
-    
-    // Acknowledge with LOAD pulse (like Lab07 pattern)
-    // Set LOAD high, then low to acknowledge data received
-    digitalWrite(PA5, 1);
-    // Small delay to ensure signal is stable (GPIO timing)
-    volatile int delay = 10;
-    while (delay-- > 0) {
-        __asm("nop");
-    }
-    digitalWrite(PA5, 0);
 }
 
 /* Parse 16-byte sensor data packet into structured format
