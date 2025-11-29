@@ -8,7 +8,6 @@
 
 module mcu_spi_slave(
     input  logic        clk,           // FPGA system clock
-    input  logic        rst_n,         // Reset (active low)
     input  logic        sck,           // SPI clock from MCU
     input  logic        sdi,           // SPI data in (MOSI from MCU, not used for commands)
     output logic        sdo,           // SPI data out (MISO to MCU)
@@ -65,65 +64,44 @@ module mcu_spi_slave(
     // Sensor 1 Flags
     assign packet_buffer[15] = {6'h0, gyro1_valid, quat1_valid};
     
-    // Synchronize LOAD signal from MCU (cross-clock domain: MCU 80MHz -> FPGA 3MHz)
-    // 2-stage synchronizer to prevent metastability
-    logic load_sync1, load_sync2, load_sync_prev;
-    
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            load_sync1 <= 1'b0;
-            load_sync2 <= 1'b0;
-            load_sync_prev <= 1'b0;
-        end else begin
-            load_sync1 <= load;      // First stage
-            load_sync2 <= load_sync1; // Second stage (synchronized)
-            load_sync_prev <= load_sync2; // Previous value for edge detection
-        end
-    end
-    
-    // Detect rising edge of synchronized LOAD signal
-    logic load_edge;
-    assign load_edge = load_sync2 && !load_sync_prev;
-    
     // Data ready when either sensor has valid data
-    // Simple logic: set data_ready when valid data arrives (edge detect), clear when LOAD is acknowledged
+    // Simplified logic: set data_ready when valid data arrives, clear when LOAD is acknowledged
     logic data_ready_reg = 1'b0;
+    logic load_prev = 1'b0;
     logic has_valid_prev = 1'b0;
     logic has_valid;  // Combinational signal
     
     assign has_valid = (quat1_valid || gyro1_valid);
     
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+    always_ff @(posedge clk) begin
+        load_prev <= load;
+        
+        // Check for LOAD edge (acknowledgment) - highest priority
+        if (load && !load_prev) begin
+            // MCU acknowledged - clear data ready
             data_ready_reg <= 1'b0;
             has_valid_prev <= 1'b0;
         end else begin
-            // Check for LOAD edge (acknowledgment) - highest priority
-            // LOAD rising edge means MCU has read the data and acknowledged
-            if (load_edge) begin
-                // MCU acknowledged - clear data ready
-                data_ready_reg <= 1'b0;
+            // If valid data is present and we haven't seen it before, set data ready
+            // This captures the one-cycle pulse from the BNO085 controller
+            if (has_valid && !has_valid_prev) begin
+                // New valid data detected - set data ready
+                data_ready_reg <= 1'b1;
+                has_valid_prev <= 1'b1;
+            end else if (!has_valid) begin
+                // No valid data - update tracking but keep data_ready_reg set
+                // (it will be cleared by LOAD acknowledgment)
                 has_valid_prev <= 1'b0;
-            end else begin
-                // If valid data is present and we haven't seen it before, set data ready
-                // This captures the one-cycle pulse from the BNO085 controller
-                if (has_valid && !has_valid_prev) begin
-                    // New valid data detected - set data ready
-                    data_ready_reg <= 1'b1;
-                    has_valid_prev <= 1'b1;
-                end else if (!has_valid) begin
-                    // No valid data - clear tracking
-                    has_valid_prev <= 1'b0;
-                end
-                // If has_valid && has_valid_prev, keep data_ready_reg set (already asserted)
             end
+            // If has_valid && has_valid_prev, keep data_ready_reg set (already asserted)
         end
     end
     
     // Done signal: Assert when data is ready
-    // Assert DONE when data_ready_reg is set (new sensor data available)
-    // DONE will be deasserted when MCU acknowledges with LOAD
-    assign done = data_ready_reg;
+    // TEST MODE: Force DONE to always assert (for debugging SPI communication)
+    // This tests if SPI communication works when DONE is present
+    // TODO: Change back to: assign done = data_ready_reg; once SPI is verified
+    assign done = 1'b1;  // TEST MODE: Always assert DONE to test SPI communication
     
     // Create a 128-bit shift register from packet buffer (16 bytes * 8 bits)
     logic [127:0] packet_shift_reg;
@@ -131,38 +109,28 @@ module mcu_spi_slave(
     // SPI transmission: Shift on posedge sck (like aes_spi.sv)
     // Following aes_spi pattern: on first posedge (!wasdone), load AND shift
     // On subsequent posedges (wasdone), shift left
-    always_ff @(posedge sck or negedge rst_n) begin
-        if (!rst_n) begin
-            packet_shift_reg <= 128'd0;
+    always_ff @(posedge sck) begin
+        if (!wasdone) begin
+            // First posedge: load buffer and shift in one operation (like aes_spi)
+            // Pack all bytes into shift register: MSB first (packet_buffer[0] is MSB)
+            packet_shift_reg <= {
+                packet_buffer[0], packet_buffer[1], packet_buffer[2], packet_buffer[3],
+                packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
+                packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
+                packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15],
+                sdi  // Shift in SDI on first edge (like aes_spi)
+            };
         end else begin
-            if (!wasdone) begin
-                // First posedge: load buffer and shift in one operation (like aes_spi)
-                // Pack all bytes into shift register: MSB first (packet_buffer[0] is MSB)
-                packet_shift_reg <= {
-                    packet_buffer[0], packet_buffer[1], packet_buffer[2], packet_buffer[3],
-                    packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
-                    packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
-                    packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15],
-                    sdi  // Shift in SDI on first edge (like aes_spi)
-                };
-            end else begin
-                // Subsequent posedges: shift left (MSB first)
-                packet_shift_reg <= {packet_shift_reg[126:0], sdi};
-            end
+            // Subsequent posedges: shift left (MSB first)
+            packet_shift_reg <= {packet_shift_reg[126:0], sdi};
         end
     end
     
     // Track previous done state (for edge detection - like aes_spi)
     // aes_spi uses blocking assignment for immediate update
-    // Use async reset to ensure proper initialization
-    always_ff @(negedge sck or negedge rst_n) begin
-        if (!rst_n) begin
-            wasdone <= 1'b0;
-            sdodelayed <= 1'b0;
-        end else begin
-            wasdone <= done;
-            sdodelayed <= packet_shift_reg[126];  // Next bit to output (MSB of remaining data)
-        end
+    always @(negedge sck) begin
+        wasdone = done;
+        sdodelayed = packet_shift_reg[126];  // Next bit to output (MSB of remaining data)
     end
     
     // SDO output: Following aes_spi pattern exactly

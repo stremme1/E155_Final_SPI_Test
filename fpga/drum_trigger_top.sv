@@ -187,7 +187,6 @@ module drum_trigger_top (
     
     mcu_spi_slave mcu_spi_slave_inst (
         .clk(clk),
-        .rst_n(rst_n),  // Connect to controller reset (synchronized with BNO085 reset)
         .sck(mcu_sck),
         .sdi(mcu_sdi),
         .sdo(mcu_sdo),
