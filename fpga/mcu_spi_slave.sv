@@ -80,9 +80,7 @@ module mcu_spi_slave(
     assign has_valid = (quat1_valid || gyro1_valid);
     
     always_ff @(posedge clk) begin
-        // Update previous values
         load_prev <= load;
-        has_valid_prev <= has_valid;
         
         // TEST MODE: Force DONE after initialization delay
         if (TEST_MODE) begin
@@ -100,14 +98,20 @@ module mcu_spi_slave(
         if (load && !load_prev) begin
             // MCU acknowledged - clear data ready
             data_ready_reg <= 1'b0;
+            has_valid_prev <= 1'b0;
         end else if (!TEST_MODE) begin
-            // Normal mode: detect 0->1 transition on has_valid
+            // If valid data is present and we haven't seen it before, set data ready
+            // This captures the one-cycle pulse from the BNO085 controller
             if (has_valid && !has_valid_prev) begin
-                // New data available (valid went from 0 to 1) - set data ready
+                // New valid data detected - set data ready
                 data_ready_reg <= 1'b1;
+                has_valid_prev <= 1'b1;
+            end else if (!has_valid) begin
+                // No valid data - update tracking but keep data_ready_reg set
+                // (it will be cleared by LOAD acknowledgment)
+                has_valid_prev <= 1'b0;
             end
-            // If has_valid goes low, keep data_ready_reg until LOAD clears it
-            // This ensures MCU can read the data even if valid goes low briefly
+            // If has_valid && has_valid_prev, keep data_ready_reg set (already asserted)
         end
     end
     

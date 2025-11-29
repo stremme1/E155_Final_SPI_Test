@@ -152,6 +152,7 @@ int main(void) {
     
     // Load and done pins (Lab07 style)
     pinMode(PA5, GPIO_OUTPUT);  // LOAD
+    digitalWrite(PA5, 0);       // LOAD low initially (important!)
     pinMode(PA6, GPIO_INPUT);   // DONE
     
     // CE pin (Lab07 style)
