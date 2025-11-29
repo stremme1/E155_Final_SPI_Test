@@ -1,3 +1,19 @@
+Warning	1026001	Project	WARNING <1026001> - C:/Users/estralka/Desktop/E155_11.26/Final_FPGA_11_26/Ass_1.pdc (1) : No port matched 'miso_mcu'. [Ass_1.pdc:1]	
+Warning	35935050	Synthesis	WARNING <35935050> - input port TRIM9 is not connected on this instance. VDB-5050	
+Info	35901328	Synthesis	INFO <35901328> - c:/lscc/radiant/2024.2/ip/pmi/pmi_ice40up.v(1): analyzing included file c:/lscc/radiant/2024.2/ip/pmi/pmi_addsub.v. VERI-1328 [pmi_ice40up.v:1]	
+Info	35921014	Synthesis	INFO <35921014> - c:/lscc/radiant/2024.2/ip/pmi/pmi_ice40up.vhd(4): analyzing package components. VHDL-1014 [pmi_ice40up.vhd:4]	
+Info	35921504	Synthesis	INFO <35921504> - The default VHDL library search path is now "C:/Users/estralka/Desktop/E155_11.26/Final_FPGA_11_26/impl_1". VHDL-1504	
+Info	35901018	Synthesis	INFO <35901018> - c:/users/estralka/desktop/e155_11.26/fpga/drum_trigger_top.sv(15): compiling module drum_trigger_top. VERI-1018 [drum_trigger_top.sv:15]	
+Warning	35901209	Synthesis	WARNING <35901209> - c:/users/estralka/desktop/e155_11.26/fpga/drum_trigger_top.sv(83): expression size 32 truncated to fit in target size 23. VERI-1209 [drum_trigger_top.sv:83]	
+Warning	35935040	Synthesis	WARNING <35935040> - Register \spi_slave_mcu_inst/shift_started_2 clock is stuck at Zero. VDB-5040	
+Info	35001774	Synthesis	INFO <35001774> - Extracted state machine for register '\spi_master_inst1/state' with one-hot encoding	
+Warning	35001714	Synthesis	WARNING <35001714> - Net gnd has following drivers :	
+Error	35931000	Synthesis	ERROR <35931000> - c:/users/estralka/desktop/e155_11.26/fpga/spi_slave_mcu.sv(135): net gnd is constantly driven from multiple places at instance \spi_slave_mcu_inst/shift_started, on port q. VDB-1000 [spi_slave_mcu.sv:135]	
+Project (16 warnings)	
+Synthesis (1 errors, 4 criticals, 28 warnings, 41 info)	
+
+
+
 `timescale 1ns / 1ps
 
 // MCU SPI Slave Module
