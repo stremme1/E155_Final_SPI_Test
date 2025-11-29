@@ -151,14 +151,8 @@ void readSensorDataPacket(uint8_t *packet) {
     
     while(SPI1->SR & SPI_SR_BSY); // Confirm all SPI transactions are completed (like Lab07 line 138)
     
-    // Acknowledge with LOAD pulse (like Lab07 pattern)
-    // Set LOAD high, then low to acknowledge data received
+    // Acknowledge with LOAD (like Lab07 pattern)
     digitalWrite(PA5, 1);
-    // Small delay to ensure signal is stable (GPIO timing)
-    volatile int delay = 10;
-    while (delay-- > 0) {
-        __asm("nop");
-    }
     digitalWrite(PA5, 0);
 }
 

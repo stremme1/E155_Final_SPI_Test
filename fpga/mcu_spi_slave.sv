@@ -65,43 +65,52 @@ module mcu_spi_slave(
     assign packet_buffer[15] = {6'h0, gyro1_valid, quat1_valid};
     
     // Data ready when either sensor has valid data
-    // Simplified logic: set data_ready when valid data arrives, clear when LOAD is acknowledged
-    logic data_ready_reg = 1'b0;
-    logic load_prev = 1'b0;
-    logic has_valid_prev = 1'b0;
-    logic has_valid;  // Combinational signal
+    logic data_ready_reg = 1'b0;  // Initialize to 0
+    logic has_valid;  // Combinational signal for valid data detection
+    logic has_valid_prev = 1'b0;  // Store previous has_valid for edge detection (initialize to 0)
+    logic has_valid_prev_reg = 1'b0;  // Register to capture old value before update
     
     assign has_valid = (quat1_valid || gyro1_valid);
     
     always_ff @(posedge clk) begin
+        // Update load_prev first (non-blocking, so old value is used in conditions)
         load_prev <= load;
         
         // Check for LOAD edge (acknowledgment) - highest priority
+        // load_prev is the OLD value (before the <= assignment above)
         if (load && !load_prev) begin
             // MCU acknowledged - clear data ready
             data_ready_reg <= 1'b0;
-            has_valid_prev <= 1'b0;
+            // Set has_valid_prev to current has_valid so we can detect transitions after ack
+            has_valid_prev <= has_valid;
+            // Update has_valid_prev_reg to track the old value for next cycle
+            has_valid_prev_reg <= has_valid_prev;
         end else begin
-            // If valid data is present and we haven't seen it before, set data ready
-            // This captures the one-cycle pulse from the BNO085 controller
-            if (has_valid && !has_valid_prev) begin
-                // New valid data detected - set data ready
+            // Check conditions using the OLD has_valid_prev value (from has_valid_prev_reg)
+            // has_valid_prev_reg contains the value from 2 cycles ago, which is what we need
+            // for edge detection (we want to detect when has_valid goes from 0 to 1)
+            if (!has_valid) begin
+                // No valid data - clear data ready and reset tracking
+                data_ready_reg <= 1'b0;
+                has_valid_prev <= 1'b0;
+                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
+            end else if (has_valid && !has_valid_prev_reg) begin
+                // New data available (valid went from 0 to 1) - set data ready
+                // Use has_valid_prev_reg (old value from 2 cycles ago) to detect 0->1 transition
                 data_ready_reg <= 1'b1;
                 has_valid_prev <= 1'b1;
-            end else if (!has_valid) begin
-                // No valid data - update tracking but keep data_ready_reg set
-                // (it will be cleared by LOAD acknowledgment)
-                has_valid_prev <= 1'b0;
+                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
+            end else begin
+                // Valid data still present (has_valid && has_valid_prev_reg) - keep current state
+                // Update has_valid_prev to maintain tracking
+                has_valid_prev <= 1'b1;
+                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
             end
-            // If has_valid && has_valid_prev, keep data_ready_reg set (already asserted)
         end
     end
     
     // Done signal: Assert when data is ready
-    // TEST MODE: Force DONE to always assert (for debugging SPI communication)
-    // This tests if SPI communication works when DONE is present
-    // TODO: Change back to: assign done = data_ready_reg; once SPI is verified
-    assign done = 1'b1;  // TEST MODE: Always assert DONE to test SPI communication
+    assign done = data_ready_reg;
     
     // Create a 128-bit shift register from packet buffer (16 bytes * 8 bits)
     logic [127:0] packet_shift_reg;
