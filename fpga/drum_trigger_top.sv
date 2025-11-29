@@ -27,6 +27,7 @@ module drum_trigger_top (
     output logic        mosi,        // Shared SPI MOSI
     input  logic        miso1,       // Sensor 1 MISO (separate)
     output logic        cs_n1,       // Sensor 1 chip select (separate)
+    output logic        ps0_wake1,   // Sensor 1 PS0/WAKE pin (active low)
     input  logic        int1,        // Sensor 1 interrupt (separate)
     
     // BNO085 Control
@@ -142,6 +143,7 @@ module drum_trigger_top (
         .spi_rx_data(spi1_rx_data),
         .spi_busy(spi1_busy),
         .cs_n(cs_n1),
+        .ps0_wake(ps0_wake1),
         .int_n(int1),
         .quat_valid(quat1_valid),
         .quat_w(quat1_w),

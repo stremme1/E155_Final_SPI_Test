@@ -2,7 +2,6 @@
 
 // Testbench for BNO085 Controller
 // Tests initialization sequence, SHTP protocol, and data parsing
-// Note: PS0/WAKE pin removed - sensor is always awake (hardwired high)
 // Note: Source files are included via compilation command, not here
 
 module tb_bno085_controller;
@@ -14,6 +13,7 @@ module tb_bno085_controller;
     logic spi_start, spi_tx_valid, spi_tx_ready, spi_rx_valid, spi_busy;
     logic [7:0] spi_tx_data, spi_rx_data;
     logic cs_n;
+    logic ps0_wake;
     logic int_n;
     
     // Sensor data outputs
@@ -64,6 +64,7 @@ module tb_bno085_controller;
         .spi_rx_data(spi_rx_data),
         .spi_busy(spi_busy),
         .cs_n(cs_n),
+        .ps0_wake(ps0_wake),
         .int_n(int_n),
         .quat_valid(quat_valid),
         .quat_w(quat_w),
@@ -82,7 +83,7 @@ module tb_bno085_controller;
     mock_bno085 sensor_model (
         .clk(clk),
         .rst_n(rst_n),
-        .ps0_wake(1'b1),  // Always high (hardwired)
+        .ps0_wake(ps0_wake),  // Connected to controller PS0/WAKE output
         .cs_n(cs_n),
         .sclk(sclk),
         .mosi(mosi),
