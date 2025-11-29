@@ -79,10 +79,9 @@ module mcu_spi_slave(
     assign load_edge = load_sync2 && !load_sync_prev;
     
     // Data ready when either sensor has valid data
-    // Simplified logic: set data_ready when valid data arrives, clear when LOAD is acknowledged
+    // Simple logic: set data_ready when valid data arrives (edge detect), clear when LOAD is acknowledged
     logic data_ready_reg = 1'b0;
     logic has_valid_prev = 1'b0;
-    logic load_acknowledged = 1'b0;  // Track if we've just acknowledged
     logic has_valid;  // Combinational signal
     
     assign has_valid = (quat1_valid || gyro1_valid);
@@ -94,21 +93,15 @@ module mcu_spi_slave(
             // MCU acknowledged - clear data ready
             data_ready_reg <= 1'b0;
             has_valid_prev <= 1'b0;
-            load_acknowledged <= 1'b1;  // Mark that we just acknowledged
         end else begin
-            // Clear acknowledgment flag after one cycle
-            load_acknowledged <= 1'b0;
-            
             // If valid data is present and we haven't seen it before, set data ready
             // This captures the one-cycle pulse from the BNO085 controller
-            // Don't set if we just acknowledged (prevent immediate re-assertion)
-            if (has_valid && !has_valid_prev && !load_acknowledged) begin
+            if (has_valid && !has_valid_prev) begin
                 // New valid data detected - set data ready
                 data_ready_reg <= 1'b1;
                 has_valid_prev <= 1'b1;
             end else if (!has_valid) begin
-                // No valid data - update tracking but keep data_ready_reg set
-                // (it will be cleared by LOAD acknowledgment)
+                // No valid data - clear tracking
                 has_valid_prev <= 1'b0;
             end
             // If has_valid && has_valid_prev, keep data_ready_reg set (already asserted)
