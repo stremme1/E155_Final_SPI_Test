@@ -75,39 +75,35 @@ module spi_slave_mcu(
     
     // Create a 128-bit shift register from packet buffer (16 bytes * 8 bits)
     // Read-only mode: FPGA ignores MOSI (sdi), only shifts out data on MISO (sdo)
-    // Simple CS-based pattern: Load on CS falling edge, shift on SCK edges when CS is low
+    // Simple CS-based pattern: Load on first SCK edge when CS is low, shift on subsequent SCK edges
     logic [127:0] packet_shift_reg;
-    logic cs_n_prev = 1'b1;  // Track previous CS state to detect falling edge
-    
-    // Load shift register when CS goes low (transaction starts)
-    always_ff @(posedge clk) begin
-        cs_n_prev <= cs_n;
-        
-        // On CS falling edge (CS goes from high to low): load latest packet buffer
-        if (!cs_n && cs_n_prev) begin
-            // CS just went low: load latest packet buffer into shift register (MSB first)
-            // Pack all bytes: packet_buffer[0] is MSB of first byte, goes to bit 127
-            // Read-only mode: ignore SDI (MOSI), only shift out data
-            // Always load latest data - no need to wait for done signal
-            packet_shift_reg <= {
-                packet_buffer[0], packet_buffer[1], packet_buffer[2], packet_buffer[3],
-                packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
-                packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
-                packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
-            };
-        end
-    end
+    logic cs_n_prev_sck = 1'b1;  // Track previous CS state in SCK domain to detect falling edge
     
     // SPI Mode 0 (CPOL=0, CPHA=0): MCU samples on rising edge, FPGA changes on falling edge
     // Shift register behavior:
-    // - Only shift when CS is low (transaction active)
-    // - On posedge: shift left (MSB first) - FPGA ignores SDI (MOSI)
-    // - On negedge: update output for next bit
+    // - On first posedge when CS is low: load latest packet_buffer into shift register
+    // - On subsequent posedges when CS is low: shift left (MSB first) - FPGA ignores SDI (MOSI)
+    // - All updates happen in SCK clock domain to avoid multiple drivers
     always_ff @(posedge sck) begin
+        cs_n_prev_sck <= cs_n;  // Track CS state in SCK domain
+        
         if (!cs_n) begin
-            // CS is low (transaction active): shift left (MSB first)
-            // Read-only mode: ignore SDI, shift in 0 (or just shift left)
-            packet_shift_reg <= {packet_shift_reg[126:0], 1'b0};
+            if (cs_n_prev_sck) begin
+                // First SCK edge after CS went low: load latest packet buffer into shift register (MSB first)
+                // Pack all bytes: packet_buffer[0] is MSB of first byte, goes to bit 127
+                // Read-only mode: ignore SDI (MOSI), only shift out data
+                // Always load latest data - no need to wait for done signal
+                packet_shift_reg <= {
+                    packet_buffer[0], packet_buffer[1], packet_buffer[2], packet_buffer[3],
+                    packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
+                    packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
+                    packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
+                };
+            end else begin
+                // Subsequent SCK edges: shift left (MSB first)
+                // Read-only mode: ignore SDI, shift in 0 (or just shift left)
+                packet_shift_reg <= {packet_shift_reg[126:0], 1'b0};
+            end
         end
     end
     
