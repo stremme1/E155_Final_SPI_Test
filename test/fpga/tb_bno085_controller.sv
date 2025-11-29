@@ -108,7 +108,7 @@ module tb_bno085_controller;
                 end
             end
             // Skip INIT_DONE_CHECK delay
-            else if (dut.state == 5) begin // INIT_DONE_CHECK
+            else if (dut.state == 6) begin // INIT_DONE_CHECK (state 6)
                 if (dut.delay_counter < 19'd29_900) begin
                     force dut.delay_counter = 19'd29_990;
                     @(posedge clk);
@@ -123,7 +123,7 @@ module tb_bno085_controller;
         forever begin
             @(posedge cs_n); // Wait for CS to go high (transaction end)
             #100;
-            if (dut.state == 5) begin // INIT_DONE_CHECK
+            if (dut.state == 6) begin // INIT_DONE_CHECK (state 6)
                 init_commands_received = init_commands_received + 1;
                 $display("[%0t] Command %0d completed", $time, init_commands_received);
             end
@@ -185,8 +185,9 @@ module tb_bno085_controller;
                 end else begin
                     $display("[FAIL] Quaternion data mismatch");
                 end
+                disable quat_timeout; // Disable timeout after success
             end
-            begin
+            begin: quat_timeout
                 #2000000; // Timeout
                 $display("\n[FAIL] TIMEOUT waiting for quaternion data!");
                 $finish;
@@ -195,7 +196,13 @@ module tb_bno085_controller;
         
         // Test gyroscope report
         $display("\n[TEST] Step 4: Testing Gyroscope Report");
-        #10000;
+        // Wait for controller to return to WAIT_DATA and ensure INT is high
+        wait(dut.state == 7); // WAIT_DATA state
+        #5000; // Wait a bit more to ensure INT is deasserted
+        // Ensure INT is high before sending new data
+        if (int_n == 0) begin
+            #1000; // Wait for INT to go high
+        end
         
         $display("  Sending Gyroscope: X=100, Y=200, Z=300");
         sensor_model.send_gyroscope(16'd100, 16'd200, 16'd300);
@@ -211,8 +218,9 @@ module tb_bno085_controller;
                 end else begin
                     $display("[FAIL] Gyroscope data mismatch");
                 end
+                disable gyro_timeout; // Disable timeout after success
             end
-            begin
+            begin: gyro_timeout
                 #2000000; // Timeout
                 $display("\n[FAIL] TIMEOUT waiting for gyroscope data!");
                 $finish;

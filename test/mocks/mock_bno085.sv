@@ -240,13 +240,21 @@ module mock_bno085 (
         tx_bit_cnt = 0;
         rx_byte = 0;
         received_length = 0;
-        // Reload first byte for next transaction
-        if (response_len > 0) begin
+        // If we've sent all the data, reset response_len and deassert INT
+        if (response_ptr >= response_len && response_len > 0) begin
+            response_len = 0;
+            int_n <= 1'b1; // Deassert INT after transaction completes
+        end
+        // Reload first byte for next transaction if there's pending data
+        else if (response_len > 0) begin
             tx_byte = response_queue[0];
             // Assert INT after CS goes high to indicate response is ready
             // Delay slightly to ensure CS is fully high
             #1000;
             int_n <= 1'b0;
+        end else begin
+            // No pending data, ensure INT is high
+            int_n <= 1'b1;
         end
     end
     
@@ -322,7 +330,11 @@ module mock_bno085 (
             response_ptr = 0;
             tx_byte = response_queue[0];
             
-            // Indicate data ready by pulling INT low
+            // Ensure INT is high first to create a proper falling edge
+            int_n = 1'b1;
+            #2000; // Wait for INT to stabilize high
+            
+            // Indicate data ready by pulling INT low (creates falling edge)
             #1000;
             int_n = 1'b0;
         end
@@ -332,6 +344,10 @@ module mock_bno085 (
     task send_gyroscope;
         input [15:0] x, y, z; // Angular velocity (little-endian 16-bit)
         begin
+            // Ensure INT is high first to create a proper falling edge
+            int_n = 1'b1;
+            #2000; // Wait for INT to stabilize high
+            
             // Header (14 bytes total)
             response_queue[0] = 8'h0E; // Length LSB (14)
             response_queue[1] = 8'h00; // Length MSB
@@ -339,7 +355,7 @@ module mock_bno085 (
             response_queue[3] = 8'h00; // Sequence
             
             // Report Body
-            response_queue[4] = 8'h01; // Report ID (Gyroscope)
+            response_queue[4] = 8'h02; // Report ID (Calibrated Gyroscope, per datasheet)
             response_queue[5] = 8'h00; // Sequence
             response_queue[6] = 8'h00; // Status
             response_queue[7] = 8'h00; // Delay
@@ -356,7 +372,7 @@ module mock_bno085 (
             response_ptr = 0;
             tx_byte = response_queue[0];
             
-            // Indicate data ready
+            // Indicate data ready by pulling INT low (creates falling edge)
             #1000;
             int_n = 1'b0;
         end

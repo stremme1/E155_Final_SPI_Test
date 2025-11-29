@@ -116,7 +116,8 @@ module drum_trigger_top (
     // ============================================
     
     // SPI Master for BNO085 Sensor 1
-    spi_master spi_master_inst1 (
+    // CLK_DIV=2 matches old working code (750 kHz SPI clock @ 3MHz system clock)
+    spi_master #(.CLK_DIV(2)) spi_master_inst1 (
         .clk(clk),
         .rst_n(rst_n),
         .start(spi1_start),
