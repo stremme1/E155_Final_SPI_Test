@@ -65,11 +65,10 @@ module mcu_spi_slave(
     assign packet_buffer[15] = {6'h0, gyro1_valid, quat1_valid};
     
     // Data ready when either sensor has valid data
-    // Simplified logic: quat_valid and gyro_valid are pulsed (one cycle), so we need to
-    // latch them and keep DONE asserted until MCU acknowledges with LOAD
     logic data_ready_reg = 1'b0;  // Initialize to 0
     logic has_valid;  // Combinational signal for valid data detection
-    logic has_valid_latched = 1'b0;  // Latched version that stays high until acknowledged
+    logic has_valid_prev = 1'b0;  // Store previous has_valid for edge detection (initialize to 0)
+    logic has_valid_prev_reg = 1'b0;  // Register to capture old value before update
     
     assign has_valid = (quat1_valid || gyro1_valid);
     
@@ -80,18 +79,32 @@ module mcu_spi_slave(
         // Check for LOAD edge (acknowledgment) - highest priority
         // load_prev is the OLD value (before the <= assignment above)
         if (load && !load_prev) begin
-            // MCU acknowledged - clear data ready and latched valid
+            // MCU acknowledged - clear data ready
             data_ready_reg <= 1'b0;
-            has_valid_latched <= 1'b0;
+            // Set has_valid_prev to current has_valid so we can detect transitions after ack
+            has_valid_prev <= has_valid;
+            // Update has_valid_prev_reg to track the old value for next cycle
+            has_valid_prev_reg <= has_valid_prev;
         end else begin
-            // Latch valid signals: if valid goes high, latch it (stays high until acknowledged)
-            if (has_valid) begin
-                has_valid_latched <= 1'b1;
-            end
-            
-            // Set data ready if we have latched valid data
-            if (has_valid_latched) begin
+            // Check conditions using the OLD has_valid_prev value (from has_valid_prev_reg)
+            // has_valid_prev_reg contains the value from 2 cycles ago, which is what we need
+            // for edge detection (we want to detect when has_valid goes from 0 to 1)
+            if (!has_valid) begin
+                // No valid data - clear data ready and reset tracking
+                data_ready_reg <= 1'b0;
+                has_valid_prev <= 1'b0;
+                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
+            end else if (has_valid && !has_valid_prev_reg) begin
+                // New data available (valid went from 0 to 1) - set data ready
+                // Use has_valid_prev_reg (old value from 2 cycles ago) to detect 0->1 transition
                 data_ready_reg <= 1'b1;
+                has_valid_prev <= 1'b1;
+                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
+            end else begin
+                // Valid data still present (has_valid && has_valid_prev_reg) - keep current state
+                // Update has_valid_prev to maintain tracking
+                has_valid_prev <= 1'b1;
+                has_valid_prev_reg <= has_valid_prev;  // Update reg to track old value
             end
         end
     end
