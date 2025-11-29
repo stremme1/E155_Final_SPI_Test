@@ -17,10 +17,12 @@ module drum_trigger_top (
     
     // MCU SPI Interface (FPGA is slave)
     input  logic        mcu_sck,     // SPI clock from MCU (PB3)
-    input  logic        mcu_sdi,      // SPI data in from MCU (PB5 MOSI, not used for commands)
+    input  logic        mcu_sdi,     // SPI data in from MCU (PB5 MOSI, not used for commands)
     output logic        mcu_sdo,     // SPI data out to MCU (PB4 MISO)
-    input  logic        mcu_load,    // Load signal from MCU (PA5)
-    output logic        mcu_done,    // Done signal to MCU (PA6)
+    input  logic        mcu_cs,      // Chip select from MCU (PA11, active low - CS low = transaction active)
+    // Note: mcu_load and mcu_done not used in simple CS-based pattern, but kept for compatibility
+    input  logic        mcu_load,    // Load signal from MCU (PA5) - not used
+    output logic        mcu_done,    // Done signal to MCU (PA6) - not used
     
     // BNO085 Sensor 1 SPI Interface (Right Hand)
     output logic        sclk,        // Shared SPI clock
@@ -190,8 +192,9 @@ module drum_trigger_top (
         .sck(mcu_sck),
         .sdi(mcu_sdi),
         .sdo(mcu_sdo),
-        .load(mcu_load),
-        .done(mcu_done),
+        .cs_n(mcu_cs),  // CS signal (active low: CS low = transaction active)
+        .load(mcu_load),  // Not used in simple CS pattern, but kept for compatibility
+        .done(mcu_done),  // Not used in simple CS pattern, but kept for compatibility
         // Sensor 1 (Right Hand) - single sensor only
         .quat1_valid(quat1_valid),
         .quat1_w(quat1_w),

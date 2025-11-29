@@ -14,6 +14,7 @@
 #include "STM32L432KC_FLASH.h"
 #include "STM32L432KC_SPI.h"
 #include "STM32L432KC_DAC.h"
+#include "STM32L432KC_TIMER.h"  // For ms_delay
 #include "bno085_decoder.h"
 #include "drum_detector.h"
 #include "audio_player.h"
@@ -41,9 +42,9 @@ static yaw_offset_t yaw_offsets = {0.0f, 0.0f};
 
 // Read sensor data packet from FPGA
 void read_sensor_data(sensor_data_t *data) {
-    uint8_t packet[32];
+    uint8_t packet[16];  // 16-byte packet (single sensor)
     
-    // Read 32-byte packet from FPGA
+    // Read 16-byte packet from FPGA
     readSensorDataPacket(packet);
     
     // Parse packet into structure
@@ -147,16 +148,15 @@ int main(void) {
     RCC->AHB2ENR |= (RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN | RCC_AHB2ENR_GPIOCEN);
     
     // Initialize SPI as MASTER for FPGA communication
-    // br=1 (divide by 4 = 80MHz/4 = 20MHz), cpol=0, cpha=0 (SPI Mode 0) - matches Lab07
+    // br=1 (divide by 4 = 80MHz/4 = 20MHz), cpol=0, cpha=0 (SPI Mode 0) - matches working code
     initSPI(1, 0, 0);
     
-    // Load and done pins (Lab07 style)
-    pinMode(PA5, GPIO_OUTPUT);  // LOAD
-    pinMode(PA6, GPIO_INPUT);   // DONE
-    
-    // CE pin (Lab07 style)
+    // CE pin (CS) - simple pattern like working code
     pinMode(PA11, GPIO_OUTPUT);
-    digitalWrite(PA11, 1);  // CE high initially
+    digitalWrite(PA11, 1);  // CS idle high (like working code)
+    
+    // Note: LOAD/DONE pins not used in simple CS-based pattern
+    // PA5 and PA6 can be left unconfigured or used for other purposes
     
     // Initialize calibration button (optional)
     pinMode(BUTTON_CALIBRATE_PIN, GPIO_INPUT);
@@ -166,7 +166,7 @@ int main(void) {
     
     // Main loop: read sensor data, decode, detect triggers, play sounds
     while(1) {
-        // Read raw sensor data from FPGA via SPI (blocking - waits for DONE signal)
+        // Read raw sensor data from FPGA via SPI (simple CS-based read)
         read_sensor_data(&sensor_data);
         
         // Process sensor data and detect drum triggers
@@ -175,7 +175,9 @@ int main(void) {
         // Check calibration button (optional)
         check_calibration_button();
         
-        // No delay needed - read_sensor_data() blocks until next packet is ready
+        // Small delay to prevent reading too fast
+        // FPGA needs time to update sensor data between reads
+        ms_delay(10);  // 10ms delay (~100Hz read rate)
     }
     
     return 0;

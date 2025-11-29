@@ -131,35 +131,28 @@ void parseSensorDataPacket15(const uint8_t *packet,
     *gyro_z = (int16_t)(packet[13] | (packet[14] << 8));
 }
 
-/* Read 16-byte sensor data packet from FPGA via SPI - Lab07 style
+/* Read 16-byte sensor data packet from FPGA via SPI - Simple CS-based pattern
  * Packet format: [Header(0xAA)][Sensor1_Quat][Sensor1_Gyro][Sensor1_Flags]
  * All 16-bit values are MSB,LSB format (MSB first, LSB second)
  * Single sensor only - sensor 2 data is not included in packet
+ * 
+ * Simple pattern matching working code:
+ * - CS low, read all bytes, CS high
+ * - No LOAD/DONE handshaking (FPGA always has data ready)
  */
 void readSensorDataPacket(uint8_t *packet) {
     int i;
     
-    // Lab07 pattern: Write LOAD high first (like Lab07 line 122)
-    digitalWrite(PA5, 1);
+    // CS low to start transaction
+    digitalWrite(PA11, 0);
     
-    // In Lab07, data would be sent here (lines 124-136), but we only read sensor data
-    // So we skip the data sending phase
-    
-    // Wait for any pending SPI transactions to complete (like Lab07 line 138)
-    while(SPI1->SR & SPI_SR_BSY);
-    
-    // Write LOAD low to trigger FPGA (like Lab07 line 139)
-    digitalWrite(PA5, 0);
-    
-    // Wait for DONE signal to be asserted by FPGA signifying that the data is ready to be read out (like Lab07 line 142)
-    while(!digitalRead(PA6));
-    
-    // Read 16 bytes (single sensor packet) - exactly like Lab07 lines 144-148
+    // Read 16 bytes (single sensor packet)
     for(i = 0; i < 16; i++) {
-        digitalWrite(PA11, 1); // Arificial CE high (like Lab07 line 145)
-        packet[i] = spiSendReceive(0);  
-        digitalWrite(PA11, 0); // Arificial CE low (like Lab07 line 147)
+        packet[i] = spiSendReceive(0x00);  // Send dummy byte, read data
     }
+    
+    // CS high to end transaction
+    digitalWrite(PA11, 1);
 }
 
 /* Parse 16-byte sensor data packet into structured format
