@@ -15,11 +15,11 @@
 module drum_trigger_top (
     input  logic        fpga_rst_n,  // Global FPGA reset pin (active low)
     
-    // MCU SPI Interface (FPGA is slave) - CS-only pattern
+    // MCU SPI Interface (FPGA is slave)
     input  logic        mcu_sck,     // SPI clock from MCU (PB3)
-    input  logic        mcu_sdi,     // SPI data in from MCU (PB5 MOSI, ignored in read-only mode)
+    input  logic        mcu_sdi,      // SPI data in from MCU (PB5 MOSI, not used in read-only mode)
     output logic        mcu_sdo,     // SPI data out to MCU (PB4 MISO)
-    // Note: No LOAD/DONE handshaking - CS (PA11) controls transaction timing
+    input  logic        mcu_cs_n,    // Chip select from MCU (PA11, active low)
     
     // BNO085 Sensor 1 SPI Interface (Right Hand)
     output logic        sclk,        // Shared SPI clock
@@ -183,10 +183,11 @@ module drum_trigger_top (
     // MCU SPI Slave for sending raw sensor data
     // ============================================
     // Single sensor only - sends 16-byte packet with sensor 1 data
+    // Uses CS-based protocol (chip select, active low)
     
-    // CS-only pattern: No LOAD/DONE ports needed
     spi_slave_mcu spi_slave_mcu_inst (
         .clk(clk),
+        .cs_n(mcu_cs_n),
         .sck(mcu_sck),
         .sdi(mcu_sdi),
         .sdo(mcu_sdo),

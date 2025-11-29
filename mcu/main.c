@@ -41,9 +41,9 @@ static yaw_offset_t yaw_offsets = {0.0f, 0.0f};
 
 // Read sensor data packet from FPGA
 void read_sensor_data(sensor_data_t *data) {
-    uint8_t packet[16];  // 16-byte packet for single sensor
+    uint8_t packet[32];
     
-    // Read 16-byte packet from FPGA (CS-only pattern)
+    // Read 32-byte packet from FPGA
     readSensorDataPacket(packet);
     
     // Parse packet into structure
@@ -148,11 +148,11 @@ int main(void) {
     
     // Initialize SPI as MASTER for FPGA communication
     // br=1 (divide by 4 = 80MHz/4 = 20MHz), cpol=0, cpha=0 (SPI Mode 0)
-    // CS-only pattern: no LOAD/DONE handshaking needed
     initSPI(1, 0, 0);
     
-    // CS pin (PA11) is already configured in initSPI, set it high initially
-    digitalWrite(SPI_CE, 1);  // CS high initially (idle state)
+    // CS pin (chip select, active low) - PA11
+    // Note: CS pin is already configured in initSPI() as SPI_CE, but we ensure it's high initially
+    digitalWrite(PA11, 1);  // CS high initially (idle state)
     
     // Initialize calibration button (optional)
     pinMode(BUTTON_CALIBRATE_PIN, GPIO_INPUT);
@@ -162,7 +162,7 @@ int main(void) {
     
     // Main loop: read sensor data, decode, detect triggers, play sounds
     while(1) {
-        // Read raw sensor data from FPGA via SPI (CS-only pattern)
+        // Read raw sensor data from FPGA via SPI (CS-based protocol)
         read_sensor_data(&sensor_data);
         
         // Process sensor data and detect drum triggers
