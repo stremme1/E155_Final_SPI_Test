@@ -98,10 +98,9 @@ module mcu_spi_slave(
     end
     
     // Done signal: Assert when data is ready
-    // TEST MODE: Force DONE to always assert (for debugging SPI communication)
-    // This tests if SPI communication works when DONE is present
-    // TODO: Change back to: assign done = data_ready_reg; once SPI is verified
-    assign done = 1'b1;  // TEST MODE: Always assert DONE to test SPI communication
+    // Assert DONE when data_ready_reg is set (new sensor data available)
+    // DONE will be deasserted when MCU acknowledges with LOAD
+    assign done = data_ready_reg;
     
     // Create a 128-bit shift register from packet buffer (16 bytes * 8 bits)
     logic [127:0] packet_shift_reg;
