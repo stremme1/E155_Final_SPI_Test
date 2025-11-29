@@ -211,33 +211,55 @@ module bno085_controller (
             
             case (state)
                 // 1. Wait after reset to ensure sensor is ready (~100ms)
+                // Per datasheet 5.2.1: BNO085 may assert INT automatically after reset
                 INIT_WAIT_RESET: begin
                     cs_n <= 1'b1;
-                    ps0_wake <= 1'b1;
+                    ps0_wake <= 1'b1; // Ensure PS0 is high (required for SPI mode)
                     if (delay_counter < 19'd300_000) begin
                         delay_counter <= delay_counter + 1;
                     end else begin
-                        state <= INIT_WAKE;
                         delay_counter <= 19'd0;
                         cmd_select <= 2'd0; // Start with ProdID
+                        // Check if INT is already asserted (automatic assertion after reset)
+                        if (!int_n_sync) begin
+                            // INT already low - skip wake signal, go directly to CS setup
+                            state <= INIT_CS_SETUP;
+                        end else begin
+                            // INT still high - need to use wake signal
+                            state <= INIT_WAKE;
+                        end
                     end
                 end
 
                 // 2. Wake the sensor (PS0 Low) - per datasheet 1.2.4.3
+                // PS0/WAKE is active low - drive low to wake processor from sleep
+                // Hold PS0 low for at least 1µs before checking INT (per datasheet timing)
                 INIT_WAKE: begin
-                    ps0_wake <= 1'b0; // Drive Low to wake
-                    delay_counter <= 19'd0;
-                    state <= INIT_WAIT_INT;
+                    ps0_wake <= 1'b0; // Drive PS0 low to wake sensor
+                    if (delay_counter < 19'd3) begin
+                        // Hold PS0 low for 1µs minimum (3 cycles @ 3MHz = 1µs)
+                        delay_counter <= delay_counter + 1;
+                    end else begin
+                        // PS0 has been low long enough, now check for INT
+                        delay_counter <= 19'd0;
+                        state <= INIT_WAIT_INT;
+                    end
                 end
 
                 // 3. Wait for INT low (Sensor Ready) with timeout - per datasheet 6.5.4 (twk = 150 µs max)
+                // Hardware may need significantly more time due to signal propagation, sensor wake-up delays,
+                // and PCB routing delays. Using 50ms timeout provides substantial margin for hardware tolerance.
                 INIT_WAIT_INT: begin
                     if (!int_n_sync) begin
                         // INT asserted, sensor is ready
                         delay_counter <= 19'd0;
                         state <= INIT_CS_SETUP; // Setup CS before starting SPI
-                    end else if (delay_counter >= 19'd600) begin
-                        // Timeout: 600 cycles @ 3MHz = 200 µs (exceeds 150 µs max)
+                    end else if (delay_counter >= 19'd150_000) begin
+                        // Timeout: 150000 cycles @ 3MHz = 50ms (increased for hardware tolerance)
+                        // This is much longer than datasheet spec (150µs) but accounts for:
+                        // - Signal propagation delays on PCB
+                        // - Sensor wake-up time variations
+                        // - Clock domain crossing delays
                         state <= ERROR_STATE;
                     end else begin
                         delay_counter <= delay_counter + 1;
@@ -283,6 +305,7 @@ module bno085_controller (
                 // 5. Check if more commands or done
                 INIT_DONE_CHECK: begin
                     cs_n <= 1'b1;
+                    ps0_wake <= 1'b1; // Ensure PS0 is high before next wake cycle
                     // Delay 10ms between commands
                     if (delay_counter < 19'd30_000) begin
                         delay_counter <= delay_counter + 1;
