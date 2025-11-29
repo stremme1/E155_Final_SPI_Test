@@ -14,31 +14,21 @@ module mcu_spi_slave(
     input  logic        load,          // Load signal from MCU (acknowledge)
     output logic        done,          // Done signal to MCU (data ready)
     
-    // Sensor data inputs (RAW data from BNO085 controllers)
-    // Sensor 1 (Right Hand)
+    // Sensor data inputs (RAW data from BNO085 controller)
+    // Sensor 1 (Right Hand) - Single sensor only
     input  logic        quat1_valid,
     input  logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z,
     input  logic        gyro1_valid,
-    input  logic signed [15:0] gyro1_x, gyro1_y, gyro1_z,
-    
-    // Sensor 2 (Left Hand)
-    input  logic        quat2_valid,
-    input  logic signed [15:0] quat2_w, quat2_x, quat2_y, quat2_z,
-    input  logic        gyro2_valid,
-    input  logic signed [15:0] gyro2_x, gyro2_y, gyro2_z
+    input  logic signed [15:0] gyro1_x, gyro1_y, gyro1_z
 );
 
-    // Packet format: 32 bytes total
+    // Packet format: 16 bytes total (single sensor only)
     // Byte 0:    Header (0xAA)
     // Byte 1-8:  Sensor 1 Quaternion (w, x, y, z - MSB,LSB each)
     // Byte 9-14: Sensor 1 Gyroscope (x, y, z - MSB,LSB each)
     // Byte 15:   Sensor 1 Flags (bit 0=quat_valid, bit 1=gyro_valid)
-    // Byte 16-23: Sensor 2 Quaternion (w, x, y, z - MSB,LSB each)
-    // Byte 24-29: Sensor 2 Gyroscope (x, y, z - MSB,LSB each)
-    // Byte 30:   Sensor 2 Flags (bit 0=quat_valid, bit 1=gyro_valid)
-    // Byte 31:   Reserved (0x00)
     
-    localparam PACKET_SIZE = 32;
+    localparam PACKET_SIZE = 16;
     localparam HEADER_BYTE = 8'hAA;
     
     // Packet buffer - assembled from sensor data
@@ -47,58 +37,32 @@ module mcu_spi_slave(
     logic       sdodelayed, wasdone;
     logic       data_ready;
     logic       load_prev;
-    logic [5:0] bit_cnt;  // 6 bits for 32 bytes * 8 bits = 256 bits
+    logic [4:0] bit_cnt;  // 5 bits for 16 bytes * 8 bits = 128 bits
     
-    // Assemble packet from sensor data (update continuously as data changes)
-    always_comb begin
-        // Header
-        packet_buffer[0] = HEADER_BYTE;
-        
-        // Sensor 1 Quaternion (MSB,LSB format)
-        packet_buffer[1] = quat1_w[15:8];  // W MSB
-        packet_buffer[2] = quat1_w[7:0];   // W LSB
-        packet_buffer[3] = quat1_x[15:8];  // X MSB
-        packet_buffer[4] = quat1_x[7:0];   // X LSB
-        packet_buffer[5] = quat1_y[15:8];  // Y MSB
-        packet_buffer[6] = quat1_y[7:0];   // Y LSB
-        packet_buffer[7] = quat1_z[15:8];  // Z MSB
-        packet_buffer[8] = quat1_z[7:0];   // Z LSB
-        
-        // Sensor 1 Gyroscope (MSB,LSB format)
-        packet_buffer[9]  = gyro1_x[15:8];  // X MSB
-        packet_buffer[10] = gyro1_x[7:0];   // X LSB
-        packet_buffer[11] = gyro1_y[15:8];  // Y MSB
-        packet_buffer[12] = gyro1_y[7:0];   // Y LSB
-        packet_buffer[13] = gyro1_z[15:8];  // Z MSB
-        packet_buffer[14] = gyro1_z[7:0];   // Z LSB
-        
-        // Sensor 1 Flags
-        packet_buffer[15] = {6'h0, gyro1_valid, quat1_valid};
-        
-        // Sensor 2 Quaternion (MSB,LSB format)
-        packet_buffer[16] = quat2_w[15:8];  // W MSB
-        packet_buffer[17] = quat2_w[7:0];   // W LSB
-        packet_buffer[18] = quat2_x[15:8];  // X MSB
-        packet_buffer[19] = quat2_x[7:0];   // X LSB
-        packet_buffer[20] = quat2_y[15:8];  // Y MSB
-        packet_buffer[21] = quat2_y[7:0];   // Y LSB
-        packet_buffer[22] = quat2_z[15:8];  // Z MSB
-        packet_buffer[23] = quat2_z[7:0];   // Z LSB
-        
-        // Sensor 2 Gyroscope (MSB,LSB format)
-        packet_buffer[24] = gyro2_x[15:8];  // X MSB
-        packet_buffer[25] = gyro2_x[7:0];   // X LSB
-        packet_buffer[26] = gyro2_y[15:8];  // Y MSB
-        packet_buffer[27] = gyro2_y[7:0];   // Y LSB
-        packet_buffer[28] = gyro2_z[15:8];  // Z MSB
-        packet_buffer[29] = gyro2_z[7:0];   // Z LSB
-        
-        // Sensor 2 Flags
-        packet_buffer[30] = {6'h0, gyro2_valid, quat2_valid};
-        
-        // Reserved
-        packet_buffer[31] = 8'h00;
-    end
+    // Assemble packet from sensor data (using assign statements for iverilog compatibility)
+    // Header
+    assign packet_buffer[0] = HEADER_BYTE;
+    
+    // Sensor 1 Quaternion (MSB,LSB format)
+    assign packet_buffer[1] = quat1_w[15:8];  // W MSB
+    assign packet_buffer[2] = quat1_w[7:0];   // W LSB
+    assign packet_buffer[3] = quat1_x[15:8];  // X MSB
+    assign packet_buffer[4] = quat1_x[7:0];   // X LSB
+    assign packet_buffer[5] = quat1_y[15:8];  // Y MSB
+    assign packet_buffer[6] = quat1_y[7:0];   // Y LSB
+    assign packet_buffer[7] = quat1_z[15:8];  // Z MSB
+    assign packet_buffer[8] = quat1_z[7:0];   // Z LSB
+    
+    // Sensor 1 Gyroscope (MSB,LSB format)
+    assign packet_buffer[9]  = gyro1_x[15:8];  // X MSB
+    assign packet_buffer[10] = gyro1_x[7:0];   // X LSB
+    assign packet_buffer[11] = gyro1_y[15:8];  // Y MSB
+    assign packet_buffer[12] = gyro1_y[7:0];   // Y LSB
+    assign packet_buffer[13] = gyro1_z[15:8];  // Z MSB
+    assign packet_buffer[14] = gyro1_z[7:0];   // Z LSB
+    
+    // Sensor 1 Flags
+    assign packet_buffer[15] = {6'h0, gyro1_valid, quat1_valid};
     
     // Data ready when either sensor has valid data
     logic data_ready_reg = 1'b0;  // Initialize to 0
@@ -106,7 +70,7 @@ module mcu_spi_slave(
     logic has_valid_prev = 1'b0;  // Store previous has_valid for edge detection (initialize to 0)
     logic has_valid_prev_reg = 1'b0;  // Register to capture old value before update
     
-    assign has_valid = (quat1_valid || gyro1_valid || quat2_valid || gyro2_valid);
+    assign has_valid = (quat1_valid || gyro1_valid);
     
     always_ff @(posedge clk) begin
         // Update load_prev first (non-blocking, so old value is used in conditions)
@@ -148,8 +112,8 @@ module mcu_spi_slave(
     // Done signal: Assert when data is ready
     assign done = data_ready_reg;
     
-    // Create a 256-bit shift register from packet buffer (32 bytes * 8 bits)
-    logic [255:0] packet_shift_reg;
+    // Create a 128-bit shift register from packet buffer (16 bytes * 8 bits)
+    logic [127:0] packet_shift_reg;
     
     // SPI transmission: Shift on posedge sck (like aes_spi.sv)
     // Following aes_spi pattern: on first posedge (!wasdone), load AND shift
@@ -163,15 +127,11 @@ module mcu_spi_slave(
                 packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
                 packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
                 packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15],
-                packet_buffer[16], packet_buffer[17], packet_buffer[18], packet_buffer[19],
-                packet_buffer[20], packet_buffer[21], packet_buffer[22], packet_buffer[23],
-                packet_buffer[24], packet_buffer[25], packet_buffer[26], packet_buffer[27],
-                packet_buffer[28], packet_buffer[29], packet_buffer[30], packet_buffer[31],
                 sdi  // Shift in SDI on first edge (like aes_spi)
             };
         end else begin
             // Subsequent posedges: shift left (MSB first)
-            packet_shift_reg <= {packet_shift_reg[254:0], sdi};
+            packet_shift_reg <= {packet_shift_reg[126:0], sdi};
         end
     end
     
@@ -179,7 +139,7 @@ module mcu_spi_slave(
     // aes_spi uses blocking assignment for immediate update
     always @(negedge sck) begin
         wasdone = done;
-        sdodelayed = packet_shift_reg[254];  // Next bit to output (like aes_spi cyphertextcaptured[126])
+        sdodelayed = packet_shift_reg[126];  // Next bit to output (MSB of remaining data)
     end
     
     // SDO output: Following aes_spi pattern exactly

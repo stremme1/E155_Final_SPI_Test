@@ -57,6 +57,29 @@ module mock_bno085 (
         tx_byte = 0;
     end
     
+    // Since PS0/WAKE is hardwired high, assert INT after a short delay to indicate sensor is ready
+    // The controller waits 300k cycles in INIT_WAIT_RESET, then waits for INT
+    // So we should assert INT shortly after reset to be ready when controller checks
+    logic [18:0] reset_delay_counter;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            reset_delay_counter <= 19'd0;
+            int_n <= 1'b1;
+            state <= ASLEEP;
+        end else begin
+            // Assert INT after controller's reset delay completes (300k cycles) plus a small margin
+            // This ensures INT is ready when controller enters INIT_WAIT_INT state
+            if (reset_delay_counter < 19'd301_000) begin
+                reset_delay_counter <= reset_delay_counter + 1;
+            end else if (reset_delay_counter == 19'd301_000) begin
+                // Sensor is ready - assert INT (active low)
+                int_n <= 1'b0;
+                reset_delay_counter <= reset_delay_counter + 1; // Prevent re-triggering
+                state <= AWAKE;
+            end
+        end
+    end
+    
     // Command handling
     logic [15:0] received_length = 0;
     logic [7:0] received_channel = 0;
@@ -123,9 +146,9 @@ module mock_bno085 (
         if (!rst_n) begin
             wake_triggered <= 0;
             state <= ASLEEP;
-            int_n <= 1'b1;
+            // int_n is now controlled by reset delay logic above
         end else begin
-            // Detect PS0 falling edge
+            // Detect PS0 falling edge (if PS0/WAKE is used)
             if (ps0_falling_edge) begin
                 // PS0 went low - wake up
                 wake_triggered <= 1;
@@ -133,14 +156,15 @@ module mock_bno085 (
             end
             
             // Deassert INT when CS goes low (per datasheet: "deassert as soon as CS is detected")
+            // This happens at the start of a new transaction
             if (cs_n_prev && !cs_n_sync && int_n == 0) begin
                 int_n <= 1'b1;
             end
         end
     end
     
-    // Handle INT assertion with delay when PS0 goes low
-    // Use edge detection on the actual ps0_wake signal
+    // Handle INT assertion with delay when PS0 goes low (if PS0/WAKE is used)
+    // Note: This is optional now since PS0/WAKE is hardwired high
     always @(negedge ps0_wake) begin
         fork
             begin
@@ -207,7 +231,7 @@ module mock_bno085 (
         end
     end
     
-    // Reset on CS high
+    // Reset on CS high (end of transaction)
     always @(posedge cs_n) begin
         rx_ptr = 0;
         rx_byte_count = 0;
@@ -219,6 +243,10 @@ module mock_bno085 (
         // Reload first byte for next transaction
         if (response_len > 0) begin
             tx_byte = response_queue[0];
+            // Assert INT after CS goes high to indicate response is ready
+            // Delay slightly to ensure CS is fully high
+            #1000;
+            int_n <= 1'b0;
         end
     end
     
@@ -237,9 +265,7 @@ module mock_bno085 (
                     response_len = 9;
                     response_ptr = 0;
                     tx_byte = response_queue[0];
-                    // Assert INT to indicate response ready
-                    #500;
-                    int_n = 1'b0;
+                    // INT will be asserted when CS goes high (in the posedge cs_n block)
                 end
             end else if (received_channel == 8'h02) begin // Control channel
                 // Check for Set Feature (0xFD)
@@ -253,9 +279,7 @@ module mock_bno085 (
                     response_len = 5;
                     response_ptr = 0;
                     tx_byte = response_queue[0];
-                    // Assert INT to indicate response ready
-                    #500;
-                    int_n = 1'b0;
+                    // INT will be asserted when CS goes high (in the posedge cs_n block)
                 end
             end
         end

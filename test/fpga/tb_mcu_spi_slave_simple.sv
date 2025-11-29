@@ -16,14 +16,10 @@ module tb_mcu_spi_slave_simple;
     logic load;         // Load signal from MCU
     logic done;         // Done signal to MCU
     
-    // Sensor data inputs
+    // Sensor data inputs (single sensor only)
     logic quat1_valid, gyro1_valid;
     logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z;
     logic signed [15:0] gyro1_x, gyro1_y, gyro1_z;
-    
-    logic quat2_valid, gyro2_valid;
-    logic signed [15:0] quat2_w, quat2_x, quat2_y, quat2_z;
-    logic signed [15:0] gyro2_x, gyro2_y, gyro2_z;
     
     // Clock generation (3MHz FPGA clock)
     parameter CLK_PERIOD = 333;
@@ -34,7 +30,7 @@ module tb_mcu_spi_slave_simple;
         #(CLK_PERIOD/2);
     end
     
-    // DUT
+    // DUT (single sensor only)
     mcu_spi_slave dut (
         .clk(clk),
         .sck(sck),
@@ -50,20 +46,11 @@ module tb_mcu_spi_slave_simple;
         .gyro1_valid(gyro1_valid),
         .gyro1_x(gyro1_x),
         .gyro1_y(gyro1_y),
-        .gyro1_z(gyro1_z),
-        .quat2_valid(quat2_valid),
-        .quat2_w(quat2_w),
-        .quat2_x(quat2_x),
-        .quat2_y(quat2_y),
-        .quat2_z(quat2_z),
-        .gyro2_valid(gyro2_valid),
-        .gyro2_x(gyro2_x),
-        .gyro2_y(gyro2_y),
-        .gyro2_z(gyro2_z)
+        .gyro1_z(gyro1_z)
     );
     
-    // Access packet_buffer via hierarchical reference
-    wire [7:0] packet_buffer [0:31];
+    // Access packet_buffer via hierarchical reference (16-byte packet)
+    wire [7:0] packet_buffer [0:15];
     assign packet_buffer[0] = dut.packet_buffer[0];
     assign packet_buffer[1] = dut.packet_buffer[1];
     assign packet_buffer[2] = dut.packet_buffer[2];
@@ -80,22 +67,6 @@ module tb_mcu_spi_slave_simple;
     assign packet_buffer[13] = dut.packet_buffer[13];
     assign packet_buffer[14] = dut.packet_buffer[14];
     assign packet_buffer[15] = dut.packet_buffer[15];
-    assign packet_buffer[16] = dut.packet_buffer[16];
-    assign packet_buffer[17] = dut.packet_buffer[17];
-    assign packet_buffer[18] = dut.packet_buffer[18];
-    assign packet_buffer[19] = dut.packet_buffer[19];
-    assign packet_buffer[20] = dut.packet_buffer[20];
-    assign packet_buffer[21] = dut.packet_buffer[21];
-    assign packet_buffer[22] = dut.packet_buffer[22];
-    assign packet_buffer[23] = dut.packet_buffer[23];
-    assign packet_buffer[24] = dut.packet_buffer[24];
-    assign packet_buffer[25] = dut.packet_buffer[25];
-    assign packet_buffer[26] = dut.packet_buffer[26];
-    assign packet_buffer[27] = dut.packet_buffer[27];
-    assign packet_buffer[28] = dut.packet_buffer[28];
-    assign packet_buffer[29] = dut.packet_buffer[29];
-    assign packet_buffer[30] = dut.packet_buffer[30];
-    assign packet_buffer[31] = dut.packet_buffer[31];
     
     // Test tracking
     integer test_count = 0;
@@ -133,12 +104,8 @@ module tb_mcu_spi_slave_simple;
         load = 0;
         quat1_valid = 0;
         gyro1_valid = 0;
-        quat2_valid = 0;
-        gyro2_valid = 0;
         quat1_w = 0; quat1_x = 0; quat1_y = 0; quat1_z = 0;
         gyro1_x = 0; gyro1_y = 0; gyro1_z = 0;
-        quat2_w = 0; quat2_x = 0; quat2_y = 0; quat2_z = 0;
-        gyro2_x = 0; gyro2_y = 0; gyro2_z = 0;
         
         #(10 * CLK_PERIOD);
         
@@ -196,43 +163,6 @@ module tb_mcu_spi_slave_simple;
         check_test("Test 1.4c: Sensor 1 flags - both valid", 
                    packet_buffer[15] == 8'h03);
         
-        // Test 1.5: Sensor 2 quaternion MSB/LSB order
-        quat2_w = 16'hABCD;
-        quat2_x = 16'hEF01;
-        quat2_y = 16'h2345;
-        quat2_z = 16'h6789;
-        wait_comb();
-        check_test("Test 1.5a: Sensor 2 quat W MSB/LSB", 
-                   packet_buffer[16] == 8'hAB && packet_buffer[17] == 8'hCD);
-        check_test("Test 1.5b: Sensor 2 quat X MSB/LSB", 
-                   packet_buffer[18] == 8'hEF && packet_buffer[19] == 8'h01);
-        check_test("Test 1.5c: Sensor 2 quat Y MSB/LSB", 
-                   packet_buffer[20] == 8'h23 && packet_buffer[21] == 8'h45);
-        check_test("Test 1.5d: Sensor 2 quat Z MSB/LSB", 
-                   packet_buffer[22] == 8'h67 && packet_buffer[23] == 8'h89);
-        
-        // Test 1.6: Sensor 2 gyroscope MSB/LSB order
-        gyro2_x = 16'h4444;
-        gyro2_y = 16'h5555;
-        gyro2_z = 16'h6666;
-        wait_comb();
-        check_test("Test 1.6a: Sensor 2 gyro X MSB/LSB", 
-                   packet_buffer[24] == 8'h44 && packet_buffer[25] == 8'h44);
-        check_test("Test 1.6b: Sensor 2 gyro Y MSB/LSB", 
-                   packet_buffer[26] == 8'h55 && packet_buffer[27] == 8'h55);
-        check_test("Test 1.6c: Sensor 2 gyro Z MSB/LSB", 
-                   packet_buffer[28] == 8'h66 && packet_buffer[29] == 8'h66);
-        
-        // Test 1.7: Sensor 2 flags
-        quat2_valid = 1;
-        gyro2_valid = 1;
-        wait_comb();
-        check_test("Test 1.7: Sensor 2 flags - both valid", 
-                   packet_buffer[30] == 8'h03);
-        
-        // Test 1.8: Reserved byte
-        check_test("Test 1.8: Reserved byte = 0x00", packet_buffer[31] == 8'h00);
-        
         $display("");
         
         // ========================================
@@ -243,8 +173,6 @@ module tb_mcu_spi_slave_simple;
         // Reset valid signals
         quat1_valid = 0;
         gyro1_valid = 0;
-        quat2_valid = 0;
-        gyro2_valid = 0;
         load = 0;
         #(5 * CLK_PERIOD);
         
@@ -262,25 +190,11 @@ module tb_mcu_spi_slave_simple;
         #(5 * CLK_PERIOD);
         check_test("Test 2.3: DONE = 1 when gyro1_valid", done == 1'b1);
         
-        // Test 2.4: DONE = 1 when quat2_valid asserted
-        gyro1_valid = 0;
-        quat2_valid = 1;
-        #(5 * CLK_PERIOD);
-        check_test("Test 2.4: DONE = 1 when quat2_valid", done == 1'b1);
-        
-        // Test 2.5: DONE = 1 when gyro2_valid asserted
-        quat2_valid = 0;
-        gyro2_valid = 1;
-        #(5 * CLK_PERIOD);
-        check_test("Test 2.5: DONE = 1 when gyro2_valid", done == 1'b1);
-        
-        // Test 2.6: DONE = 1 when any combination
+        // Test 2.4: DONE = 1 when both valid
         quat1_valid = 1;
         gyro1_valid = 1;
-        quat2_valid = 1;
-        gyro2_valid = 1;
         #(5 * CLK_PERIOD);
-        check_test("Test 2.6: DONE = 1 when all valid", done == 1'b1);
+        check_test("Test 2.4: DONE = 1 when both valid", done == 1'b1);
         
         $display("");
         
@@ -384,14 +298,12 @@ module tb_mcu_spi_slave_simple;
         wait_comb();
         check_test("Test 4.6: Only gyro valid flag", packet_buffer[15] == 8'h02);
         
-        // Test 4.7: Both sensors valid
+        // Test 4.7: Both quat and gyro valid
         quat1_valid = 1;
         gyro1_valid = 1;
-        quat2_valid = 1;
-        gyro2_valid = 1;
         wait_comb();
-        check_test("Test 4.7: Both sensors valid flags", 
-                   packet_buffer[15] == 8'h03 && packet_buffer[30] == 8'h03);
+        check_test("Test 4.7: Both quat and gyro valid flags", 
+                   packet_buffer[15] == 8'h03);
         
         // Test 4.8: Rapid data updates
         quat1_w = 16'h1111;

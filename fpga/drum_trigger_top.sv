@@ -4,17 +4,12 @@
  * Drum Trigger Top-Level Module with MCU SPI Interface
  * 
  * Integrates:
- * - Dual BNO085 sensors (right and left hand)
+ * - Single BNO085 sensor (right hand)
  * - MCU SPI slave for sending raw sensor data to MCU
- * - BNO085 controllers and SPI masters
+ * - BNO085 controller and SPI master
  * 
- * This module connects the FPGA drum detection system to the MCU via SPI
- * FPGA is SPI slave, MCU is SPI master
- * 
- * Pin Sharing:
- * - Shared: sclk, mosi, bno085_rst_n (both sensors)
- * - Separate: cs_n1, cs_n2, miso1, miso2, int1, int2
- * - PS0/WAKE pins removed (hardwired to 3.3V)
+ * This module connects the FPGA drum sensor interface to the MCU via SPI.
+ * FPGA is SPI slave, MCU is SPI master.
  */
 
 module drum_trigger_top (
@@ -34,8 +29,8 @@ module drum_trigger_top (
     output logic        cs_n1,       // Sensor 1 chip select (separate)
     input  logic        int1,        // Sensor 1 interrupt (separate)
     
-    // Shared BNO085 Control (single BNO085 sensor configuration)
-    output logic        bno085_rst_n, // Shared reset (both sensors)
+    // BNO085 Control
+    output logic        bno085_rst_n, // Reset for the BNO085 sensor
     
     // Debug / Status LEDs
     output logic        led_initialized,
@@ -53,19 +48,9 @@ module drum_trigger_top (
     logic signed [15:0] gyro1_x, gyro1_y, gyro1_z;
     logic initialized1, error1;
     
-    // BNO085 Sensor 2 signals (Left Hand) - UNUSED (single-sensor configuration)
-    // Kept ONLY for interface compatibility with mcu_spi_slave, but tied off below
-    logic quat2_valid, gyro2_valid;
-    logic signed [15:0] quat2_w, quat2_x, quat2_y, quat2_z;
-    logic signed [15:0] gyro2_x, gyro2_y, gyro2_z;
-    
     // SPI master signals for Sensor 1
     logic spi1_start, spi1_tx_valid, spi1_tx_ready, spi1_rx_valid, spi1_busy;
     logic [7:0] spi1_tx_data, spi1_rx_data;
-    
-    // SPI master signals for Sensor 2 - UNUSED in single-sensor configuration
-    logic spi2_start, spi2_tx_valid, spi2_tx_ready, spi2_rx_valid, spi2_busy;
-    logic [7:0] spi2_tx_data, spi2_rx_data;
     
     // Reset delay counter
     localparam [22:0] DELAY_100MS = 23'd300_000;
@@ -74,7 +59,7 @@ module drum_trigger_top (
     logic bno085_rst_n_delayed;
     logic controller_rst_n;
     
-    // BNO085 Reset with delay (shared for both sensors)
+    // BNO085 Reset with delay
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
             rst_delay_counter <= 23'd0;
@@ -171,32 +156,14 @@ module drum_trigger_top (
         .error(error1)
     );
     
-    // ============================================
-    // BNO085 Sensor 2 (Left Hand) - TIED OFF (no external ports)
-    // ============================================
-    //
-    // NOTE: For this build we only use a single BNO085 sensor.
-    // Sensor 2 logic is removed to avoid multiple drivers on `sclk`/`mosi`.
-    // We keep the signals for compatibility, but tie them to safe values.
-
-    // Tie off all Sensor 2 data/flags so MCU knows this sensor is inactive
-    assign quat2_valid = 1'b0;
-    assign gyro2_valid = 1'b0;
-    assign quat2_w = '0;
-    assign quat2_x = '0;
-    assign quat2_y = '0;
-    assign quat2_z = '0;
-    assign gyro2_x = '0;
-    assign gyro2_y = '0;
-    assign gyro2_z = '0;
-    
-    // Status LEDs (only sensor 1 is used)
+    // Status LEDs (sensor 1 only)
     assign led_initialized = initialized1;
     assign led_error = error1;
     
     // ============================================
     // MCU SPI Slave for sending raw sensor data
     // ============================================
+    // Single sensor only - sends 16-byte packet with sensor 1 data
     
     mcu_spi_slave mcu_spi_slave_inst (
         .clk(clk),
@@ -205,7 +172,7 @@ module drum_trigger_top (
         .sdo(mcu_sdo),
         .load(mcu_load),
         .done(mcu_done),
-        // Sensor 1 (Right Hand)
+        // Sensor 1 (Right Hand) - single sensor only
         .quat1_valid(quat1_valid),
         .quat1_w(quat1_w),
         .quat1_x(quat1_x),
@@ -214,17 +181,7 @@ module drum_trigger_top (
         .gyro1_valid(gyro1_valid),
         .gyro1_x(gyro1_x),
         .gyro1_y(gyro1_y),
-        .gyro1_z(gyro1_z),
-        // Sensor 2 (Left Hand)
-        .quat2_valid(quat2_valid),
-        .quat2_w(quat2_w),
-        .quat2_x(quat2_x),
-        .quat2_y(quat2_y),
-        .quat2_z(quat2_z),
-        .gyro2_valid(gyro2_valid),
-        .gyro2_x(gyro2_x),
-        .gyro2_y(gyro2_y),
-        .gyro2_z(gyro2_z)
+        .gyro1_z(gyro1_z)
     );
     
 endmodule

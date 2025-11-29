@@ -43,7 +43,7 @@ RCC_TypeDef *RCC;
 #define SPI_DONE PA6
 
 // Mock data for SPI transmission simulation
-static uint8_t mock_spi_rx_buffer[32];
+static uint8_t mock_spi_rx_buffer[16];  // 16-byte single-sensor packet
 static uint8_t mock_spi_rx_index = 0;
 static uint8_t mock_spi_tx_byte = 0;
 static int mock_done_state = 0;
@@ -80,7 +80,7 @@ char spiSendReceive(char send) {
     SPI1->SR &= ~SPI_SR_TXE;  // Clear TXE after write
     
     // Simulate receiving data from mock buffer
-    if (mock_spi_rx_index < 32) {
+    if (mock_spi_rx_index < 16) {
         SPI1->DR = mock_spi_rx_buffer[mock_spi_rx_index++];
         SPI1->SR |= SPI_SR_RXNE;  // Set RXNE
     }
@@ -103,8 +103,8 @@ void readSensorDataPacket(uint8_t *packet) {
     // Wait for DONE signal
     while(!digitalRead(SPI_DONE));
 
-    // Read 32 bytes (CE toggled per byte like Lab07)
-    for(i = 0; i < 32; i++) {
+    // Read 16 bytes (single-sensor packet, CE toggled per byte like Lab07)
+    for(i = 0; i < 16; i++) {
         digitalWrite(SPI_CE, 1); // CE high
         packet[i] = spiSendReceive(0);  
         digitalWrite(SPI_CE, 0); // CE low
@@ -119,8 +119,8 @@ void readSensorDataPacket(uint8_t *packet) {
 
 // Test SPI communication
 void test_spi_communication(void) {
-    uint8_t packet[32];
-    uint8_t expected_packet[32];
+    uint8_t packet[16];  // 16-byte single-sensor packet
+    uint8_t expected_packet[16];
     
     // Initialize mock hardware
     static SPI_TypeDef spi1_regs;
@@ -137,9 +137,9 @@ void test_spi_communication(void) {
     printf("=== Test: SPI Communication ===\n");
     
     // Test 1: Read valid packet
-    printf("\nTest 1: Read valid 32-byte packet\n");
+    printf("\nTest 1: Read valid 16-byte packet (single sensor)\n");
     
-    // Setup expected packet
+    // Setup expected packet (16-byte single-sensor format)
     expected_packet[0] = 0xAA;  // Header
     // Sensor 1 quaternion
     expected_packet[1] = 0x40; expected_packet[2] = 0x00;  // W = 0x4000
@@ -151,20 +151,9 @@ void test_spi_communication(void) {
     expected_packet[11] = 0x00; expected_packet[12] = 0xC8; // Y = 200
     expected_packet[13] = 0x01; expected_packet[14] = 0x2C; // Z = 300
     expected_packet[15] = 0x03;  // Flags: both valid
-    // Sensor 2 quaternion
-    expected_packet[16] = 0x50; expected_packet[17] = 0x00;  // W = 0x5000
-    expected_packet[18] = 0x11; expected_packet[19] = 0x00;  // X
-    expected_packet[20] = 0x22; expected_packet[21] = 0x00;  // Y
-    expected_packet[22] = 0x33; expected_packet[23] = 0x00;  // Z
-    // Sensor 2 gyroscope
-    expected_packet[24] = 0x01; expected_packet[25] = 0x90;  // X = 400
-    expected_packet[26] = 0x01; expected_packet[27] = 0xF4;  // Y = 500
-    expected_packet[28] = 0x02; expected_packet[29] = 0x58;  // Z = 600
-    expected_packet[30] = 0x03;  // Flags: both valid
-    expected_packet[31] = 0x00;  // Reserved
     
     // Setup mock SPI receive buffer
-    memcpy(mock_spi_rx_buffer, expected_packet, 32);
+    memcpy(mock_spi_rx_buffer, expected_packet, 16);
     mock_spi_rx_index = 0;
     mock_done_state = 1;  // DONE is high (data ready)
     mock_spi_busy = 0;
@@ -173,8 +162,8 @@ void test_spi_communication(void) {
     readSensorDataPacket(packet);
     
     // Verify packet matches
-    assert(memcmp(packet, expected_packet, 32) == 0);
-    printf("  [PASS] Packet read correctly\n");
+    assert(memcmp(packet, expected_packet, 16) == 0);
+    printf("  [PASS] Packet read correctly (16-byte single-sensor format)\n");
     
     // Test 2: Wait for DONE signal
     printf("\nTest 2: Wait for DONE signal\n");
@@ -185,7 +174,7 @@ void test_spi_communication(void) {
     // In a real test, we'd need to simulate DONE going high
     // For now, we'll set it high immediately to test the read
     mock_done_state = 1;
-    memcpy(mock_spi_rx_buffer, expected_packet, 32);
+    memcpy(mock_spi_rx_buffer, expected_packet, 16);
     readSensorDataPacket(packet);
     
     assert(packet[0] == 0xAA);
@@ -198,7 +187,7 @@ void test_spi_communication(void) {
         mock_done_state = 1;
         // Modify expected packet slightly for each read
         expected_packet[1] = 0x40 + i;
-        memcpy(mock_spi_rx_buffer, expected_packet, 32);
+        memcpy(mock_spi_rx_buffer, expected_packet, 16);
         readSensorDataPacket(packet);
         assert(packet[1] == (0x40 + i));
     }
