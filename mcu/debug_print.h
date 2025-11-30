@@ -1,22 +1,23 @@
 // debug_print.h
-// Debug print utilities for USART serial output
+// Debug print utilities using SEGGER RTT (works over debugger connection)
+// Output appears in SEGGER Embedded Studio Terminal window
 
 #ifndef DEBUG_PRINT_H
 #define DEBUG_PRINT_H
 
 #include <stdint.h>
-#include "STM32L432KC_USART.h"
+#include "STM32L432KC_USART.h"  // For USART_TypeDef (kept for compatibility)
 
-// Debug USART instance (USART2 for PA2/PA15)
+// Debug USART instance (kept for compatibility, but RTT/printf is used)
 extern USART_TypeDef *debug_usart;
 
-// Initialize debug USART
+// Initialize debug - RTT is automatically initialized by SEGGER runtime
 void debug_init(void);
 
 // Print a string
 void debug_print(const char *str);
 
-// Print formatted string (simple printf-like, supports %d, %x, %s)
+// Print formatted string (uses standard printf - supports %d, %x, %s, %c, %.2f, etc.)
 void debug_printf(const char *format, ...);
 
 // Print a byte as hex (e.g., "0xAA")

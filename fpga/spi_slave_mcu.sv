@@ -88,9 +88,9 @@ module spi_slave_mcu(
     // Create 128-bit packet from packet buffer (16 bytes * 8 bits)
     logic [127:0] tx_packet;
     assign tx_packet = {
-        packet_buffer[0], packet_buffer[1], packet_buffer[2], packet_buffer[3],
-        packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
-        packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
+                packet_buffer[0], packet_buffer[1], packet_buffer[2], packet_buffer[3],
+                packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
+                packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
         packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
     };
     
@@ -114,17 +114,23 @@ module spi_slave_mcu(
             // Sample MOSI on SCK rising edge (Mode 0) - but we ignore it in read-only mode
             if (sck_rising) begin
                 // Read-only mode: ignore sdi, just shift out
-                shift_out <= {shift_out[6:0], 1'b0};  // Shift left, shift in 0
+                // Shift LEFT so next bit moves into MSB position [7] for output
+                // Output is shift_out[7], so we shift left to bring next bit into position
+                shift_out <= {shift_out[6:0], 1'b0};  // Shift left, shift in 0 from right
                 bit_count <= bit_count + 1;
                 
                 // Completed a full byte?
                 if (bit_count == 3'd7) begin
                     // Move to next output byte
                     byte_count <= byte_count + 1;
-                    shift_out  <= tx_packet[127 - (byte_count+1)*8 -: 8];
+                    // Load next byte: when byte_count=0 (just finished byte 0), load packet_buffer[1]
+                    // Formula: 127 - (byte_count+1)*8 gives correct byte index
+                    if (byte_count < 15) begin  // Prevent overflow when byte_count reaches 15
+                        shift_out  <= tx_packet[127 - (byte_count+1)*8 -: 8];
+                    end
                 end
             end
-            
+    
         end
     end
     

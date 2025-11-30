@@ -43,8 +43,21 @@ void initSPI(int br, int cpol, int cpha) {
 
     SPI1->CR1 |= (SPI_CR1_SPE); // Enable SPI
     
-    // Debug: SPI initialization complete
+    // Debug: SPI initialization complete with register verification
     debug_print("[SPI] SPI initialized: Mode 0, BR=1 (20MHz), CS=PA11\r\n");
+    debug_printf("[SPI] CR1 register: 0x%08X\r\n", SPI1->CR1);
+    debug_printf("[SPI] CR2 register: 0x%08X\r\n", SPI1->CR2);
+    debug_printf("[SPI] CPOL=%d, CPHA=%d, MSTR=%d, SPE=%d\r\n", 
+                 (SPI1->CR1 & SPI_CR1_CPOL) ? 1 : 0,
+                 (SPI1->CR1 & SPI_CR1_CPHA) ? 1 : 0,
+                 (SPI1->CR1 & SPI_CR1_MSTR) ? 1 : 0,
+                 (SPI1->CR1 & SPI_CR1_SPE) ? 1 : 0);
+    
+    // Verify CS pin (PA11) is configured correctly
+    // CS should be output and initially high
+    digitalWrite(PA11, 1);  // Ensure CS starts high
+    debug_printf("[SPI] CS pin (PA11) state: %d (should be 1/high)\r\n", digitalRead(PA11));
+    debug_print("[SPI] SPI configuration verified\r\n");
 }
 
 /* Transmits a character (1 byte) over SPI and returns the received character.
@@ -153,6 +166,11 @@ void readSensorDataPacket(uint8_t *packet) {
     // CS-based protocol: Pull CS low to start transaction
     digitalWrite(PA11, 0);  // CS low
     
+    // Small delay to allow FPGA to prepare data and synchronize
+    // This ensures the FPGA shift register is ready before we start clocking
+    volatile int setup_delay = 100;  // ~1.25us at 80MHz (adjust if needed)
+    while(setup_delay-- > 0) __asm("nop");
+    
     // Read 16 bytes using dummy bytes (0x00) to generate SCK
     for(i = 0; i < 16; i++) {
         packet[i] = spiSendReceive(0x00);
@@ -160,13 +178,33 @@ void readSensorDataPacket(uint8_t *packet) {
         debug_printf("[SPI] Byte[%d] = 0x%x\r\n", i, packet[i]);
     }
     
+    // Wait for SPI transaction to complete
+    while(SPI1->SR & SPI_SR_BSY);  // Wait until SPI is not busy
+    
     // Pull CS high to end transaction
     digitalWrite(PA11, 1);  // CS high
+    
+    // Small delay to allow FPGA to reset its state
+    volatile int hold_delay = 100;  // ~1.25us at 80MHz (adjust if needed)
+    while(hold_delay-- > 0) __asm("nop");
     
     // Debug: Complete packet dump
     debug_print("[SPI] Packet complete - CS high. Full packet: ");
     debug_print_bytes(packet, 16);
     debug_newline();
+    
+    // Validate packet for floating pin patterns
+    int all_ff = 1, all_00 = 1;
+    for(i = 0; i < 16; i++) {
+        if(packet[i] != 0xFF) all_ff = 0;
+        if(packet[i] != 0x00) all_00 = 0;
+    }
+    
+    if(all_ff) {
+        debug_print("[SPI] WARNING: All bytes are 0xFF - MISO pin may be floating!\r\n");
+    } else if(all_00) {
+        debug_print("[SPI] WARNING: All bytes are 0x00 - MISO pin may be floating or pulled low!\r\n");
+    }
 }
 
 /* Parse 16-byte sensor data packet into structured format
@@ -185,9 +223,26 @@ void parseSensorDataPacket(const uint8_t *packet,
                            uint8_t *quat2_valid, uint8_t *gyro2_valid) {
     // Verify header
     debug_printf("[SENSOR] Parsing packet - Header: 0x%x\r\n", packet[0]);
+    
+    // Check for floating pin patterns first
+    int all_ff = 1, all_00 = 1;
+    for(int i = 0; i < 16; i++) {
+        if(packet[i] != 0xFF) all_ff = 0;
+        if(packet[i] != 0x00) all_00 = 0;
+    }
+    
+    if(all_ff) {
+        debug_print("[SENSOR] ERROR: All bytes are 0xFF - MISO pin floating or not connected!\r\n");
+    } else if(all_00) {
+        debug_print("[SENSOR] ERROR: All bytes are 0x00 - MISO pin floating or pulled low!\r\n");
+    }
+    
     if (packet[0] != 0xAA) {
         // Invalid header - set all values to 0
-        debug_print("[SENSOR] ERROR: Invalid header! Expected 0xAA\r\n");
+        debug_printf("[SENSOR] ERROR: Invalid header! Expected 0xAA, got 0x%x\r\n", packet[0]);
+        if(!all_ff && !all_00) {
+            debug_print("[SENSOR] Data appears valid but header is wrong - check FPGA shift register!\r\n");
+        }
         *quat1_w = *quat1_x = *quat1_y = *quat1_z = 0;
         *gyro1_x = *gyro1_y = *gyro1_z = 0;
         *quat1_valid = *gyro1_valid = 0;
