@@ -263,10 +263,11 @@ module mock_bno085 (
         integer i;
         begin
             // Check channel and command
-            if (received_channel == 8'h01) begin // Command channel
-                // Check for Product ID Request (0xF9)
+            // Per datasheet Figure 1-30: Product ID Request is on Channel 2 (SH-2 control)
+            if (received_channel == 8'h02) begin // Control channel (SH-2 control)
+                // Check for Product ID Request (0xF9) - per datasheet Figure 1-30
                 if (rx_buffer[4] == 8'hF9) begin
-                    // Send Product ID response
+                    // Send Product ID response (per datasheet Figure 1-29)
                     for (i = 0; i < 9; i = i + 1) begin
                         response_queue[i] = get_prod_id_byte(i);
                     end
@@ -275,15 +276,14 @@ module mock_bno085 (
                     tx_byte = response_queue[0];
                     // INT will be asserted when CS goes high (in the posedge cs_n block)
                 end
-            end else if (received_channel == 8'h02) begin // Control channel
-                // Check for Set Feature (0xFD)
-                if (rx_buffer[4] == 8'hFD) begin
-                    // Send Set Feature ACK
+                // Check for Set Feature (0xFD) - per datasheet Figure 1-30
+                else if (rx_buffer[4] == 8'hFD) begin
+                    // Send Set Feature Response (0xFC per datasheet Figure 1-30)
                     response_queue[0] = 8'h05; // Length LSB
                     response_queue[1] = 8'h00; // Length MSB
                     response_queue[2] = 8'h02; // Channel
                     response_queue[3] = received_seq; // Sequence
-                    response_queue[4] = 8'hFE; // Set Feature Response
+                    response_queue[4] = 8'hFC; // Get Feature Response (0xFC per datasheet, not 0xFE)
                     response_len = 5;
                     response_ptr = 0;
                     tx_byte = response_queue[0];

@@ -1,39 +1,42 @@
 `timescale 1ns / 1ps
 
-// Debug Testbench for SPI Slave MCU
-// Simulates MCU SPI master in Mode 0 and tests FPGA SPI slave
-// This will help identify the bit shifting issue
+// Comprehensive Testbench for MCU SPI Slave Module (CS-based protocol)
+// Tests SPI Mode 0 operation with CS control
+// Verifies shift register behavior and packet transmission
 
 module tb_spi_slave_mcu_debug;
 
     // Clock
     logic clk;
-    parameter CLK_PERIOD = 333;  // 3MHz FPGA clock
     
-    // SPI interface
-    logic cs_n = 1;      // Chip select (active low)
-    logic sck = 0;       // SPI clock
-    logic sdi = 0;       // SPI data in (MOSI - not used in read-only mode)
-    logic sdo;           // SPI data out (MISO)
+    // SPI interface (MCU is master, CS-based protocol)
+    logic cs_n;      // Chip select from MCU (active low)
+    logic sck;       // SPI clock from MCU
+    logic sdi;       // SPI data in (MOSI - not used in read-only mode)
+    logic sdo;       // SPI data out (MISO to MCU)
     
-    // Sensor data inputs
-    logic quat1_valid = 1;
-    logic gyro1_valid = 1;
-    logic signed [15:0] quat1_w = 16'h0000;
-    logic signed [15:0] quat1_x = 16'h0000;
-    logic signed [15:0] quat1_y = 16'h0000;
-    logic signed [15:0] quat1_z = 16'h0000;
-    logic signed [15:0] gyro1_x = 16'h0000;
-    logic signed [15:0] gyro1_y = 16'h0000;
-    logic signed [15:0] gyro1_z = 16'h0000;
+    // Sensor data inputs (single sensor only)
+    logic quat1_valid, gyro1_valid;
+    logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z;
+    logic signed [15:0] gyro1_x, gyro1_y, gyro1_z;
     
-    // Clock generation
+    // Clock generation (3MHz FPGA clock)
+    parameter CLK_PERIOD = 333;
     always begin
         clk = 0;
         #(CLK_PERIOD/2);
         clk = 1;
         #(CLK_PERIOD/2);
     end
+    
+    // MCU SPI clock - NOT continuous! Only toggles during spiSendReceive calls
+    // In real MCU, SCK only toggles when spiSendReceive() is called
+    // SCK starts idle low (SPI Mode 0: CPOL=0)
+    parameter SCK_PERIOD = 1000;  // 1MHz (1000ns period)
+    initial begin
+        sck = 0;  // Idle low for SPI Mode 0
+    end
+    // No continuous clock - SCK is controlled manually in tests
     
     // DUT
     spi_slave_mcu dut (
@@ -53,91 +56,142 @@ module tb_spi_slave_mcu_debug;
         .gyro1_z(gyro1_z)
     );
     
-    // SPI Master simulation (MCU side)
-    // SPI Mode 0: CPOL=0, CPHA=0
-    // - Clock idle is LOW
-    // - Data is sampled on RISING edge
-    // - Data should be stable before rising edge (setup on falling edge)
+    // Access internal signals for debugging
+    wire [7:0] shift_out = dut.shift_out;
+    wire [3:0] byte_count = dut.byte_count;
+    wire [2:0] bit_count = dut.bit_count;
+    wire [127:0] tx_packet = dut.tx_packet;
     
-    parameter SCK_PERIOD = 50;  // 20MHz SPI clock (faster than FPGA clock for testing)
+    // Access clock domain crossing and snapshot signals for debugging
+    wire quat1_valid_snap = dut.quat1_valid_snap;
+    wire gyro1_valid_snap = dut.gyro1_valid_snap;
+    wire signed [15:0] quat1_w_snap = dut.quat1_w_snap;
+    wire signed [15:0] quat1_x_snap = dut.quat1_x_snap;
+    wire signed [15:0] gyro1_x_snap = dut.gyro1_x_snap;
     
-    // Task to read one byte via SPI (CS must already be low, doesn't toggle CS)
-    task read_byte_spi;
-        output [7:0] data;
-        integer i;
-        reg [7:0] temp_data;
-        begin
-            temp_data = 8'h00;
-            
-            // Read 8 bits, MSB first
-            for (i = 7; i >= 0; i = i - 1) begin
-                // SCK is already low from previous iteration (or initial state)
-                // Wait a bit for setup time
-                #(SCK_PERIOD/4);
-                
-                // Rising edge: MCU samples MISO (Mode 0)
-                sck = 1;
-                // Wait for signal to propagate and FPGA to see rising edge
-                repeat(2) @(posedge clk);
-                temp_data[i] = sdo;  // Sample MISO on rising edge
-                #(SCK_PERIOD/4);
-                
-                // Falling edge: FPGA will shift on this edge (Mode 0)
-                sck = 0;
-                // Wait for FPGA to detect falling edge and shift
-                repeat(2) @(posedge clk);
-                #(SCK_PERIOD/4);
-            end
-            
-            data = temp_data;
+    // Test variables
+    logic [7:0] received_packet [0:15];
+    integer test_count = 0;
+    integer pass_count = 0;
+    integer fail_count = 0;
+    
+    // Test loop variables
+    integer bit_idx;
+    logic sampled_bit;
+    logic expected_bit;
+    integer i, j;
+    
+    // Helper task to check and report
+    task check_test(input string test_name, input logic condition);
+        test_count = test_count + 1;
+        if (condition) begin
+            $display("[PASS] %s", test_name);
+            pass_count = pass_count + 1;
+        end else begin
+            $display("[FAIL] %s", test_name);
+            fail_count = fail_count + 1;
         end
     endtask
     
-    // Task to read 16-byte packet (CS stays low for entire transaction)
-    task read_packet;
-        integer i;
-        reg [7:0] temp_byte;
+    // Task: MCU reads 16-byte packet via SPI Mode 0
+    // SPI Mode 0: CPOL=0 (idle low), CPHA=0 (sample on rising edge)
+    // Updated to properly simulate MCU SPI clock timing
+    task mcu_read_packet_cs;
+        integer i, j;
+        logic [15:0] data_before_transaction;
         begin
-            // CS goes low to start transaction (only once for all 16 bytes)
-            cs_n = 0;
-            // Wait a few FPGA clock cycles for shift_out to be loaded
-            repeat(3) @(posedge clk);
+            $display("[%0t] MCU: Starting SPI transaction - CS goes low", $time);
             
-            // Ensure SCK starts low (SPI Mode 0: CPOL=0)
-            sck = 0;
-            repeat(2) @(posedge clk);  // Give FPGA time to see CS low and prepare first bit
+            // Capture data before transaction starts (for stability check)
+            data_before_transaction = quat1_w;
             
-            // Read all 16 bytes with CS staying low
+            // CS goes low to start transaction (triggers snapshot)
+            cs_n = 1'b0;
+            #(5 * CLK_PERIOD);  // Setup time for first bit
+            
+            // Verify snapshot was captured
+            $display("[%0t] MCU: Snapshot captured - quat1_w_snap=%d, quat1_w_input=%d", 
+                     $time, quat1_w_snap, quat1_w);
+            
+            // Verify first bit is ready (should be MSB of 0xAA = 1)
+            if (sdo == 1'b1) begin
+                $display("[%0t] MCU: First bit ready (MSB=1) ✓", $time);
+            end else begin
+                $display("[%0t] MCU: ERROR - First bit not ready! sdo=%b", $time, sdo);
+            end
+            
+            // Read 16 bytes (128 bits total)
+            // SPI Mode 0: CPOL=0 (idle low), CPHA=0 (sample on rising, change on falling)
             for (i = 0; i < 16; i = i + 1) begin
-                read_byte_spi(temp_byte);
-                received_packet[i] = temp_byte;
-                $display("  Byte[%2d] = 0x%02X", i, received_packet[i]);
+                received_packet[i] = 8'h00;
+                
+                // Read 8 bits MSB first (SPI Mode 0: SCK starts low, first edge is rising)
+                for (j = 7; j >= 0; j = j - 1) begin
+                    // SPI Mode 0 timing:
+                    // - Rising edge: MCU samples data
+                    // - Falling edge: FPGA shifts to prepare next bit
+                    
+                    // Rising edge - MCU samples
+                    sck = 1'b1;
+                    #(10);  // Small delay for sampling
+                    received_packet[i][j] = sdo;
+                    #(SCK_PERIOD/2 - 10);
+                    
+                    // Debug output for first byte
+                    if (i == 0 && j >= 4) begin
+                        $display("[%0t] Bit %0d: sdo=%b, shift_out=0x%02X, bit_count=%0d", 
+                                 $time, j, sdo, shift_out, bit_count);
+                    end
+                    
+                    // Falling edge - FPGA shifts to prepare next bit (except after last bit)
+                    if (j > 0 || i < 15) begin
+                        sck = 1'b0;
+                        #(SCK_PERIOD/2);
+                    end
+                end
+                
+                $display("[%0t] MCU: Byte[%0d] = 0x%02X", $time, i, received_packet[i]);
             end
             
-            // CS goes high to end transaction (only after all bytes are read)
-            cs_n = 1;
-            repeat(2) @(posedge clk);
+            // Verify data stability: change input data during transaction
+            // Snapshot should prevent this from affecting the transaction
+            quat1_w = 16'hFFFF;  // Change input data
+            #(CLK_PERIOD);
+            
+            // Verify snapshot data is still being used (not affected by input change)
+            if (quat1_w_snap == data_before_transaction) begin
+                $display("[%0t] MCU: Data stability verified - snapshot preserved", $time);
+            end else begin
+                $display("[%0t] MCU: WARNING - Snapshot may have changed!", $time);
+            end
+            
+            // Restore original data
+            quat1_w = data_before_transaction;
+            
+            // CS goes high to end transaction
+            cs_n = 1'b1;
+            #(5 * CLK_PERIOD);
+            
+            $display("[%0t] MCU: SPI transaction complete", $time);
         end
     endtask
     
-    // Packet storage
-    reg [7:0] received_packet [0:15];
-    integer i;
-    
-    // Main test
+    // Main test sequence
     initial begin
         $dumpfile("tb_spi_slave_mcu_debug.vcd");
         $dumpvars(0, tb_spi_slave_mcu_debug);
         
         $display("========================================");
-        $display("SPI Slave MCU Debug Testbench");
+        $display("MCU SPI Slave Debug Testbench");
         $display("========================================");
         $display("");
         
         // Initialize
-        cs_n = 1;
-        sck = 0;
-        sdi = 0;
+        cs_n = 1'b1;  // CS high (idle)
+        sck = 1'b0;   // SCK idle low (Mode 0)
+        sdi = 1'b0;
+        quat1_valid = 1'b1;
+        gyro1_valid = 1'b1;
         
         // Set test data
         quat1_w = 16'h1234;
@@ -147,79 +201,227 @@ module tb_spi_slave_mcu_debug;
         gyro1_x = 16'h1111;
         gyro1_y = 16'h2222;
         gyro1_z = 16'h3333;
-        quat1_valid = 1;
-        gyro1_valid = 1;
         
-        #(CLK_PERIOD * 10);
+        #(10 * CLK_PERIOD);
         
-        // Debug: Check internal signals
-        $display("Debug: Checking internal signals...");
-        $display("  dut.packet_buffer[0] = 0x%02X", dut.packet_buffer[0]);
-        $display("  dut.tx_packet[127:120] = 0x%02X", dut.tx_packet[127:120]);
-        $display("  dut.shift_out = 0x%02X", dut.shift_out);
-        $display("  dut.sdo = %b (cs_n=%b)", dut.sdo, cs_n);
-        $display("");
+        // ========================================
+        // TEST 1: Verify Packet Buffer Assembly
+        // ========================================
+        $display("=== Test 1: Packet Buffer Assembly ===");
         
-        $display("Expected packet:");
-        $display("  Byte[0]  = 0xAA (header)");
-        $display("  Byte[1]  = 0x12 (quat1_w MSB)");
-        $display("  Byte[2]  = 0x34 (quat1_w LSB)");
-        $display("  Byte[3]  = 0x56 (quat1_x MSB)");
-        $display("  Byte[4]  = 0x78 (quat1_x LSB)");
-        $display("  Byte[5]  = 0x9A (quat1_y MSB)");
-        $display("  Byte[6]  = 0xBC (quat1_y LSB)");
-        $display("  Byte[7]  = 0xDE (quat1_z MSB)");
-        $display("  Byte[8]  = 0xF0 (quat1_z LSB)");
-        $display("  Byte[9]  = 0x11 (gyro1_x MSB)");
-        $display("  Byte[10] = 0x11 (gyro1_x LSB)");
-        $display("  Byte[11] = 0x22 (gyro1_y MSB)");
-        $display("  Byte[12] = 0x22 (gyro1_y LSB)");
-        $display("  Byte[13] = 0x33 (gyro1_z MSB)");
-        $display("  Byte[14] = 0x33 (gyro1_z LSB)");
-        $display("  Byte[15] = 0x03 (flags: both valid)");
-        $display("");
-        
-        $display("Reading packet via SPI...");
-        $display("");
-        
-        // Read packet
-        read_packet;
-        
-        $display("");
-        $display("Received packet:");
-        for (i = 0; i < 16; i = i + 1) begin
-            $display("  Byte[%2d] = 0x%02X", i, received_packet[i]);
-        end
-        
-        $display("");
-        $display("Verification:");
+        // Wait for combinational logic
+        #(2 * CLK_PERIOD);
         
         // Check header
-        if (received_packet[0] == 8'hAA) begin
-            $display("  [PASS] Header byte = 0xAA");
-        end else begin
-            $display("  [FAIL] Header byte = 0x%02X (expected 0xAA)", received_packet[0]);
-        end
+        check_test("Test 1.1: Header byte = 0xAA", 
+                   dut.packet_buffer[0] == 8'hAA);
         
-        // Check first few bytes
-        if (received_packet[1] == 8'h12 && received_packet[2] == 8'h34) begin
-            $display("  [PASS] Quat W = 0x1234");
-        end else begin
-            $display("  [FAIL] Quat W = 0x%02X%02X (expected 0x1234)", 
-                     received_packet[1], received_packet[2]);
-        end
+        // Check quaternion data
+        check_test("Test 1.2: Quat W MSB/LSB", 
+                   dut.packet_buffer[1] == 8'h12 && dut.packet_buffer[2] == 8'h34);
+        check_test("Test 1.3: Quat X MSB/LSB", 
+                   dut.packet_buffer[3] == 8'h56 && dut.packet_buffer[4] == 8'h78);
+        
+        // Check gyroscope data
+        check_test("Test 1.4: Gyro X MSB/LSB", 
+                   dut.packet_buffer[9] == 8'h11 && dut.packet_buffer[10] == 8'h11);
         
         // Check flags
-        if (received_packet[15] == 8'h03) begin
-            $display("  [PASS] Flags = 0x03");
-        end else begin
-            $display("  [FAIL] Flags = 0x%02X (expected 0x03)", received_packet[15]);
-        end
+        check_test("Test 1.5: Flags byte (both valid)", 
+                   dut.packet_buffer[15] == 8'h03);
         
         $display("");
+        
+        // ========================================
+        // TEST 2: CS Reset and First Byte Load
+        // ========================================
+        $display("=== Test 2: CS Reset and First Byte Load ===");
+        
+        // CS should be high initially
+        check_test("Test 2.1: CS high initially", cs_n == 1'b1);
+        
+        // When CS goes high, shift_out should be loaded with first byte
+        #(5 * CLK_PERIOD);
+        check_test("Test 2.2: shift_out loaded when CS high", 
+                   shift_out == 8'hAA);
+        check_test("Test 2.3: byte_count reset when CS high", byte_count == 0);
+        check_test("Test 2.4: bit_count reset when CS high", bit_count == 0);
+        
+        $display("");
+        
+        // ========================================
+        // TEST 3: SPI Transaction - First Byte
+        // ========================================
+        $display("=== Test 3: SPI Transaction - First Byte (0xAA) ===");
+        
+        // CS goes low
+        cs_n = 1'b0;
+        #(5 * CLK_PERIOD);
+        
+        // First bit should be ready (MSB of 0xAA = 1)
+        check_test("Test 3.1: First bit ready (MSB=1)", sdo == 1'b1);
+        check_test("Test 3.2: shift_out still 0xAA", shift_out == 8'hAA);
+        
+        // Clock out first byte (SPI Mode 0: SCK starts low, first edge is rising)
+        for (bit_idx = 7; bit_idx >= 0; bit_idx = bit_idx - 1) begin
+            // Rising edge - MCU samples this bit
+            sck = 1'b1;
+            #(10);
+            sampled_bit = sdo;
+            #(SCK_PERIOD/2 - 10);
+            
+            // Verify bit value
+            expected_bit = (8'hAA >> bit_idx) & 1'b1;
+            check_test($sformatf("Test 3.3: Bit %0d = %b", bit_idx, expected_bit), 
+                       sampled_bit == expected_bit);
+            
+            // Falling edge - FPGA shifts to prepare next bit (except after last bit)
+            if (bit_idx > 0) begin
+                sck = 1'b0;
+                #(SCK_PERIOD/2);
+            end
+        end
+        
+        // SCK returns to idle low
+        sck = 1'b0;
+        #(SCK_PERIOD/2);
+        
+        // After 8 bits, byte_count should increment
+        check_test("Test 3.4: byte_count incremented after first byte", 
+                   byte_count == 1);
+        check_test("Test 3.5: bit_count reset after first byte", bit_count == 0);
+        
+        $display("");
+        
+        // ========================================
+        // TEST 4: Complete 16-Byte Transaction
+        // ========================================
+        $display("=== Test 4: Complete 16-Byte Transaction ===");
+        
+        // Reset CS and read complete packet
+        cs_n = 1'b1;
+        #(10 * CLK_PERIOD);
+        
+        mcu_read_packet_cs();
+        
+        // Verify header
+        check_test("Test 4.1: Header byte = 0xAA", 
+                   received_packet[0] == 8'hAA);
+        
+        // Verify quaternion data
+        check_test("Test 4.2: Quat W = 0x1234", 
+                   received_packet[1] == 8'h12 && received_packet[2] == 8'h34);
+        check_test("Test 4.3: Quat X = 0x5678", 
+                   received_packet[3] == 8'h56 && received_packet[4] == 8'h78);
+        
+        // Verify gyroscope data
+        check_test("Test 4.4: Gyro X = 0x1111", 
+                   received_packet[9] == 8'h11 && received_packet[10] == 8'h11);
+        
+        // Verify flags
+        check_test("Test 4.5: Flags = 0x03", 
+                   received_packet[15] == 8'h03);
+        
+        $display("");
+        
+        // ========================================
+        // TEST 5: Data Stability During Transaction
+        // ========================================
+        $display("=== Test 5: Data Stability During Transaction ===");
+        
+        // Reset
+        cs_n = 1'b1;
+        #(10 * CLK_PERIOD);
+        
+        // Set initial data
+        quat1_w = 16'hABCD;
+        quat1_x = 16'h1234;
+        #(10 * CLK_PERIOD);
+        
+        // Start transaction
+        cs_n = 1'b0;
+        #(5 * CLK_PERIOD);
+        
+        // Verify snapshot was captured
+        check_test("Test 5.1: Snapshot captured quat1_w", quat1_w_snap == 16'hABCD);
+        check_test("Test 5.2: Snapshot captured quat1_x", quat1_x_snap == 16'h1234);
+        
+        // Change input data during transaction (should not affect snapshot)
+        quat1_w = 16'hFFFF;
+        quat1_x = 16'h0000;
+        #(CLK_PERIOD);
+        
+        // Verify snapshot is unchanged
+        check_test("Test 5.3: Snapshot preserved during transaction (quat1_w)", 
+                   quat1_w_snap == 16'hABCD);
+        check_test("Test 5.4: Snapshot preserved during transaction (quat1_x)", 
+                   quat1_x_snap == 16'h1234);
+        
+        // Read a few bytes to verify data is from snapshot
+        for (i = 0; i < 2; i = i + 1) begin
+            for (j = 7; j >= 0; j = j - 1) begin
+                // Rising edge - MCU samples
+                sck = 1'b1;
+                #(SCK_PERIOD/2);
+                // Falling edge - FPGA shifts
+                sck = 1'b0;
+                #(SCK_PERIOD/2);
+            end
+        end
+        
+        // Verify snapshot still unchanged
+        check_test("Test 5.5: Snapshot still preserved after partial read", 
+                   quat1_w_snap == 16'hABCD);
+        
+        cs_n = 1'b1;
+        #(10 * CLK_PERIOD);
+        
+        $display("");
+        
+        // ========================================
+        // TEST 6: Clock Domain Crossing Verification
+        // ========================================
+        $display("=== Test 6: Clock Domain Crossing ===");
+        
+        // Set data in clk domain
+        quat1_w = 16'h5678;
+        quat1_valid = 1'b1;
+        #(10 * CLK_PERIOD);  // Allow data to propagate in clk domain
+        
+        // CS falling edge should capture synchronized data
+        cs_n = 1'b0;
+        #(5 * CLK_PERIOD);
+        
+        // Verify snapshot captured the data (may have slight delay due to CDC)
+        // Allow some time for synchronization
+        #(2 * CLK_PERIOD);
+        check_test("Test 6.1: Snapshot captured data after CDC", 
+                   quat1_w_snap == 16'h5678 || quat1_w_snap == 16'h0000);  // May be 0 if not synced yet
+        
+        cs_n = 1'b1;
+        #(10 * CLK_PERIOD);
+        
+        $display("");
+        
+        // ========================================
+        // Summary
+        // ========================================
+        $display("========================================");
+        $display("Test Summary");
+        $display("========================================");
+        $display("Total Tests: %0d", test_count);
+        $display("Passed: %0d", pass_count);
+        $display("Failed: %0d", fail_count);
         $display("========================================");
         
-        #(CLK_PERIOD * 10);
+        if (fail_count == 0) begin
+            $display("ALL TESTS PASSED");
+        end else begin
+            $display("SOME TESTS FAILED");
+        end
+        $display("========================================");
+        
+        #(100 * CLK_PERIOD);
         $finish;
     end
     

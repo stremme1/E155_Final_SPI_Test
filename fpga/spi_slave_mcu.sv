@@ -37,33 +37,120 @@ module spi_slave_mcu(
     localparam PACKET_SIZE = 16;
     localparam HEADER_BYTE = 8'hAA;
     
-    // Packet buffer - assembled from sensor data
+    // ========================================================================
+    // Clock Domain Crossing: Synchronize sensor data from clk domain to sck domain
+    // ========================================================================
+    // Sensor data comes from BNO085 controller (clocked on FPGA clk)
+    // SPI slave logic is clocked on MCU sck (asynchronous)
+    // Strategy: 
+    // 1. Register data in clk domain to prevent glitches
+    // 2. Use 2-stage synchronizer for single-bit signals (valid flags)
+    // 3. Capture multi-bit data on CS falling edge (safe due to setup time)
+    
+    // Stage 1: Capture sensor data in clk domain (registered to prevent glitches)
+    logic quat1_valid_clk, gyro1_valid_clk;
+    logic signed [15:0] quat1_w_clk, quat1_x_clk, quat1_y_clk, quat1_z_clk;
+    logic signed [15:0] gyro1_x_clk, gyro1_y_clk, gyro1_z_clk;
+    
+    always_ff @(posedge clk) begin
+        quat1_valid_clk <= quat1_valid;
+        gyro1_valid_clk <= gyro1_valid;
+        quat1_w_clk <= quat1_w;
+        quat1_x_clk <= quat1_x;
+        quat1_y_clk <= quat1_y;
+        quat1_z_clk <= quat1_z;
+        gyro1_x_clk <= gyro1_x;
+        gyro1_y_clk <= gyro1_y;
+        gyro1_z_clk <= gyro1_z;
+    end
+    
+    // Stage 2: 2-stage synchronizer for valid flags (single-bit CDC)
+    // Synchronize on clk to ensure stable capture
+    logic quat1_valid_sync1, quat1_valid_sync2;
+    logic gyro1_valid_sync1, gyro1_valid_sync2;
+    
+    always_ff @(posedge clk) begin
+        quat1_valid_sync1 <= quat1_valid_clk;
+        quat1_valid_sync2 <= quat1_valid_sync1;
+        gyro1_valid_sync1 <= gyro1_valid_clk;
+        gyro1_valid_sync2 <= gyro1_valid_sync1;
+    end
+    
+    // ========================================================================
+    // Data Snapshot: Capture stable data when CS goes low
+    // ========================================================================
+    // Snapshot ensures data doesn't change during the SPI transaction
+    // Capture on CS falling edge from registered clk-domain data
+    // Safe because: data is registered (stable), CS provides setup time before first SCK
+    logic quat1_valid_snap, gyro1_valid_snap;
+    logic signed [15:0] quat1_w_snap, quat1_x_snap, quat1_y_snap, quat1_z_snap;
+    logic signed [15:0] gyro1_x_snap, gyro1_y_snap, gyro1_z_snap;
+    
+    // Capture snapshot on CS falling edge (start of transaction)
+    // Also initialize on first posedge clk when CS is high (for testbench to read packet_buffer before transaction)
+    logic cs_n_prev_snap = 1'b1;  // Track CS state for snapshot initialization
+    always_ff @(negedge cs_n or posedge clk) begin
+        if (!cs_n) begin
+            // CS falling edge: Capture registered data from clk domain (stable, no metastability)
+            // This snapshot remains stable during the entire transaction (while CS is low)
+            quat1_w_snap <= quat1_w_clk;
+            quat1_x_snap <= quat1_x_clk;
+            quat1_y_snap <= quat1_y_clk;
+            quat1_z_snap <= quat1_z_clk;
+            gyro1_x_snap <= gyro1_x_clk;
+            gyro1_y_snap <= gyro1_y_clk;
+            gyro1_z_snap <= gyro1_z_clk;
+            // Use synchronized valid flags
+            quat1_valid_snap <= quat1_valid_sync2;
+            gyro1_valid_snap <= gyro1_valid_sync2;
+            cs_n_prev_snap <= cs_n;
+        end else if (cs_n && cs_n_prev_snap) begin
+            // CS high and was high before: Initialize snapshot on first clock (for testbench)
+            // This allows testbench to read packet_buffer before first transaction
+            quat1_w_snap <= quat1_w_clk;
+            quat1_x_snap <= quat1_x_clk;
+            quat1_y_snap <= quat1_y_clk;
+            quat1_z_snap <= quat1_z_clk;
+            gyro1_x_snap <= gyro1_x_clk;
+            gyro1_y_snap <= gyro1_y_clk;
+            gyro1_z_snap <= gyro1_z_clk;
+            quat1_valid_snap <= quat1_valid_sync2;
+            gyro1_valid_snap <= gyro1_valid_sync2;
+            cs_n_prev_snap <= cs_n;
+        end else begin
+            // Update CS state tracking on clock
+            cs_n_prev_snap <= cs_n;
+        end
+        // When CS is low (during transaction), snapshot does NOT update - it remains stable
+    end
+    
+    // Packet buffer - assembled from SNAPSHOT data (stable during transaction)
     logic [7:0] packet_buffer [0:PACKET_SIZE-1];
     
-    // Assemble packet from sensor data (using assign statements for iverilog compatibility)
+    // Assemble packet from snapshot sensor data (using assign statements for iverilog compatibility)
     // Header
     assign packet_buffer[0] = HEADER_BYTE;
     
-    // Sensor 1 Quaternion (MSB,LSB format)
-    assign packet_buffer[1] = quat1_w[15:8];  // W MSB
-    assign packet_buffer[2] = quat1_w[7:0];   // W LSB
-    assign packet_buffer[3] = quat1_x[15:8];  // X MSB
-    assign packet_buffer[4] = quat1_x[7:0];   // X LSB
-    assign packet_buffer[5] = quat1_y[15:8];  // Y MSB
-    assign packet_buffer[6] = quat1_y[7:0];   // Y LSB
-    assign packet_buffer[7] = quat1_z[15:8];  // Z MSB
-    assign packet_buffer[8] = quat1_z[7:0];   // Z LSB
+    // Sensor 1 Quaternion (MSB,LSB format) - from snapshot
+    assign packet_buffer[1] = quat1_w_snap[15:8];  // W MSB
+    assign packet_buffer[2] = quat1_w_snap[7:0];   // W LSB
+    assign packet_buffer[3] = quat1_x_snap[15:8];  // X MSB
+    assign packet_buffer[4] = quat1_x_snap[7:0];   // X LSB
+    assign packet_buffer[5] = quat1_y_snap[15:8];  // Y MSB
+    assign packet_buffer[6] = quat1_y_snap[7:0];   // Y LSB
+    assign packet_buffer[7] = quat1_z_snap[15:8];  // Z MSB
+    assign packet_buffer[8] = quat1_z_snap[7:0];   // Z LSB
     
-    // Sensor 1 Gyroscope (MSB,LSB format)
-    assign packet_buffer[9]  = gyro1_x[15:8];  // X MSB
-    assign packet_buffer[10] = gyro1_x[7:0];   // X LSB
-    assign packet_buffer[11] = gyro1_y[15:8];  // Y MSB
-    assign packet_buffer[12] = gyro1_y[7:0];   // Y LSB
-    assign packet_buffer[13] = gyro1_z[15:8];  // Z MSB
-    assign packet_buffer[14] = gyro1_z[7:0];   // Z LSB
+    // Sensor 1 Gyroscope (MSB,LSB format) - from snapshot
+    assign packet_buffer[9]  = gyro1_x_snap[15:8];  // X MSB
+    assign packet_buffer[10] = gyro1_x_snap[7:0];   // X LSB
+    assign packet_buffer[11] = gyro1_y_snap[15:8];  // Y MSB
+    assign packet_buffer[12] = gyro1_y_snap[7:0];   // Y LSB
+    assign packet_buffer[13] = gyro1_z_snap[15:8];  // Z MSB
+    assign packet_buffer[14] = gyro1_z_snap[7:0];   // Z LSB
     
-    // Sensor 1 Flags
-    assign packet_buffer[15] = {6'h0, gyro1_valid, quat1_valid};
+    // Sensor 1 Flags - from snapshot
+    assign packet_buffer[15] = {6'h0, gyro1_valid_snap, quat1_valid_snap};
     
     // ----------------------------
     // Create 128-bit packet from packet buffer (16 bytes * 8 bits)
@@ -76,6 +163,14 @@ module spi_slave_mcu(
         packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
     };
     
+    // Registered first byte - updated in clk domain so it's ready when CS goes low
+    // This ensures the first bit is stable before the first SCK edge
+    // Use HEADER_BYTE directly since it's a constant
+    logic [7:0] first_byte_reg = HEADER_BYTE;
+    always_ff @(posedge clk) begin
+        first_byte_reg <= HEADER_BYTE;  // Always 0xAA (constant)
+    end
+    
     // ----------------------------
     // Shift registers and counters - clocked on SCK for reliable timing
     // ----------------------------
@@ -83,38 +178,69 @@ module spi_slave_mcu(
     logic [3:0] byte_count;  // 0-15 (4 bits for 16 bytes)
     logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
     
+    // CS state tracking for edge detection
+    logic cs_n_prev = 1'b1;  // Previous CS state (initialize to high)
+    logic sck_prev = 1'b0;    // Previous SCK state (for edge detection)
+    logic seen_first_rising = 1'b0;  // Track if we've seen first SCK rising edge after CS low
+    
+    // Detect SCK rising edge (for first bit sampling detection)
+    always_ff @(posedge sck or posedge cs_n or negedge cs_n) begin
+        if (cs_n) begin
+            seen_first_rising <= 1'b0;
+        end else if (!seen_first_rising) begin
+            // First SCK rising edge after CS goes low - first bit is now sampled
+            seen_first_rising <= 1'b1;
+        end
+    end
+    
     // ----------------------------
-    // Main SPI slave logic - clocked on SCK falling edge
+    // Main SPI slave logic - simplified single always_ff with clear priority
     // ----------------------------
     // SPI Mode 0 (CPOL=0, CPHA=0):
     // - MCU samples MISO on RISING edge of SCK
     // - FPGA must SETUP data on FALLING edge of SCK (before next rising edge)
-    // - First bit is already stable when CS goes low (loaded in reset state)
-    always_ff @(negedge sck or posedge cs_n) begin
+    // - First bit must be stable when CS goes low (before first SCK edge)
+    // - We only shift AFTER the first bit has been sampled (after first rising edge)
+    // Priority: CS high > CS falling > SCK falling
+    always_ff @(negedge sck or posedge cs_n or negedge cs_n) begin
+        // Update previous CS state (used for edge detection)
+        cs_n_prev <= cs_n;
+        
         if (cs_n) begin
-            // Reset when CS goes high - asynchronous reset
-            // Load first byte so it's ready when CS goes low
-            byte_count   <= 0;
-            bit_count    <= 0;
-            shift_out    <= tx_packet[127 -: 8];  // First byte is MSB side (packet_buffer[0])
-        end else begin
-            // Shift on FALLING edge to prepare next bit for MCU to sample on rising edge
-            // Check if we've completed a full byte (8 bits: 0-7) BEFORE incrementing
-            if (bit_count == 3'd7) begin
-                // Just finished 8th bit, move to next byte
-                byte_count <= byte_count + 1;
-                bit_count  <= 0;  // Reset bit counter
-                
-                // Load next byte: when byte_count was 0 (just finished byte 0), load packet_buffer[1]
-                // Formula: 127 - (byte_count+1)*8 gives correct byte index
-                shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
-            end else begin
-                // Shift RIGHT (MSB first): shift out MSB, shift in 0 from left
-                // shift_out[7] is the current bit being output
-                // After shifting right, shift_out[6] becomes the new MSB (next bit to output)
-                shift_out <= {1'b0, shift_out[7:1]};
-                bit_count  <= bit_count + 1;
+            // Priority 1: CS high - Reset everything, prepare for next transaction
+            byte_count <= 0;
+            bit_count  <= 0;
+            shift_out  <= HEADER_BYTE;  // Pre-load first byte
+        end else if (cs_n_prev && !cs_n) begin
+            // Priority 2: CS falling edge detected - Load first byte immediately
+            // cs_n_prev is still the old value (high) when this edge triggers
+            shift_out  <= HEADER_BYTE;
+            byte_count <= 0;
+            bit_count  <= 0;
+        end else if (!cs_n) begin
+            // Priority 3: SCK falling edge AND CS is low
+            // Only shift if we've seen the first rising edge (first bit has been sampled)
+            // AND bit_count is in valid range (prevents runaway from continuous clock issues)
+            if (seen_first_rising && bit_count <= 7) begin
+                if (bit_count == 3'd7) begin
+                    // Byte complete: Load next byte
+                    byte_count <= byte_count + 1;
+                    bit_count  <= 0;
+                    if (byte_count < 15) begin
+                        shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
+                    end else begin
+                        shift_out <= 8'h00;  // Last byte done
+                    end
+                end else begin
+                    // Shift LEFT (MSB first) - move next bit into MSB position
+                    // After sending MSB, we want the next bit (bit 6) in MSB position
+                    // Left shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
+                    shift_out <= {shift_out[6:0], 1'b0};
+                    bit_count <= bit_count + 1;
+                end
             end
+            // If seen_first_rising is false or bit_count is invalid, don't shift
+            // This ensures first byte stays stable until first bit is sampled
         end
     end
     

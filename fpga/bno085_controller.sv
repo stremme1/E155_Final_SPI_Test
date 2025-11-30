@@ -233,11 +233,13 @@ module bno085_controller (
 
                 // 2. Wake the sensor (PS0 Low) - per datasheet 1.2.4.3
                 // PS0/WAKE is active low - drive low to wake processor from sleep
-                // Hold PS0 low for at least 1µs before checking INT (per datasheet timing)
+                // Per datasheet 6.5.4: twk = 150 µs max for wake signal
+                // Hold PS0 low for sufficient time to ensure sensor detects wake signal
                 INIT_WAKE: begin
                     ps0_wake <= 1'b0; // Drive PS0 low to wake sensor
-                    if (delay_counter < 19'd3) begin
-                        // Hold PS0 low for 1µs minimum (3 cycles @ 3MHz = 1µs)
+                    if (delay_counter < 19'd450) begin
+                        // Hold PS0 low for 150µs (450 cycles @ 3MHz = 150µs)
+                        // This meets datasheet requirement and provides margin
                         delay_counter <= delay_counter + 1;
                     end else begin
                         // PS0 has been low long enough, now check for INT
