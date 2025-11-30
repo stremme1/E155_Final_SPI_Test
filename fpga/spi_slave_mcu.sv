@@ -97,29 +97,16 @@ module spi_slave_mcu(
         cs_n_sync2 <= cs_n_sync1;
     end
     
-    // Detect CS falling edge (combinational)
+    // Detect CS falling edge (combinational) - use current sync value, not delayed
     logic cs_falling_edge;
-    assign cs_falling_edge = cs_n_sync2 && !cs_n;
+    assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
+    // Update snapshot continuously when CS is high, freeze when CS is low (during transaction)
     always_ff @(posedge clk) begin
-        if (cs_falling_edge) begin
-            // CS falling edge: Capture registered data from clk domain (stable, no metastability)
-            // This snapshot remains stable during the entire transaction (while CS is low)
-            quat1_w_snap <= quat1_w_clk;
-            quat1_x_snap <= quat1_x_clk;
-            quat1_y_snap <= quat1_y_clk;
-            quat1_z_snap <= quat1_z_clk;
-            gyro1_x_snap <= gyro1_x_clk;
-            gyro1_y_snap <= gyro1_y_clk;
-            gyro1_z_snap <= gyro1_z_clk;
-            // Use synchronized valid flags
-            quat1_valid_snap <= quat1_valid_sync2;
-            gyro1_valid_snap <= gyro1_valid_sync2;
-            snapshot_initialized <= 1'b1;
-        end else if (cs_n && !snapshot_initialized) begin
-            // CS high and snapshot not yet initialized: Initialize from clk domain
-            // This allows testbench to read packet_buffer before first transaction
+        if (cs_n) begin
+            // CS high: Update snapshot continuously with latest data
+            // This ensures we always have the latest data when CS goes low
             quat1_w_snap <= quat1_w_clk;
             quat1_x_snap <= quat1_x_clk;
             quat1_y_snap <= quat1_y_clk;
@@ -129,12 +116,9 @@ module spi_slave_mcu(
             gyro1_z_snap <= gyro1_z_clk;
             quat1_valid_snap <= quat1_valid_sync2;
             gyro1_valid_snap <= gyro1_valid_sync2;
-            snapshot_initialized <= 1'b1;
-        end else if (cs_n) begin
-            // CS high: Reset initialization flag so snapshot can be updated on next CS low
-            snapshot_initialized <= 1'b0;
         end
         // When CS is low (during transaction), snapshot does NOT update - it remains stable
+        // This ensures data consistency during the entire SPI transaction
     end
     
     // Packet buffer - assembled from SNAPSHOT data (stable during transaction)
