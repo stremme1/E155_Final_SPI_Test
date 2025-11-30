@@ -260,10 +260,26 @@ void parseSensorDataPacket(const uint8_t *packet,
     debug_print("[SENSOR] Header valid (0xAA)\r\n");
     
     // Debug: Show raw sensor data bytes to help diagnose zero data issue
-    debug_printf("[SENSOR] Raw data bytes: quat_w=0x%02X%02X quat_x=0x%02X%02X quat_y=0x%02X%02X quat_z=0x%02X%02X\r\n",
-                 packet[1], packet[2], packet[3], packet[4], packet[5], packet[6], packet[7], packet[8]);
-    debug_printf("[SENSOR] Raw gyro bytes: gyro_x=0x%02X%02X gyro_y=0x%02X%02X gyro_z=0x%02X%02X flags=0x%02X\r\n",
-                 packet[9], packet[10], packet[11], packet[12], packet[13], packet[14], packet[15]);
+    // Use manual hex formatting to avoid printf format string issues
+    debug_print("[SENSOR] Raw data bytes: quat_w=");
+    debug_print_hex_byte(packet[1]); debug_print_hex_byte(packet[2]);
+    debug_print(" quat_x=");
+    debug_print_hex_byte(packet[3]); debug_print_hex_byte(packet[4]);
+    debug_print(" quat_y=");
+    debug_print_hex_byte(packet[5]); debug_print_hex_byte(packet[6]);
+    debug_print(" quat_z=");
+    debug_print_hex_byte(packet[7]); debug_print_hex_byte(packet[8]);
+    debug_newline();
+    
+    debug_print("[SENSOR] Raw gyro bytes: gyro_x=");
+    debug_print_hex_byte(packet[9]); debug_print_hex_byte(packet[10]);
+    debug_print(" gyro_y=");
+    debug_print_hex_byte(packet[11]); debug_print_hex_byte(packet[12]);
+    debug_print(" gyro_z=");
+    debug_print_hex_byte(packet[13]); debug_print_hex_byte(packet[14]);
+    debug_print(" flags=");
+    debug_print_hex_byte(packet[15]);
+    debug_newline();
     
     // Sensor 1 Quaternion (bytes 1-8, MSB,LSB format)
     *quat1_w = (int16_t)((packet[1] << 8) | packet[2]);
