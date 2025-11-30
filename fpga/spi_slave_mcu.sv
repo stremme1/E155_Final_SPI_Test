@@ -118,10 +118,8 @@ module spi_slave_mcu(
             
             // Shift on FALLING edge to prepare next bit for MCU to sample on rising edge
             if (sck_falling) begin
-                // Increment bit counter first
-                bit_count <= bit_count + 1;
-                
                 // Check if we've completed a full byte (8 bits: 0-7)
+                // Check BEFORE incrementing: if bit_count is 7, we've already output 8 bits
                 if (bit_count == 3'd7) begin
                     // Just finished 8th bit, move to next byte
                     byte_count <= byte_count + 1;
@@ -136,6 +134,7 @@ module spi_slave_mcu(
                     // Shift LEFT so next bit moves into MSB position [7] for output
                     // Output is shift_out[7], so we shift left to bring next bit into position
                     shift_out <= {shift_out[6:0], 1'b0};  // Shift left, shift in 0 from right
+                    bit_count <= bit_count + 1;  // Increment bit counter
                 end
             end
     
