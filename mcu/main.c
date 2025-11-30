@@ -190,15 +190,27 @@ void check_kick_button(void) {
 int main(void) {
     sensor_data_t sensor_data;
     
-    // Initialize debug USART first (so we can see debug output immediately)
-    debug_init();
-    debug_print("\r\n\r\n=== MCU Drum Trigger System Starting ===\r\n");
-    
     // Initialize system - EXACTLY like Lab4
-    debug_print("[INIT] Configuring flash latency...\r\n");
+    // NOTE: Must configure clock BEFORE USART initialization
     configureFlash();
-    debug_print("[INIT] Configuring clock (80MHz)...\r\n");
     configureClock();
+    
+    // Initialize debug USART AFTER clock is configured (so baud rate is correct)
+    debug_init();
+    
+    // Small delay to ensure USART is fully initialized
+    volatile int init_delay = 100000;
+    while(init_delay-- > 0) __asm("nop");
+    
+    // Test USART with simple characters first
+    debug_print("XXX\r\n");
+    
+    // Another delay to ensure transmission completes
+    init_delay = 50000;
+    while(init_delay-- > 0) __asm("nop");
+    
+    debug_print("\r\n\r\n=== MCU Drum Trigger System Starting ===\r\n");
+    debug_print("[INIT] Flash and clock configured (80MHz)\r\n");
     
     // Initialize DAC for audio output (using channel 1 on PA4) - EXACTLY like Lab4
     debug_print("[INIT] Initializing DAC (Channel 1, PA4)...\r\n");
@@ -236,9 +248,12 @@ int main(void) {
     RCC->AHB2ENR |= (RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN | RCC_AHB2ENR_GPIOCEN);
     
     // Initialize SPI as MASTER for FPGA communication
-    // br=1 (divide by 4 = 80MHz/4 = 20MHz), cpol=0, cpha=0 (SPI Mode 0)
-    debug_print("[INIT] Initializing SPI (Mode 0, 20MHz)...\r\n");
-    initSPI(1, 0, 0);
+    // CRITICAL: FPGA runs at 3MHz, so SPI must be slow enough for FPGA to detect edges
+    // FPGA needs ~1us (2-3 cycles) to detect SCK falling edges
+    // br=6 (divide by 128 = 80MHz/128 = 625kHz) gives 1.6us per bit = ~5 FPGA clock cycles
+    // This ensures FPGA can reliably detect and respond to SCK edges
+    debug_print("[INIT] Initializing SPI (Mode 0, 625kHz for 3MHz FPGA)...\r\n");
+    initSPI(6, 0, 0);
     
     // CS pin (chip select, active low) - PA11
     // Note: CS pin is already configured in initSPI() as SPI_CE, but we ensure it's high initially

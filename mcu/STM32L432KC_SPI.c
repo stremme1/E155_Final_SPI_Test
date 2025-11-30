@@ -44,7 +44,9 @@ void initSPI(int br, int cpol, int cpha) {
     SPI1->CR1 |= (SPI_CR1_SPE); // Enable SPI
     
     // Debug: SPI initialization complete with register verification
-    debug_print("[SPI] SPI initialized: Mode 0, BR=1 (20MHz), CS=PA11\r\n");
+    // Calculate actual SPI clock based on BR value
+    int spi_clock_khz = 80000 / (1 << (br + 1));  // 80MHz / 2^(BR+1)
+    debug_printf("[SPI] SPI initialized: Mode 0, BR=%d (%d kHz), CS=PA11\r\n", br, spi_clock_khz);
     debug_printf("[SPI] CR1 register: 0x%08X\r\n", SPI1->CR1);
     debug_printf("[SPI] CR2 register: 0x%08X\r\n", SPI1->CR2);
     debug_printf("[SPI] CPOL=%d, CPHA=%d, MSTR=%d, SPE=%d\r\n", 
