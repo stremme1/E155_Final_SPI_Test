@@ -88,9 +88,22 @@ module spi_slave_mcu(
     
     // Capture snapshot on CS falling edge (start of transaction)
     // Also initialize on first posedge clk when CS is high (for testbench to read packet_buffer before transaction)
-    logic cs_n_prev_snap = 1'b1;  // Track CS state for snapshot initialization
-    always_ff @(negedge cs_n or posedge clk) begin
-        if (!cs_n) begin
+    logic cs_n_sync1, cs_n_sync2;  // Synchronize CS to clk domain for edge detection
+    logic snapshot_initialized = 1'b0;  // Track if snapshot has been initialized
+    
+    // Synchronize CS to clk domain (2-stage synchronizer)
+    always_ff @(posedge clk) begin
+        cs_n_sync1 <= cs_n;
+        cs_n_sync2 <= cs_n_sync1;
+    end
+    
+    // Detect CS falling edge (combinational)
+    logic cs_falling_edge;
+    assign cs_falling_edge = cs_n_sync2 && !cs_n;
+    
+    // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
+    always_ff @(posedge clk) begin
+        if (cs_falling_edge) begin
             // CS falling edge: Capture registered data from clk domain (stable, no metastability)
             // This snapshot remains stable during the entire transaction (while CS is low)
             quat1_w_snap <= quat1_w_clk;
@@ -103,9 +116,9 @@ module spi_slave_mcu(
             // Use synchronized valid flags
             quat1_valid_snap <= quat1_valid_sync2;
             gyro1_valid_snap <= gyro1_valid_sync2;
-            cs_n_prev_snap <= cs_n;
-        end else if (cs_n && cs_n_prev_snap) begin
-            // CS high and was high before: Initialize snapshot on first clock (for testbench)
+            snapshot_initialized <= 1'b1;
+        end else if (cs_n && !snapshot_initialized) begin
+            // CS high and snapshot not yet initialized: Initialize from clk domain
             // This allows testbench to read packet_buffer before first transaction
             quat1_w_snap <= quat1_w_clk;
             quat1_x_snap <= quat1_x_clk;
@@ -116,10 +129,10 @@ module spi_slave_mcu(
             gyro1_z_snap <= gyro1_z_clk;
             quat1_valid_snap <= quat1_valid_sync2;
             gyro1_valid_snap <= gyro1_valid_sync2;
-            cs_n_prev_snap <= cs_n;
-        end else begin
-            // Update CS state tracking on clock
-            cs_n_prev_snap <= cs_n;
+            snapshot_initialized <= 1'b1;
+        end else if (cs_n) begin
+            // CS high: Reset initialization flag so snapshot can be updated on next CS low
+            snapshot_initialized <= 1'b0;
         end
         // When CS is low (during transaction), snapshot does NOT update - it remains stable
     end
