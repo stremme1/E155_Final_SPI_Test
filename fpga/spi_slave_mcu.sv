@@ -111,23 +111,31 @@ module spi_slave_mcu(
             
         end else begin
             
-            // Sample MOSI on SCK rising edge (Mode 0) - but we ignore it in read-only mode
-            if (sck_rising) begin
-                // Read-only mode: ignore sdi, just shift out
-                // Shift LEFT so next bit moves into MSB position [7] for output
-                // Output is shift_out[7], so we shift left to bring next bit into position
-                shift_out <= {shift_out[6:0], 1'b0};  // Shift left, shift in 0 from right
+            // SPI Mode 0 (CPOL=0, CPHA=0):
+            // - MCU samples MISO on RISING edge of SCK
+            // - FPGA must SETUP data on FALLING edge of SCK (before next rising edge)
+            // - First bit is already stable when CS goes low (loaded in reset state)
+            
+            // Shift on FALLING edge to prepare next bit for MCU to sample on rising edge
+            if (sck_falling) begin
+                // Increment bit counter first
                 bit_count <= bit_count + 1;
                 
-                // Completed a full byte?
+                // Check if we've completed a full byte (8 bits: 0-7)
                 if (bit_count == 3'd7) begin
-                    // Move to next output byte
+                    // Just finished 8th bit, move to next byte
                     byte_count <= byte_count + 1;
-                    // Load next byte: when byte_count=0 (just finished byte 0), load packet_buffer[1]
+                    bit_count <= 0;  // Reset bit counter
+                    
+                    // Load next byte: when byte_count was 0 (just finished byte 0), load packet_buffer[1]
                     // Formula: 127 - (byte_count+1)*8 gives correct byte index
                     if (byte_count < 15) begin  // Prevent overflow when byte_count reaches 15
-                        shift_out  <= tx_packet[127 - (byte_count+1)*8 -: 8];
+                        shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
                     end
+                end else begin
+                    // Shift LEFT so next bit moves into MSB position [7] for output
+                    // Output is shift_out[7], so we shift left to bring next bit into position
+                    shift_out <= {shift_out[6:0], 1'b0};  // Shift left, shift in 0 from right
                 end
             end
     
