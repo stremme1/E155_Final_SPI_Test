@@ -71,13 +71,24 @@ module spi_slave_mcu(
     // 3. Capture multi-bit data on CS falling edge (safe due to setup time)
     
     // Stage 1: Capture sensor data in clk domain (registered to prevent glitches)
+    // Also latch valid flags - they are pulses from BNO085, so we latch them to keep them high
     logic quat1_valid_clk, gyro1_valid_clk;
+    logic quat1_valid_latched = 1'b0, gyro1_valid_latched = 1'b0;  // Latched valid flags (initialized to 0)
     logic signed [15:0] quat1_w_clk, quat1_x_clk, quat1_y_clk, quat1_z_clk;
     logic signed [15:0] gyro1_x_clk, gyro1_y_clk, gyro1_z_clk;
     
     always_ff @(posedge clk) begin
-        quat1_valid_clk <= quat1_valid;
-        gyro1_valid_clk <= gyro1_valid;
+        // Latch valid flags - once set, they stay high (until reset)
+        // This ensures we don't miss the pulse from BNO085 controller
+        if (quat1_valid) begin
+            quat1_valid_latched <= 1'b1;
+        end
+        if (gyro1_valid) begin
+            gyro1_valid_latched <= 1'b1;
+        end
+        
+        quat1_valid_clk <= quat1_valid_latched;
+        gyro1_valid_clk <= gyro1_valid_latched;
         quat1_w_clk <= quat1_w;
         quat1_x_clk <= quat1_x;
         quat1_y_clk <= quat1_y;
@@ -125,10 +136,22 @@ module spi_slave_mcu(
     assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
-    // Update snapshot when CS is high, freeze when CS is low (during transaction)
-    // This ensures data consistency during the entire SPI transaction
+    // Capture snapshot on CS falling edge AND continuously when CS is high
+    // This ensures we capture the latest data right before transaction starts
     always_ff @(posedge clk) begin
-        if (cs_n) begin
+        if (cs_falling_edge) begin
+            // CS falling edge: Capture data immediately (highest priority)
+            // This ensures we get the latest data right before transaction starts
+            quat1_w_snap <= quat1_w_clk;
+            quat1_x_snap <= quat1_x_clk;
+            quat1_y_snap <= quat1_y_clk;
+            quat1_z_snap <= quat1_z_clk;
+            gyro1_x_snap <= gyro1_x_clk;
+            gyro1_y_snap <= gyro1_y_clk;
+            gyro1_z_snap <= gyro1_z_clk;
+            quat1_valid_snap <= quat1_valid_sync2;
+            gyro1_valid_snap <= gyro1_valid_sync2;
+        end else if (cs_n) begin
             // CS high: Update snapshot continuously with latest data
             // This ensures we always have the latest data when CS goes low
             quat1_w_snap <= quat1_w_clk;
