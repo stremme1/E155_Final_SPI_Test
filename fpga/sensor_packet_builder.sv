@@ -32,8 +32,9 @@ module sensor_packet_builder (
     output logic signed [15:0] gyro1_x, gyro1_y, gyro1_z
 );
 
-    // Latch complete quaternion atomically when quat_valid pulses
-    // All 4 components are captured together to ensure consistency
+    // Latch complete quaternion atomically when quat_valid is high
+    // Since quat_valid is sticky in the controller, we continuously update
+    // when valid is high to capture new data as it arrives
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             quat1_valid <= 1'b0;
@@ -42,8 +43,8 @@ module sensor_packet_builder (
             quat1_y <= 16'd0;
             quat1_z <= 16'd0;
         end else begin
-            // Latch complete quaternion when valid flag pulses
-            // Once latched, values remain stable until next complete reading
+            // Continuously latch data when valid is high
+            // This ensures we capture new data even if valid flag stays high (sticky)
             if (quat_valid) begin
                 quat1_w <= quat_w;
                 quat1_x <= quat_x;
@@ -56,8 +57,9 @@ module sensor_packet_builder (
         end
     end
     
-    // Latch complete gyroscope atomically when gyro_valid pulses
-    // All 3 components are captured together to ensure consistency
+    // Latch complete gyroscope atomically when gyro_valid is high
+    // Since gyro_valid is sticky in the controller, we continuously update
+    // when valid is high to capture new data as it arrives
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             gyro1_valid <= 1'b0;
@@ -65,8 +67,8 @@ module sensor_packet_builder (
             gyro1_y <= 16'd0;
             gyro1_z <= 16'd0;
         end else begin
-            // Latch complete gyroscope when valid flag pulses
-            // Once latched, values remain stable until next complete reading
+            // Continuously latch data when valid is high
+            // This ensures we capture new data even if valid flag stays high (sticky)
             if (gyro_valid) begin
                 gyro1_x <= gyro_x;
                 gyro1_y <= gyro_y;

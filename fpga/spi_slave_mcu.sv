@@ -71,24 +71,16 @@ module spi_slave_mcu(
     // 3. Capture multi-bit data on CS falling edge (safe due to setup time)
     
     // Stage 1: Capture sensor data in clk domain (registered to prevent glitches)
-    // Also latch valid flags - they are pulses from BNO085, so we latch them to keep them high
+    // Note: Packet builder already provides sticky valid flags, so we don't need to latch them again
+    // Just register the data and valid flags for CDC
     logic quat1_valid_clk, gyro1_valid_clk;
-    logic quat1_valid_latched = 1'b0, gyro1_valid_latched = 1'b0;  // Latched valid flags (initialized to 0)
     logic signed [15:0] quat1_w_clk, quat1_x_clk, quat1_y_clk, quat1_z_clk;
     logic signed [15:0] gyro1_x_clk, gyro1_y_clk, gyro1_z_clk;
     
     always_ff @(posedge clk) begin
-        // Latch valid flags - once set, they stay high (until reset)
-        // This ensures we don't miss the pulse from BNO085 controller
-        if (quat1_valid) begin
-            quat1_valid_latched <= 1'b1;
-        end
-        if (gyro1_valid) begin
-            gyro1_valid_latched <= 1'b1;
-        end
-        
-        quat1_valid_clk <= quat1_valid_latched;
-        gyro1_valid_clk <= gyro1_valid_latched;
+        // Register data and valid flags from packet builder (already sticky)
+        quat1_valid_clk <= quat1_valid;
+        gyro1_valid_clk <= gyro1_valid;
         quat1_w_clk <= quat1_w;
         quat1_x_clk <= quat1_x;
         quat1_y_clk <= quat1_y;
