@@ -192,15 +192,17 @@ module spi_slave_mcu(
     logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
     
     // CS state tracking for edge detection
-    logic cs_n_prev = 1'b1;  // Previous CS state (initialize to high)
+    logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
+    logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
     logic seen_first_rising = 1'b0;  // Track if we've seen first SCK rising edge after CS low
     
-    // Track CS state - update on CS edges and SCK falling edge
-    always_ff @(posedge cs_n or negedge cs_n or negedge sck) begin
-        cs_n_prev <= cs_n;
+    // Synchronize CS to SCK domain (2-stage synchronizer on SCK falling edge)
+    always_ff @(negedge sck) begin
+        cs_n_sync_sck <= cs_n;
+        cs_n_prev_sck <= cs_n_sync_sck;
     end
     
-    // Reset seen_first_rising when CS goes high
+    // Reset seen_first_rising when CS goes high (async reset)
     always_ff @(posedge cs_n) begin
         seen_first_rising <= 1'b0;
     end
@@ -213,51 +215,54 @@ module spi_slave_mcu(
         end
     end
     
-    // Detect CS falling edge for SPI logic (combinational, but only used in always_ff with proper timing)
-    logic cs_falling_edge_spi;
-    assign cs_falling_edge_spi = cs_n_prev && !cs_n;
+    // Detect CS falling edge in SCK domain (combinational)
+    logic cs_falling_edge_sck;
+    assign cs_falling_edge_sck = cs_n_prev_sck && !cs_n_sync_sck;
     
     // ----------------------------
-    // Main SPI slave logic - simplified single always_ff with clear priority
+    // Main SPI slave logic - single always_ff block clocked on SCK falling edge
     // ----------------------------
     // SPI Mode 0 (CPOL=0, CPHA=0):
     // - MCU samples MISO on RISING edge of SCK
     // - FPGA must SETUP data on FALLING edge of SCK (before next rising edge)
     // - First bit must be stable when CS goes low (before first SCK edge)
     // - We only shift AFTER the first bit has been sampled (after first rising edge)
-    // Priority: CS high > CS falling > SCK falling
-    always_ff @(negedge sck or posedge cs_n or negedge cs_n) begin
+    
+    // Main shift logic - clocked on SCK falling edge, with async reset on CS high
+    always_ff @(negedge sck or posedge cs_n) begin
         if (cs_n) begin
-            // Priority 1: CS high - Reset everything, prepare for next transaction
+            // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
-            shift_out  <= HEADER_BYTE;  // Pre-load first byte
-        end else if (cs_falling_edge_spi) begin
-            // Priority 2: CS falling edge detected - Load first byte immediately
             shift_out  <= HEADER_BYTE;
-            byte_count <= 0;
-            bit_count  <= 0;
-        end else if (!cs_n && seen_first_rising) begin
-            // Priority 3: SCK falling edge AND CS is low AND first bit already sampled
-            // Only shift if we've seen the first rising edge (first bit has been sampled)
-            if (bit_count == 3'd7) begin
-                // Byte complete: Load next byte
-                byte_count <= byte_count + 1;
+        end else begin
+            if (cs_falling_edge_sck) begin
+                // CS falling edge detected in SCK domain - Load first byte immediately
+                shift_out  <= HEADER_BYTE;
+                byte_count <= 0;
                 bit_count  <= 0;
-                if (byte_count < 15) begin
-                    shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
+            end else if (seen_first_rising) begin
+                // SCK falling edge AND CS is low AND first bit already sampled
+                // Only shift if we've seen the first rising edge (first bit has been sampled)
+                if (bit_count == 3'd7) begin
+                    // Byte complete: Load next byte
+                    byte_count <= byte_count + 1;
+                    bit_count  <= 0;
+                    if (byte_count < 15) begin
+                        shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
+                    end else begin
+                        shift_out <= 8'h00;  // Last byte done
+                    end
                 end else begin
-                    shift_out <= 8'h00;  // Last byte done
+                    // Shift LEFT (MSB first) - move next bit into MSB position
+                    // After sending MSB, we want the next bit (bit 6) in MSB position
+                    // Left shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
+                    shift_out <= {shift_out[6:0], 1'b0};
+                    bit_count <= bit_count + 1;
                 end
-            end else begin
-                // Shift LEFT (MSB first) - move next bit into MSB position
-                // After sending MSB, we want the next bit (bit 6) in MSB position
-                // Left shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
-                shift_out <= {shift_out[6:0], 1'b0};
-                bit_count <= bit_count + 1;
             end
+            // If seen_first_rising is false, don't shift - ensures first byte stays stable
         end
-        // If seen_first_rising is false, don't shift - ensures first byte stays stable
     end
     
     // MISO output (tri-state when CS high)
