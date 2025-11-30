@@ -42,11 +42,16 @@ module drum_trigger_top (
     logic clk;
     logic rst_n;
     
-    // BNO085 Sensor 1 signals (Right Hand)
+    // BNO085 Controller outputs (may change incrementally during parsing)
+    logic quat_valid_raw, gyro_valid_raw;
+    logic signed [15:0] quat_w_raw, quat_x_raw, quat_y_raw, quat_z_raw;
+    logic signed [15:0] gyro_x_raw, gyro_y_raw, gyro_z_raw;
+    logic initialized1, error1;
+    
+    // Packet builder outputs (stable, complete readings)
     logic quat1_valid, gyro1_valid;
     logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z;
     logic signed [15:0] gyro1_x, gyro1_y, gyro1_z;
-    logic initialized1, error1;
     
     // SPI master signals for Sensor 1
     logic spi1_start, spi1_tx_valid, spi1_tx_ready, spi1_rx_valid, spi1_busy;
@@ -162,15 +167,15 @@ module drum_trigger_top (
         .cs_n(cs_n1),
         .ps0_wake(ps0_wake1),
         .int_n(int1),
-        .quat_valid(quat1_valid),
-        .quat_w(quat1_w),
-        .quat_x(quat1_x),
-        .quat_y(quat1_y),
-        .quat_z(quat1_z),
-        .gyro_valid(gyro1_valid),
-        .gyro_x(gyro1_x),
-        .gyro_y(gyro1_y),
-        .gyro_z(gyro1_z),
+        .quat_valid(quat_valid_raw),
+        .quat_w(quat_w_raw),
+        .quat_x(quat_x_raw),
+        .quat_y(quat_y_raw),
+        .quat_z(quat_z_raw),
+        .gyro_valid(gyro_valid_raw),
+        .gyro_x(gyro_x_raw),
+        .gyro_y(gyro_y_raw),
+        .gyro_z(gyro_z_raw),
         .initialized(initialized1),
         .error(error1)
     );
@@ -180,10 +185,41 @@ module drum_trigger_top (
     assign led_error = error1;
     
     // ============================================
+    // Packet Builder: Latches complete sensor readings atomically
+    // ============================================
+    // This module ensures complete quaternion and gyroscope readings are
+    // latched atomically when valid flags pulse, providing stable data to SPI slave
+    sensor_packet_builder packet_builder_inst1 (
+        .clk(clk),
+        .rst_n(rst_n),
+        // Inputs from BNO085 controller (may change incrementally)
+        .quat_valid(quat_valid_raw),
+        .quat_w(quat_w_raw),
+        .quat_x(quat_x_raw),
+        .quat_y(quat_y_raw),
+        .quat_z(quat_z_raw),
+        .gyro_valid(gyro_valid_raw),
+        .gyro_x(gyro_x_raw),
+        .gyro_y(gyro_y_raw),
+        .gyro_z(gyro_z_raw),
+        // Outputs to SPI slave (stable, complete readings)
+        .quat1_valid(quat1_valid),
+        .quat1_w(quat1_w),
+        .quat1_x(quat1_x),
+        .quat1_y(quat1_y),
+        .quat1_z(quat1_z),
+        .gyro1_valid(gyro1_valid),
+        .gyro1_x(gyro1_x),
+        .gyro1_y(gyro1_y),
+        .gyro1_z(gyro1_z)
+    );
+    
+    // ============================================
     // MCU SPI Slave for sending raw sensor data
     // ============================================
     // Single sensor only - sends 16-byte packet with sensor 1 data
     // Uses CS-based protocol (chip select, active low)
+    // Receives stable, complete sensor readings from packet builder
     
     spi_slave_mcu spi_slave_mcu_inst (
         .clk(clk),
@@ -192,6 +228,7 @@ module drum_trigger_top (
         .sdi(mcu_sdi),
         .sdo(mcu_sdo),
         // Sensor 1 (Right Hand) - single sensor only
+        // These signals come from packet builder (stable, complete readings)
         .quat1_valid(quat1_valid),
         .quat1_w(quat1_w),
         .quat1_x(quat1_x),
