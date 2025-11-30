@@ -37,6 +37,29 @@ module spi_slave_mcu(
     localparam PACKET_SIZE = 16;
     localparam HEADER_BYTE = 8'hAA;
     
+    // Test mode: When enabled, output known test pattern instead of sensor data
+    // This helps verify SPI shift logic works independently of data capture
+    localparam TEST_MODE = 1'b1;  // Set to 1 to enable test mode
+    
+    // Test pattern - known values for debugging
+    logic [7:0] test_pattern [0:15];
+    assign test_pattern[0] = 8'hAA;
+    assign test_pattern[1] = 8'h11;
+    assign test_pattern[2] = 8'h22;
+    assign test_pattern[3] = 8'h33;
+    assign test_pattern[4] = 8'h44;
+    assign test_pattern[5] = 8'h55;
+    assign test_pattern[6] = 8'h66;
+    assign test_pattern[7] = 8'h77;
+    assign test_pattern[8] = 8'h88;
+    assign test_pattern[9] = 8'h99;
+    assign test_pattern[10] = 8'hAA;
+    assign test_pattern[11] = 8'hBB;
+    assign test_pattern[12] = 8'hCC;
+    assign test_pattern[13] = 8'hDD;
+    assign test_pattern[14] = 8'hEE;
+    assign test_pattern[15] = 8'hFF;
+    
     // ========================================================================
     // Clock Domain Crossing: Synchronize sensor data from clk domain to sck domain
     // ========================================================================
@@ -103,6 +126,7 @@ module spi_slave_mcu(
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
     // Update snapshot continuously when CS is high, freeze when CS is low (during transaction)
+    // Also initialize snapshot on first clock to ensure it has data even before first CS transaction
     always_ff @(posedge clk) begin
         if (cs_n) begin
             // CS high: Update snapshot continuously with latest data
@@ -119,35 +143,74 @@ module spi_slave_mcu(
         end
         // When CS is low (during transaction), snapshot does NOT update - it remains stable
         // This ensures data consistency during the entire SPI transaction
+        // Note: Snapshot is initialized on first clock cycle when CS is high
+    end
+    
+    // Initialize snapshot on first clock (before any CS transaction)
+    // This ensures snapshot has valid data even if CS goes low immediately
+    initial begin
+        quat1_w_snap = 16'h0000;
+        quat1_x_snap = 16'h0000;
+        quat1_y_snap = 16'h0000;
+        quat1_z_snap = 16'h0000;
+        gyro1_x_snap = 16'h0000;
+        gyro1_y_snap = 16'h0000;
+        gyro1_z_snap = 16'h0000;
+        quat1_valid_snap = 1'b0;
+        gyro1_valid_snap = 1'b0;
     end
     
     // Packet buffer - assembled from SNAPSHOT data (stable during transaction)
     logic [7:0] packet_buffer [0:PACKET_SIZE-1];
     
     // Assemble packet from snapshot sensor data (using assign statements for iverilog compatibility)
-    // Header
-    assign packet_buffer[0] = HEADER_BYTE;
-    
-    // Sensor 1 Quaternion (MSB,LSB format) - from snapshot
-    assign packet_buffer[1] = quat1_w_snap[15:8];  // W MSB
-    assign packet_buffer[2] = quat1_w_snap[7:0];   // W LSB
-    assign packet_buffer[3] = quat1_x_snap[15:8];  // X MSB
-    assign packet_buffer[4] = quat1_x_snap[7:0];   // X LSB
-    assign packet_buffer[5] = quat1_y_snap[15:8];  // Y MSB
-    assign packet_buffer[6] = quat1_y_snap[7:0];   // Y LSB
-    assign packet_buffer[7] = quat1_z_snap[15:8];  // Z MSB
-    assign packet_buffer[8] = quat1_z_snap[7:0];   // Z LSB
-    
-    // Sensor 1 Gyroscope (MSB,LSB format) - from snapshot
-    assign packet_buffer[9]  = gyro1_x_snap[15:8];  // X MSB
-    assign packet_buffer[10] = gyro1_x_snap[7:0];   // X LSB
-    assign packet_buffer[11] = gyro1_y_snap[15:8];  // Y MSB
-    assign packet_buffer[12] = gyro1_y_snap[7:0];   // Y LSB
-    assign packet_buffer[13] = gyro1_z_snap[15:8];  // Z MSB
-    assign packet_buffer[14] = gyro1_z_snap[7:0];   // Z LSB
-    
-    // Sensor 1 Flags - from snapshot
-    assign packet_buffer[15] = {6'h0, gyro1_valid_snap, quat1_valid_snap};
+    // In test mode, use known test pattern; otherwise use sensor data
+    generate
+        if (TEST_MODE) begin : gen_test_mode
+            // Test mode: Use known pattern
+            assign packet_buffer[0] = test_pattern[0];
+            assign packet_buffer[1] = test_pattern[1];
+            assign packet_buffer[2] = test_pattern[2];
+            assign packet_buffer[3] = test_pattern[3];
+            assign packet_buffer[4] = test_pattern[4];
+            assign packet_buffer[5] = test_pattern[5];
+            assign packet_buffer[6] = test_pattern[6];
+            assign packet_buffer[7] = test_pattern[7];
+            assign packet_buffer[8] = test_pattern[8];
+            assign packet_buffer[9] = test_pattern[9];
+            assign packet_buffer[10] = test_pattern[10];
+            assign packet_buffer[11] = test_pattern[11];
+            assign packet_buffer[12] = test_pattern[12];
+            assign packet_buffer[13] = test_pattern[13];
+            assign packet_buffer[14] = test_pattern[14];
+            assign packet_buffer[15] = test_pattern[15];
+        end else begin : gen_normal_mode
+            // Normal mode: Use sensor data
+            // Header
+            assign packet_buffer[0] = HEADER_BYTE;
+            
+            // Sensor 1 Quaternion (MSB,LSB format) - from snapshot
+            assign packet_buffer[1] = quat1_w_snap[15:8];  // W MSB
+            assign packet_buffer[2] = quat1_w_snap[7:0];   // W LSB
+            assign packet_buffer[3] = quat1_x_snap[15:8];  // X MSB
+            assign packet_buffer[4] = quat1_x_snap[7:0];   // X LSB
+            assign packet_buffer[5] = quat1_y_snap[15:8];  // Y MSB
+            assign packet_buffer[6] = quat1_y_snap[7:0];   // Y LSB
+            assign packet_buffer[7] = quat1_z_snap[15:8];  // Z MSB
+            assign packet_buffer[8] = quat1_z_snap[7:0];   // Z LSB
+            
+            // Sensor 1 Gyroscope (MSB,LSB format) - from snapshot
+            assign packet_buffer[9]  = gyro1_x_snap[15:8];  // X MSB
+            assign packet_buffer[10] = gyro1_x_snap[7:0];   // X LSB
+            assign packet_buffer[11] = gyro1_y_snap[15:8];  // Y MSB
+            assign packet_buffer[12] = gyro1_y_snap[7:0];   // Y LSB
+            assign packet_buffer[13] = gyro1_z_snap[15:8];  // Z MSB
+            assign packet_buffer[14] = gyro1_z_snap[7:0];   // Z LSB
+            
+            // Sensor 1 Flags - from snapshot
+            assign packet_buffer[15] = {6'h0, gyro1_valid_snap, quat1_valid_snap};
+        end
+    endgenerate
     
     // ----------------------------
     // Create 128-bit packet from packet buffer (16 bytes * 8 bits)
@@ -228,12 +291,22 @@ module spi_slave_mcu(
                 // Only shift if we've seen the first rising edge (first bit has been sampled)
                 if (bit_count == 3'd7) begin
                     // Byte complete: Load next byte
-                    byte_count <= byte_count + 1;
-                    bit_count  <= 0;
+                    // byte_count is the byte we just finished sending (0-15)
+                    // In non-blocking assignment, RHS uses OLD value, so:
+                    // - byte_count+1 is the NEXT byte index we want to load
+                    // - packet_buffer[i] is at tx_packet[127 - i*8 -: 8]
                     if (byte_count < 15) begin
+                        // Increment to next byte index
+                        byte_count <= byte_count + 1;
+                        bit_count  <= 0;
+                        // Use (byte_count+1) because RHS uses OLD byte_count value
+                        // When byte_count=0 (just sent header), load packet_buffer[1] at tx_packet[119:112]
                         shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
                     end else begin
-                        shift_out <= 8'h00;  // Last byte done
+                        // Last byte (15) done, send zeros
+                        byte_count <= byte_count + 1;
+                        bit_count  <= 0;
+                        shift_out <= 8'h00;
                     end
                 end else begin
                     // Shift LEFT (MSB first) - move next bit into MSB position
