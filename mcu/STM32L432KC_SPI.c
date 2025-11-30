@@ -5,6 +5,7 @@
 #include "STM32L432KC_SPI.h"
 #include "STM32L432KC_GPIO.h"
 #include "STM32L432KC_RCC.h"
+#include "debug_print.h"
 
 /* Enables the SPI peripheral and intializes its clock speed (baud rate), polarity, and phase.
  *    -- br: (0b000 - 0b111). The SPI clk will be the master clock / 2^(BR+1).
@@ -41,6 +42,9 @@ void initSPI(int br, int cpol, int cpha) {
     SPI1->CR2 |= (SPI_CR2_FRXTH | SPI_CR2_SSOE);
 
     SPI1->CR1 |= (SPI_CR1_SPE); // Enable SPI
+    
+    // Debug: SPI initialization complete
+    debug_print("[SPI] SPI initialized: Mode 0, BR=1 (20MHz), CS=PA11\r\n");
 }
 
 /* Transmits a character (1 byte) over SPI and returns the received character.
@@ -51,6 +55,10 @@ char spiSendReceive(char send) {
     *(volatile char *) (&SPI1->DR) = send; // Transmit the character over SPI
     while(!(SPI1->SR & SPI_SR_RXNE)); // Wait until data has been received
     char rec = (volatile char) SPI1->DR;
+    
+    // Debug: log SPI transaction (can be verbose - comment out if too slow)
+    // debug_printf("[SPI] TX: 0x%x RX: 0x%x\r\n", (uint8_t)send, (uint8_t)rec);
+    
     return rec; // Return received character
 }
 
@@ -139,16 +147,26 @@ void parseSensorDataPacket15(const uint8_t *packet,
 void readSensorDataPacket(uint8_t *packet) {
     int i;
     
+    // Debug: Start of packet read
+    debug_print("[SPI] Starting packet read - CS low\r\n");
+    
     // CS-based protocol: Pull CS low to start transaction
     digitalWrite(PA11, 0);  // CS low
     
     // Read 16 bytes using dummy bytes (0x00) to generate SCK
     for(i = 0; i < 16; i++) {
         packet[i] = spiSendReceive(0x00);
+        // Debug: log each byte received
+        debug_printf("[SPI] Byte[%d] = 0x%x\r\n", i, packet[i]);
     }
     
     // Pull CS high to end transaction
     digitalWrite(PA11, 1);  // CS high
+    
+    // Debug: Complete packet dump
+    debug_print("[SPI] Packet complete - CS high. Full packet: ");
+    debug_print_bytes(packet, 16);
+    debug_newline();
 }
 
 /* Parse 16-byte sensor data packet into structured format
@@ -166,8 +184,10 @@ void parseSensorDataPacket(const uint8_t *packet,
                            int16_t *gyro2_x, int16_t *gyro2_y, int16_t *gyro2_z,
                            uint8_t *quat2_valid, uint8_t *gyro2_valid) {
     // Verify header
+    debug_printf("[SENSOR] Parsing packet - Header: 0x%x\r\n", packet[0]);
     if (packet[0] != 0xAA) {
         // Invalid header - set all values to 0
+        debug_print("[SENSOR] ERROR: Invalid header! Expected 0xAA\r\n");
         *quat1_w = *quat1_x = *quat1_y = *quat1_z = 0;
         *gyro1_x = *gyro1_y = *gyro1_z = 0;
         *quat1_valid = *gyro1_valid = 0;
@@ -176,6 +196,8 @@ void parseSensorDataPacket(const uint8_t *packet,
         *quat2_valid = *gyro2_valid = 0;
         return;
     }
+    
+    debug_print("[SENSOR] Header valid (0xAA)\r\n");
     
     // Sensor 1 Quaternion (bytes 1-8, MSB,LSB format)
     *quat1_w = (int16_t)((packet[1] << 8) | packet[2]);
@@ -191,6 +213,11 @@ void parseSensorDataPacket(const uint8_t *packet,
     // Sensor 1 Flags (byte 15)
     *quat1_valid = packet[15] & 0x01;
     *gyro1_valid = (packet[15] >> 1) & 0x01;
+    
+    // Debug: Print parsed values
+    debug_printf("[SENSOR] Quat1: w=%d x=%d y=%d z=%d\r\n", *quat1_w, *quat1_x, *quat1_y, *quat1_z);
+    debug_printf("[SENSOR] Gyro1: x=%d y=%d z=%d\r\n", *gyro1_x, *gyro1_y, *gyro1_z);
+    debug_printf("[SENSOR] Flags: quat_valid=%d gyro_valid=%d\r\n", *quat1_valid, *gyro1_valid);
     
     // Sensor 2 - set to 0/invalid (not in 16-byte packet, kept for future compatibility)
     *quat2_w = *quat2_x = *quat2_y = *quat2_z = 0;

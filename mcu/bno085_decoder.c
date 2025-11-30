@@ -1,4 +1,5 @@
 #include "bno085_decoder.h"
+#include "debug_print.h"
 #include <math.h>
 
 #ifndef M_PI
@@ -9,6 +10,9 @@
 // Based on Code_for_C_imp/lib/src/bno055.c bno055_quaternion_to_euler()
 // BNO085 quaternion is in Q14 format: divide by 16384.0 to get float
 void quaternion_to_euler(int16_t qw, int16_t qx, int16_t qy, int16_t qz, euler_t *euler) {
+    // Debug: log input quaternion
+    debug_printf("[EULER] Input quaternion: w=%d x=%d y=%d z=%d\r\n", qw, qx, qy, qz);
+    
     // Convert Q14 format to float
     float w = (float)qw / 16384.0f;
     float x = (float)qx / 16384.0f;
@@ -24,6 +28,9 @@ void quaternion_to_euler(int16_t qw, int16_t qx, int16_t qy, int16_t qz, euler_t
     euler->roll = euler->roll * 180.0f / M_PI;
     euler->pitch = euler->pitch * 180.0f / M_PI;
     euler->yaw = euler->yaw * 180.0f / M_PI;
+    
+    // Debug: log calculated Euler angles
+    debug_printf("[EULER] Calculated: roll=%.2f pitch=%.2f yaw=%.2f\r\n", euler->roll, euler->pitch, euler->yaw);
 }
 
 // Normalize yaw to 0-360 range

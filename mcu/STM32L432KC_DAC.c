@@ -473,8 +473,7 @@ void DAC_PlaySineWave(float frequency, uint32_t duration_ms, uint32_t sample_rat
     // Test 1: 440 Hz target sounded like 330 Hz -> (20 × 330) / 440 = 15 MHz
     // Test 2: 262 Hz target sounded like 197 Hz -> (20 × 197) / 262 = 15.04 MHz
     // Average: 15 MHz (confirmed accurate)
-    // CPU frequency is defined elsewhere - use a local constant to avoid redefinition
-    const uint32_t CPU_FREQ_MHZ = 18;  // Calibrated CPU frequency in MHz
+    #define CPU_FREQ_MHZ 18  // Calibrated CPU frequency in MHz
     uint32_t us_per_sample = 1000000UL / sample_rate;
     uint32_t total_cycles_needed = us_per_sample * CPU_FREQ_MHZ;
     
@@ -541,8 +540,8 @@ void DAC_PlayWAV(const int16_t* sample_data, uint32_t sample_length, uint32_t sa
     }
     
     // Calculate timing - using calibrated CPU frequency
-    // CPU frequency is defined elsewhere - use a local constant to avoid redefinition
-    const uint32_t CPU_FREQ_MHZ = 15;  // Calibrated CPU frequency in MHz
+    #undef CPU_FREQ_MHZ  // Undefine previous definition
+    #define CPU_FREQ_MHZ 15  // Calibrated CPU frequency in MHz
     uint32_t us_per_sample = 1000000UL / sample_rate;
     uint32_t total_cycles_needed = us_per_sample * CPU_FREQ_MHZ;
     

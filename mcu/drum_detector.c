@@ -1,5 +1,6 @@
 #include "drum_detector.h"
 #include "bno085_decoder.h"
+#include "debug_print.h"
 #include <stdint.h>
 
 // Detect drum trigger from sensor data
@@ -22,11 +23,17 @@ uint8_t detect_drum_trigger(
     pitch1 = euler1->pitch;
     pitch2 = euler2->pitch;
     
+    // Debug: log input values for trigger detection
+    debug_printf("[TRIGGER] Sensor1: yaw=%.2f pitch=%.2f gyro_y=%d gyro_z=%d\r\n", yaw1, pitch1, gyro1_y, gyro1_z);
+    debug_printf("[TRIGGER] Sensor2: yaw=%.2f pitch=%.2f gyro_y=%d gyro_z=%d\r\n", yaw2, pitch2, gyro2_y, gyro2_z);
+    
     // Right hand logic (Sensor 1)
     // if yaw in the range of 20-120 then play snare drum
     if (yaw1 >= 20.0f && yaw1 <= 120.0f) {
+        debug_print("[TRIGGER] Sensor1 in SNARE zone (yaw 20-120)\r\n");
         if (gyro1_y < -2500 && !state->printed_for_gyro1_y) {
             state->printed_for_gyro1_y = 1;
+            debug_print("[TRIGGER] -> SNARE triggered (gyro_y < -2500)\r\n");
             return DRUM_CODE_SNARE;
         } else if (gyro1_y >= -2500 && state->printed_for_gyro1_y) {
             state->printed_for_gyro1_y = 0;
@@ -34,13 +41,16 @@ uint8_t detect_drum_trigger(
     }
     // if yaw in the range of 340 - 20 then play high tom
     else if ((yaw1 >= 340.0f) || (yaw1 <= 20.0f)) {
+        debug_print("[TRIGGER] Sensor1 in HIGH_TOM/CRASH zone (yaw 340-20)\r\n");
         if (gyro1_y < -2500 && !state->printed_for_gyro1_y) {
             // if pitch over 55 degrees play crash cymbal
             if (pitch1 > 50.0f) {
                 state->printed_for_gyro1_y = 1;
+                debug_print("[TRIGGER] -> CRASH triggered (pitch > 50)\r\n");
                 return DRUM_CODE_CRASH;
             } else {
                 state->printed_for_gyro1_y = 1;
+                debug_print("[TRIGGER] -> HIGH_TOM triggered\r\n");
                 return DRUM_CODE_HIGH_TOM;
             }
         } else if (gyro1_y >= -2500 && state->printed_for_gyro1_y) {
@@ -139,6 +149,7 @@ uint8_t detect_drum_trigger(
     }
     
     // No trigger detected
+    debug_print("[TRIGGER] No trigger detected\r\n");
     return 0xFF;
 }
 
