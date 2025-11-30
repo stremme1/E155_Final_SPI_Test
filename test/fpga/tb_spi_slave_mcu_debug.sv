@@ -61,44 +61,68 @@ module tb_spi_slave_mcu_debug;
     
     parameter SCK_PERIOD = 50;  // 20MHz SPI clock (faster than FPGA clock for testing)
     
-    // Task to read one byte via SPI
-    task read_byte_spi(output logic [7:0] data);
+    // Task to read one byte via SPI (CS must already be low, doesn't toggle CS)
+    task read_byte_spi;
+        output [7:0] data;
         integer i;
-        data = 8'h00;
-        
-        // CS goes low to start transaction
-        cs_n = 0;
-        #(CLK_PERIOD * 2);  // Wait for FPGA to prepare
-        
-        // Read 8 bits, MSB first
-        for (i = 7; i >= 0; i--) begin
-            // Setup phase: clock is low, data should be stable
-            sck = 0;
-            #(SCK_PERIOD/2);
+        reg [7:0] temp_data;
+        begin
+            temp_data = 8'h00;
             
-            // Sample on rising edge (Mode 0)
-            sck = 1;
-            data[i] = sdo;  // Sample MISO
-            #(SCK_PERIOD/2);
+            // Read 8 bits, MSB first
+            for (i = 7; i >= 0; i = i - 1) begin
+                // SCK is already low from previous iteration (or initial state)
+                // Wait a bit for setup time
+                #(SCK_PERIOD/4);
+                
+                // Rising edge: MCU samples MISO (Mode 0)
+                sck = 1;
+                // Wait for signal to propagate and FPGA to see rising edge
+                repeat(2) @(posedge clk);
+                temp_data[i] = sdo;  // Sample MISO on rising edge
+                #(SCK_PERIOD/4);
+                
+                // Falling edge: FPGA will shift on this edge (Mode 0)
+                sck = 0;
+                // Wait for FPGA to detect falling edge and shift
+                repeat(2) @(posedge clk);
+                #(SCK_PERIOD/4);
+            end
             
-            // Clock goes low for next bit (FPGA will shift on this falling edge)
-            sck = 0;
-            #(SCK_PERIOD/2);
+            data = temp_data;
         end
-        
-        // CS goes high to end transaction
-        cs_n = 1;
-        #(CLK_PERIOD * 2);
     endtask
     
-    // Task to read 16-byte packet
-    task read_packet(output logic [7:0] packet [0:15]);
+    // Task to read 16-byte packet (CS stays low for entire transaction)
+    task read_packet;
         integer i;
-        for (i = 0; i < 16; i++) begin
-            read_byte_spi(packet[i]);
-            $display("  Byte[%2d] = 0x%02X", i, packet[i]);
+        reg [7:0] temp_byte;
+        begin
+            // CS goes low to start transaction (only once for all 16 bytes)
+            cs_n = 0;
+            // Wait a few FPGA clock cycles for shift_out to be loaded
+            repeat(3) @(posedge clk);
+            
+            // Ensure SCK starts low (SPI Mode 0: CPOL=0)
+            sck = 0;
+            repeat(2) @(posedge clk);  // Give FPGA time to see CS low and prepare first bit
+            
+            // Read all 16 bytes with CS staying low
+            for (i = 0; i < 16; i = i + 1) begin
+                read_byte_spi(temp_byte);
+                received_packet[i] = temp_byte;
+                $display("  Byte[%2d] = 0x%02X", i, received_packet[i]);
+            end
+            
+            // CS goes high to end transaction (only after all bytes are read)
+            cs_n = 1;
+            repeat(2) @(posedge clk);
         end
     endtask
+    
+    // Packet storage
+    reg [7:0] received_packet [0:15];
+    integer i;
     
     // Main test
     initial begin
@@ -128,6 +152,14 @@ module tb_spi_slave_mcu_debug;
         
         #(CLK_PERIOD * 10);
         
+        // Debug: Check internal signals
+        $display("Debug: Checking internal signals...");
+        $display("  dut.packet_buffer[0] = 0x%02X", dut.packet_buffer[0]);
+        $display("  dut.tx_packet[127:120] = 0x%02X", dut.tx_packet[127:120]);
+        $display("  dut.shift_out = 0x%02X", dut.shift_out);
+        $display("  dut.sdo = %b (cs_n=%b)", dut.sdo, cs_n);
+        $display("");
+        
         $display("Expected packet:");
         $display("  Byte[0]  = 0xAA (header)");
         $display("  Byte[1]  = 0x12 (quat1_w MSB)");
@@ -151,13 +183,11 @@ module tb_spi_slave_mcu_debug;
         $display("");
         
         // Read packet
-        logic [7:0] received_packet [0:15];
-        read_packet(received_packet);
+        read_packet;
         
         $display("");
         $display("Received packet:");
-        integer i;
-        for (i = 0; i < 16; i++) begin
+        for (i = 0; i < 16; i = i + 1) begin
             $display("  Byte[%2d] = 0x%02X", i, received_packet[i]);
         end
         

@@ -164,6 +164,8 @@ void readSensorDataPacket(uint8_t *packet) {
     debug_print("[SPI] Starting packet read - CS low\r\n");
     
     // CS-based protocol: Pull CS low to start transaction
+    // CRITICAL: CS must stay low for the ENTIRE 16-byte transaction
+    // If CS toggles between bytes, the FPGA resets and reloads the first byte
     digitalWrite(PA11, 0);  // CS low
     
     // Small delay to allow FPGA to prepare data and synchronize
@@ -172,6 +174,7 @@ void readSensorDataPacket(uint8_t *packet) {
     while(setup_delay-- > 0) __asm("nop");
     
     // Read 16 bytes using dummy bytes (0x00) to generate SCK
+    // CS stays low for all 16 bytes - this is critical!
     for(i = 0; i < 16; i++) {
         packet[i] = spiSendReceive(0x00);
         // Debug: log each byte received
@@ -181,7 +184,7 @@ void readSensorDataPacket(uint8_t *packet) {
     // Wait for SPI transaction to complete
     while(SPI1->SR & SPI_SR_BSY);  // Wait until SPI is not busy
     
-    // Pull CS high to end transaction
+    // Pull CS high to end transaction (only after all 16 bytes are read)
     digitalWrite(PA11, 1);  // CS high
     
     // Small delay to allow FPGA to reset its state

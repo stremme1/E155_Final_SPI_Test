@@ -101,6 +101,14 @@ module spi_slave_mcu(
     // ----------------------------
     // Main SPI slave logic
     // ----------------------------
+    // Detect CS falling edge to load first byte
+    logic cs_n_d, cs_n_dd;
+    always_ff @(posedge clk) begin
+        cs_n_d  <= cs_n;
+        cs_n_dd <= cs_n_d;
+    end
+    wire cs_falling = (~cs_n_d & cs_n_dd);  // CS going from high to low
+    
     always_ff @(posedge clk) begin
         
         if (cs_n) begin
@@ -111,10 +119,17 @@ module spi_slave_mcu(
             
         end else begin
             
+            // Load first byte when CS goes low (if not already loaded)
+            if (cs_falling) begin
+                shift_out <= tx_packet[127 -: 8];  // Load first byte (packet_buffer[0])
+                byte_count <= 0;
+                bit_count <= 0;
+            end
+            
             // SPI Mode 0 (CPOL=0, CPHA=0):
             // - MCU samples MISO on RISING edge of SCK
             // - FPGA must SETUP data on FALLING edge of SCK (before next rising edge)
-            // - First bit is already stable when CS goes low (loaded in reset state)
+            // - First bit is already stable when CS goes low (loaded above)
             
             // Shift on FALLING edge to prepare next bit for MCU to sample on rising edge
             if (sck_falling) begin
@@ -131,10 +146,10 @@ module spi_slave_mcu(
                         shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
                     end
                 end else begin
-                    // Shift RIGHT so next bit moves into MSB position [7] for output
-                    // For MSB-first: we output shift_out[7], then shift right to bring bit[6] into position [7]
-                    // Shift right, shift in 0 from left (MSB side)
-                    shift_out <= {1'b0, shift_out[7:1]};  // Shift right, shift in 0 from left
+                    // Shift LEFT so next bit moves into MSB position [7] for output
+                    // For MSB-first: we output shift_out[7] (bit 7), then shift left so bit[6] moves to position [7]
+                    // Shift left, shift in 0 from right (LSB side)
+                    shift_out <= {shift_out[6:0], 1'b0};  // Shift left, shift in 0 from right
                     bit_count <= bit_count + 1;  // Increment bit counter
                 end
             end
