@@ -202,14 +202,12 @@ module spi_slave_mcu(
         cs_n_prev_sck <= cs_n_sync_sck;
     end
     
-    // Reset seen_first_rising when CS goes high (async reset)
-    always_ff @(posedge cs_n) begin
-        seen_first_rising <= 1'b0;
-    end
-    
-    // Detect first SCK rising edge after CS goes low
-    always_ff @(posedge sck) begin
-        if (!cs_n && !seen_first_rising) begin
+    // Detect first SCK rising edge after CS goes low (with async reset on CS high)
+    always_ff @(posedge sck or posedge cs_n) begin
+        if (cs_n) begin
+            // Async reset when CS goes high
+            seen_first_rising <= 1'b0;
+        end else if (!cs_n && !seen_first_rising) begin
             // First SCK rising edge after CS goes low - first bit is now sampled
             seen_first_rising <= 1'b1;
         end
