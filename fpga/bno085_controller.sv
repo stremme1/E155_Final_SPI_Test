@@ -206,8 +206,10 @@ module bno085_controller (
             // Default assignments
             spi_start <= 1'b0;
             spi_tx_valid <= 1'b0;
-            quat_valid <= 1'b0;
-            gyro_valid <= 1'b0;
+            // NOTE: quat_valid and gyro_valid are NOT cleared here - they are "sticky"
+            // Once set, they remain high until reset. This ensures the SPI slave module
+            // can reliably capture them during clock domain crossing.
+            // Valid flags are only cleared on reset (handled in reset block above).
             
             case (state)
                 // 1. Wait after reset to ensure sensor is ready (~100ms)

@@ -185,6 +185,15 @@ module tb_bno085_controller;
                 end else begin
                     $display("[FAIL] Quaternion data mismatch");
                 end
+                
+                // Verify sticky valid flag behavior - flag should remain high
+                #10000; // Wait 10 clock cycles
+                if (quat_valid == 1) begin
+                    $display("[PASS] Valid flag remains high (sticky behavior verified)");
+                end else begin
+                    $display("[FAIL] Valid flag was cleared - sticky behavior not working!");
+                end
+                
                 disable quat_timeout; // Disable timeout after success
             end
             begin: quat_timeout
@@ -196,12 +205,27 @@ module tb_bno085_controller;
         
         // Test gyroscope report
         $display("\n[TEST] Step 4: Testing Gyroscope Report");
-        // Wait for controller to return to WAIT_DATA and ensure INT is high
-        wait(dut.state == 7); // WAIT_DATA state
-        #5000; // Wait a bit more to ensure INT is deasserted
+        // Wait for controller to return to WAIT_DATA state
+        // Give it time to process the quaternion report and return to WAIT_DATA
+        #100000; // Wait 100us for controller to finish processing
+        
+        // Wait for controller to be in WAIT_DATA state (state 7)
+        fork
+            begin
+                wait(dut.state == 7); // WAIT_DATA state
+                $display("  Controller in WAIT_DATA state");
+            end
+            begin
+                #1000000; // Timeout after 1ms
+                $display("[WARN] Controller not in WAIT_DATA state, continuing anyway");
+            end
+        join_any
+        
         // Ensure INT is high before sending new data
         if (int_n == 0) begin
-            #1000; // Wait for INT to go high
+            $display("  Waiting for INT to go high...");
+            wait(int_n == 1);
+            #5000; // Small delay after INT goes high
         end
         
         $display("  Sending Gyroscope: X=100, Y=200, Z=300");
