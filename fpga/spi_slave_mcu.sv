@@ -131,9 +131,10 @@ module spi_slave_mcu(
                         shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
                     end
                 end else begin
-                    // Shift LEFT so next bit moves into MSB position [7] for output
-                    // Output is shift_out[7], so we shift left to bring next bit into position
-                    shift_out <= {shift_out[6:0], 1'b0};  // Shift left, shift in 0 from right
+                    // Shift RIGHT so next bit moves into MSB position [7] for output
+                    // For MSB-first: we output shift_out[7], then shift right to bring bit[6] into position [7]
+                    // Shift right, shift in 0 from left (MSB side)
+                    shift_out <= {1'b0, shift_out[7:1]};  // Shift right, shift in 0 from left
                     bit_count <= bit_count + 1;  // Increment bit counter
                 end
             end
