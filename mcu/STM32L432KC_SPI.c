@@ -259,6 +259,12 @@ void parseSensorDataPacket(const uint8_t *packet,
     
     debug_print("[SENSOR] Header valid (0xAA)\r\n");
     
+    // Debug: Show raw sensor data bytes to help diagnose zero data issue
+    debug_printf("[SENSOR] Raw data bytes: quat_w=0x%02X%02X quat_x=0x%02X%02X quat_y=0x%02X%02X quat_z=0x%02X%02X\r\n",
+                 packet[1], packet[2], packet[3], packet[4], packet[5], packet[6], packet[7], packet[8]);
+    debug_printf("[SENSOR] Raw gyro bytes: gyro_x=0x%02X%02X gyro_y=0x%02X%02X gyro_z=0x%02X%02X flags=0x%02X\r\n",
+                 packet[9], packet[10], packet[11], packet[12], packet[13], packet[14], packet[15]);
+    
     // Sensor 1 Quaternion (bytes 1-8, MSB,LSB format)
     *quat1_w = (int16_t)((packet[1] << 8) | packet[2]);
     *quat1_x = (int16_t)((packet[3] << 8) | packet[4]);
