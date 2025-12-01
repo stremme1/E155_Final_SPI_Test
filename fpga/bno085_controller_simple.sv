@@ -237,12 +237,15 @@ module bno085_controller_simple (
                     cs_n <= 1'b0;
                     if (byte_cnt < get_cmd_len(init_step)) begin
                         if (!spi_busy && spi_tx_ready) begin
-                            // Send command byte
+                            // Start new byte transfer
                             spi_tx_data <= get_cmd_byte(init_step, byte_cnt);
                             spi_tx_valid <= 1'b1;
                             spi_start <= 1'b1;
+                        end else if (spi_busy) begin
+                            // Transfer in progress, release start after first cycle
+                            spi_start <= 1'b0;
                         end else if (!spi_busy && spi_rx_valid) begin
-                            // Byte sent, advance
+                            // Transfer complete, advance to next byte
                             byte_cnt <= byte_cnt + 1;
                             spi_tx_valid <= 1'b0;
                         end
