@@ -404,24 +404,24 @@ module bno085_controller (
                 INIT_DONE_CHECK: begin
                     cs_n <= 1'b1;
                     ps0_wake <= 1'b1; // Ensure PS0 is high before next wake cycle
-                    // Delay 10ms between commands
-                    if (delay_counter < 19'd30_000) begin
-                        delay_counter <= delay_counter + 1;
-                    end else begin
-                        delay_counter <= 19'd0;
-                        if (cmd_select < 2'd2) begin
+                    if (cmd_select < 2'd2) begin
+                        // More commands to send - delay 10ms between commands
+                        if (delay_counter < 19'd30_000) begin
+                            delay_counter <= delay_counter + 1;
+                        end else begin
+                            delay_counter <= 19'd0;
                             cmd_select <= cmd_select + 1;
                             state <= INIT_WAKE; // Go back to Wake for next command
+                        end
+                    end else begin
+                        // All commands sent - wait additional time for sensor to process
+                        // and start generating reports (100ms = 300,000 cycles @ 3MHz)
+                        if (delay_counter < 19'd300_000) begin
+                            delay_counter <= delay_counter + 1;
                         end else begin
-                            // All commands sent - wait additional time for sensor to process
-                            // and start generating reports (100ms = 300,000 cycles @ 3MHz)
-                            if (delay_counter < 19'd300_000) begin
-                                delay_counter <= delay_counter + 1;
-                            end else begin
-                                initialized <= 1'b1;
-                                delay_counter <= 19'd0;
-                                state <= WAIT_DATA;
-                            end
+                            initialized <= 1'b1;
+                            delay_counter <= 19'd0;
+                            state <= WAIT_DATA;
                         end
                     end
                 end
