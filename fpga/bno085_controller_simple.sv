@@ -5,7 +5,7 @@
 // Handles SHTP (Sensor Hub Transport Protocol) communication over SPI
 // Reads Rotation Vector (quaternion) and Gyroscope reports
 
-module bno085_controller (
+module bno085_controller_simple (
     input  logic        clk,
     input  logic        rst_n,
 
