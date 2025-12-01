@@ -413,8 +413,15 @@ module bno085_controller (
                             cmd_select <= cmd_select + 1;
                             state <= INIT_WAKE; // Go back to Wake for next command
                         end else begin
-                            initialized <= 1'b1;
-                            state <= WAIT_DATA;
+                            // All commands sent - wait additional time for sensor to process
+                            // and start generating reports (100ms = 300,000 cycles @ 3MHz)
+                            if (delay_counter < 19'd300_000) begin
+                                delay_counter <= delay_counter + 1;
+                            end else begin
+                                initialized <= 1'b1;
+                                delay_counter <= 19'd0;
+                                state <= WAIT_DATA;
+                            end
                         end
                     end
                 end
