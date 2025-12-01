@@ -347,20 +347,23 @@ module bno085_controller_new (
                     
                     if (byte_cnt < get_cmd_len(cmd_select)) begin
                         // FIX 1: Hold spi_start until SPI master acknowledges (goes busy)
-                        if (!spi_busy && spi_tx_ready && !spi_transaction_started) begin
+                        if (!spi_busy && spi_tx_ready) begin
                             // Ready to start new transaction
                             spi_tx_data <= get_init_byte(cmd_select, byte_cnt);
                             spi_tx_valid <= 1'b1;
-                            spi_start <= 1'b1;  // Assert start and hold until busy goes high
+                            spi_start <= 1'b1;  // Assert start and hold until busy
+                        end else if (!spi_busy && spi_start) begin
+                            // Waiting for SPI master to acknowledge - keep holding start
+                            spi_start <= 1'b1;
+                            spi_tx_valid <= 1'b1;
                         end else if (spi_busy) begin
-                            // Transaction in progress, keep holding start until busy goes high
-                            // Once busy is high, SPI master has latched the data, so we can release
-                            spi_start <= 1'b0;  // Release start after acknowledgment
+                            // Transaction in progress - SPI master has seen start, can release it
+                            spi_start <= 1'b0;
                             spi_tx_valid <= 1'b0;
                         end
                         
                         // FIX 3: Use registered rx_valid for more reliable detection
-                        if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy && !spi_transaction_started)) begin
+                        if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy)) begin
                             // Transfer complete, advance to next byte
                             byte_cnt <= byte_cnt + 1;
                         end
@@ -418,20 +421,24 @@ module bno085_controller_new (
                     cs_n <= 1'b0;
                     
                     // FIX 1: Proper handshake - hold start until acknowledged
-                    if (!spi_busy && spi_tx_ready && !spi_transaction_started) begin
+                    if (!spi_busy && spi_tx_ready) begin
                         // Ready to start transaction
                         spi_tx_data <= 8'h00;
                         spi_tx_valid <= 1'b1;
-                        spi_start <= 1'b1;  // Assert start and hold until busy goes high
+                        spi_start <= 1'b1;  // Assert start and hold until busy
+                    end else if (!spi_busy && spi_start) begin
+                        // Waiting for SPI master to acknowledge - keep holding start
+                        spi_start <= 1'b1;
+                        spi_tx_valid <= 1'b1;
                     end else if (spi_busy) begin
-                        // Transaction in progress, release start after SPI master acknowledges
+                        // Transaction in progress - SPI master has seen start, can release it
                         spi_start <= 1'b0;
                         spi_tx_valid <= 1'b0;
                     end
                     
                     // FIX 3: Use registered rx_valid for reliable detection
                     // Process received data when transaction completes
-                    if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy && !spi_transaction_started)) begin
+                    if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy)) begin
                         case (byte_cnt)
                             0: begin
                                 packet_length[7:0] <= spi_rx_data;
@@ -472,20 +479,24 @@ module bno085_controller_new (
                     cs_n <= 1'b0;
                     
                     // FIX 1: Proper handshake - hold start until acknowledged
-                    if (!spi_busy && spi_tx_ready && !spi_transaction_started) begin
+                    if (!spi_busy && spi_tx_ready) begin
                         // Ready to start transaction
                         spi_tx_data <= 8'h00;
                         spi_tx_valid <= 1'b1;
-                        spi_start <= 1'b1;  // Assert start and hold until busy goes high
+                        spi_start <= 1'b1;  // Assert start and hold until busy
+                    end else if (!spi_busy && spi_start) begin
+                        // Waiting for SPI master to acknowledge - keep holding start
+                        spi_start <= 1'b1;
+                        spi_tx_valid <= 1'b1;
                     end else if (spi_busy) begin
-                        // Transaction in progress, release start after SPI master acknowledges
+                        // Transaction in progress - SPI master has seen start, can release it
                         spi_start <= 1'b0;
                         spi_tx_valid <= 1'b0;
                     end
                     
                     // FIX 3: Use registered rx_valid for reliable detection
                     // Process received data when transaction completes
-                    if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy && !spi_transaction_started)) begin
+                    if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy)) begin
                         // Parse on the fly - per datasheet 1.3.5.2
                         // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
                         if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
