@@ -128,17 +128,12 @@ module tb_bno085_controller_comprehensive;
                 int_assert_pending <= 1'b1;
             end
             
-            // Assert INT when response is ready (after CS goes high from command)
-            if (mock_cs_prev == 0 && cs_n == 1 && mock_response_len > 0) begin
-                int_assert_pending <= 1'b1;
-            end
+            // INT assertion is handled in the posedge cs_n block above
+            // This block just handles deassertion
             
             // Deassert INT when CS goes low (per datasheet 6.5.4)
             if (cs_n == 0) begin
                 int_n <= 1'b1;
-                int_assert_pending <= 1'b0;
-            end else if (int_assert_pending) begin
-                int_n <= 1'b0;
                 int_assert_pending <= 1'b0;
             end
         end
@@ -162,7 +157,6 @@ module tb_bno085_controller_comprehensive;
             if (mock_rx_bit_cnt == 8) begin
                 mock_rx_bit_cnt = 0;
                 mock_rx_buffer[mock_rx_ptr] = mock_rx_byte;
-                mock_rx_ptr = mock_rx_ptr + 1;
                 mock_rx_byte_count = mock_rx_byte_count + 1;
                 
                 // Parse SHTP header
@@ -175,14 +169,25 @@ module tb_bno085_controller_comprehensive;
                     mock_received_channel = mock_rx_byte;
                 end else if (mock_rx_byte_count == 4) begin
                     mock_received_seq = mock_rx_byte;
-                    // Prepare response
+                end else if (mock_rx_byte_count == 5) begin
+                    // Now we have the first payload byte (command/report ID)
+                    $display("[%0t] MOCK: Received payload byte 0: %02h", $time, mock_rx_byte);
+                    $display("[%0t] MOCK: Buffer[0-4]: %02h %02h %02h %02h %02h", 
+                             $time, mock_rx_buffer[0], mock_rx_buffer[1], mock_rx_buffer[2], 
+                             mock_rx_buffer[3], mock_rx_buffer[4]);
+                    $display("[%0t] MOCK: Channel=%02h, preparing response...", $time, mock_received_channel);
                     mock_prepare_response();
+                    $display("[%0t] MOCK: Response prepared, len=%0d", $time, mock_response_len);
                 end
+                
+                // Increment pointer after storing byte
+                mock_rx_ptr = mock_rx_ptr + 1;
             end
         end
     end
     
     // SPI Transmit - shift MISO on falling edge (Mode 3)
+    // Per datasheet: Mode 3 (CPOL=1, CPHA=1) - data is sampled on rising edge, so we shift on falling edge
     always @(negedge sclk) begin
         if (!cs_n) begin
             if (mock_response_len > 0 && mock_response_ptr < mock_response_len) begin
@@ -190,12 +195,14 @@ module tb_bno085_controller_comprehensive;
                 mock_tx_bit_cnt = mock_tx_bit_cnt + 1;
                 
                 if (mock_tx_bit_cnt == 8) begin
+                    $display("[%0t] MOCK: Transmitted byte %0d: %02h", $time, mock_response_ptr, mock_tx_byte);
                     mock_tx_bit_cnt = 0;
                     mock_response_ptr = mock_response_ptr + 1;
                     if (mock_response_ptr < mock_response_len) begin
                         mock_tx_byte = mock_response[mock_response_ptr];
                     end else begin
                         mock_tx_byte = 8'h00;
+                        $display("[%0t] MOCK: All %0d bytes transmitted", $time, mock_response_len);
                     end
                 end else begin
                     mock_tx_byte = {mock_tx_byte[6:0], 1'b0};
@@ -206,32 +213,80 @@ module tb_bno085_controller_comprehensive;
         end
     end
     
+    // Track when we should assert INT
+    logic int_should_assert = 0;
+    
+    // Track if we received a full command (4+ bytes) and have response ready
+    logic command_received = 0;
+    
     // Reset on CS high
     always @(posedge cs_n) begin
+        // If we just finished receiving a command and have a response ready, mark INT for assertion
+        if (mock_response_len > 0 && command_received) begin
+            int_should_assert = 1'b1;
+            $display("[%0t] MOCK: CS high, response ready (len=%0d, cmd_received=%0d), will assert INT", 
+                     $time, mock_response_len, command_received);
+        end
+        
+        command_received = 0;
         mock_rx_ptr = 0;
         mock_rx_byte_count = 0;
         mock_rx_bit_cnt = 0;
         mock_rx_byte = 0;
         mock_received_length = 0;
         
-        // If response was sent, prepare for next
+        // If response was fully sent, prepare for next
         if (mock_response_ptr >= mock_response_len && mock_response_len > 0) begin
+            $display("[%0t] MOCK: Response fully sent (ptr=%0d, len=%0d)", 
+                     $time, mock_response_ptr, mock_response_len);
             mock_response_len = 0;
             mock_response_ptr = 0;
             response_sent_count = response_sent_count + 1;
+            int_should_assert = 1'b0;
         end else if (mock_response_len > 0) begin
-            // Reload first byte for continuation
+            // Response not fully sent - reload first byte for next transaction
+            $display("[%0t] MOCK: Response partially sent (ptr=%0d, len=%0d), reloading", 
+                     $time, mock_response_ptr, mock_response_len);
             mock_tx_byte = mock_response[0];
             mock_response_ptr = 0;
+            mock_tx_bit_cnt = 0;
         end
+    end
+    
+    // Reset transmit state when CS goes low (start of new transaction)
+    always @(negedge cs_n) begin
+        if (mock_response_len > 0) begin
+            // Reload first byte when CS goes low to start transmitting
+            mock_tx_byte = mock_response[0];
+            mock_response_ptr = 0;
+            mock_tx_bit_cnt = 0;
+            miso = mock_response[0][7]; // Set MSB immediately (Mode 3: data ready before first clock)
+            $display("[%0t] MOCK: CS low, starting to transmit response (len=%0d, first_byte=%02h)", 
+                     $time, mock_response_len, mock_response[0]);
+        end
+    end
+    
+    // Assert INT when marked (in clocked domain)
+    always_ff @(posedge clk) begin
+        if (int_should_assert && cs_n == 1) begin
+            int_n <= 1'b0;
+            int_should_assert <= 1'b0;
+        end
+    end
+    
+    // Debug: Monitor INT assertion
+    always @(negedge int_n) begin
+        $display("[%0t] MOCK: INT asserted (response_len=%0d)", $time, mock_response_len);
     end
     
     // Prepare response based on received command
     task mock_prepare_response;
         integer i;
         begin
+            $display("[%0t] MOCK: prepare_response: channel=%02h, buffer[4]=%02h, rx_ptr=%0d", 
+                     $time, mock_received_channel, mock_rx_buffer[4], mock_rx_ptr);
             if (mock_received_channel == 8'h02) begin // Channel 2 (Control)
-                // Product ID Request (0xF9)
+                // Product ID Request (0xF9) - first payload byte is at buffer[4] (5th byte, 0-indexed)
                 if (mock_rx_buffer[4] == 8'hF9) begin
                     $display("[%0t] MOCK: Received Product ID Request", $time);
                     mock_response[0] = 8'h11; // Length LSB (17 bytes)
@@ -249,6 +304,8 @@ module tb_bno085_controller_comprehensive;
                     mock_response_ptr = 0;
                     mock_tx_byte = mock_response[0];
                     init_cmd_count = init_cmd_count + 1;
+                    command_received = 1;
+                    $display("[%0t] MOCK: Product ID Response prepared, len=%0d", $time, mock_response_len);
                 end
                 // Set Feature (0xFD)
                 else if (mock_rx_buffer[4] == 8'hFD) begin
@@ -263,7 +320,14 @@ module tb_bno085_controller_comprehensive;
                     mock_response_ptr = 0;
                     mock_tx_byte = mock_response[0];
                     init_cmd_count = init_cmd_count + 1;
+                    command_received = 1;
+                    $display("[%0t] MOCK: Set Feature Response prepared, len=%0d", $time, mock_response_len);
+                end else begin
+                    $display("[%0t] MOCK: Unknown command 0x%02h on channel %02h", 
+                             $time, mock_rx_buffer[4], mock_received_channel);
                 end
+            end else begin
+                $display("[%0t] MOCK: Wrong channel %02h (expected 02)", $time, mock_received_channel);
             end
         end
     endtask
@@ -379,8 +443,10 @@ module tb_bno085_controller_comprehensive;
                 end
             end
             begin
-                #100000000; // 100ms timeout
+                #500000000; // 500ms timeout (increased to allow full initialization)
                 $display("[%0t] FAIL: Timeout waiting for initialization", $time);
+                $display("[%0t] DEBUG: State=%0d, init_cmd_count=%0d, response_sent_count=%0d", 
+                         $time, dut.state, init_cmd_count, response_sent_count);
                 test_fail = test_fail + 1;
                 $finish;
             end
