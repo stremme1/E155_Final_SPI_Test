@@ -57,9 +57,10 @@ module bno085_controller_simple (
         ST_CS_SETUP,
         ST_SEND_COMMAND,
         ST_DONE_CHECK,
+        ST_IDLE,
+        ST_READ_HEADER_START,
         ST_SPI_READ_HEADER,
-        ST_SPI_READ_PAYLOAD,
-        ST_IDLE
+        ST_SPI_READ_PAYLOAD
     } bno_state_t;
     
     bno_state_t state;
@@ -346,10 +347,10 @@ module bno085_controller_simple (
                 ST_SPI_READ_PAYLOAD: begin
                     cs_n <= 1'b0;
                     if (spi_rx_valid && !spi_busy) begin
-                        // Parse on the fly - only process sensor reports (Channel 3 or 5)
+                        // Parse on the fly - accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
                         // During initialization, responses come on Channel 2 - we read but don't process them
-                        if (init_step >= 2'd3 && (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV)) begin
-                            // Only process sensor reports after initialization is complete
+                        if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
+                            // Process sensor reports (matches original controller - no init_step check)
                             case (byte_cnt)
                                 0: current_report_id <= spi_rx_data;
                                 1: ; // Sequence number - ignore
@@ -448,16 +449,25 @@ module bno085_controller_simple (
                 
                 ST_IDLE: begin
                     cs_n <= 1'b1;
-                    ps0_wake <= 1'b1;
+                    ps0_wake <= 1'b1; // Ensure wake is released
                     if (!int_n_sync) begin
-                        // INT asserted - read data
-                        cs_n <= 1'b0;
+                        state <= ST_READ_HEADER_START;
                         byte_cnt <= 8'd0;
-                        spi_tx_data <= 8'h00;
-                        spi_tx_valid <= 1'b1;
-                        spi_start <= 1'b1;
-                        state <= ST_SPI_READ_HEADER;
                     end
+                end
+                
+                // CS setup before SPI - per datasheet 6.5.2
+                // Per datasheet 6.5.4: When CS goes low, INT deasserts
+                // So we should start reading immediately after CS goes low
+                ST_READ_HEADER_START: begin
+                    cs_n <= 1'b0;
+                    // Start first SPI transaction to read header
+                    // Don't check INT here - CS low causes INT to deassert per datasheet
+                    spi_tx_data <= 8'h00; 
+                    spi_tx_valid <= 1'b1; 
+                    spi_start <= 1'b1;
+                    byte_cnt <= 8'd0;
+                    state <= ST_SPI_READ_HEADER;
                 end
                 
                 default: state <= ST_RESET;
