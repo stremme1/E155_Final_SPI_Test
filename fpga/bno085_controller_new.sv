@@ -91,8 +91,9 @@ module bno085_controller_new (
     // INT pin handling
     logic int_n_sync, int_n_prev;
     
-    // Sequence number tracking (per datasheet 1.3.5.2)
-    logic [7:0] last_seq_num;
+    // Sequence number tracking
+    logic [7:0] shtp_seq_num;  // SHTP header sequence number (byte 3 of header, per datasheet 1.3.1)
+    logic [7:0] report_seq_num; // Sensor report sequence number (byte 1 of payload, per datasheet 1.3.5.2)
     
     // Status and delay fields
     logic [7:0] report_status;
@@ -254,7 +255,8 @@ module bno085_controller_new (
             current_report_id <= 8'd0;
             temp_byte_lsb <= 8'd0;
             cmd_select <= 2'd0;
-            last_seq_num <= 8'd0;
+            shtp_seq_num <= 8'd0;
+            report_seq_num <= 8'd0;
             report_status <= 8'd0;
             report_delay <= 8'd0;
             
@@ -447,15 +449,21 @@ module bno085_controller_new (
                                 spi_start <= 1'b1;
                             end
                             3: begin
+                                // Capture SHTP header sequence number (per datasheet 1.3.1, Figure 1-26)
+                                // This sequence number is used to detect duplicate or missing SHTP cargoes
+                                shtp_seq_num <= spi_rx_data;
+                                
                                 // Validate packet length (max 32766 per datasheet 1.3.1)
+                                // Length includes header, so payload = packet_length - 4
                                 if (packet_length > 16'd4 && packet_length < 16'd32767) begin
                                     byte_cnt <= 8'd0;
                                     state <= READ_PAYLOAD;
+                                    // Continue reading in same CS transaction (CS stays low)
                                     spi_tx_data <= 8'h00; 
                                     spi_tx_valid <= 1'b1; 
                                     spi_start <= 1'b1;
                                 end else begin
-                                    // Invalid length
+                                    // Invalid length - abort transaction
                                     cs_n <= 1'b1; 
                                     state <= WAIT_DATA;
                                 end
@@ -478,7 +486,7 @@ module bno085_controller_new (
                         if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
                             case (byte_cnt)
                                 0: current_report_id <= spi_rx_data;
-                                1: last_seq_num <= spi_rx_data; // Sequence number (for drop detection)
+                                1: report_seq_num <= spi_rx_data; // Sensor report sequence number (for drop detection per datasheet 1.3.5.2)
                                 2: report_status <= spi_rx_data; // Status (accuracy in bits 1:0)
                                 3: report_delay <= spi_rx_data;  // Delay (lower 8 bits)
                                 4: begin
