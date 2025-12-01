@@ -119,6 +119,27 @@ module tb_system_full;
     integer test_fail = 0;
     integer packet_count = 0;
     
+    // Timeout parameters
+    parameter TIMEOUT_INIT = 10_000_000; // 10M cycles = ~3.3 seconds at 3MHz
+    parameter TIMEOUT_PACKET = 1_000_000; // 1M cycles = ~0.33 seconds per packet
+    parameter TIMEOUT_TOTAL = 30_000_000; // 30M cycles = ~10 seconds total
+    
+    // Timeout monitoring
+    integer cycle_count = 0;
+    always @(posedge clk) begin
+        if (fpga_rst_n) begin
+            cycle_count <= cycle_count + 1;
+            if (cycle_count > TIMEOUT_TOTAL) begin
+                $display("\n[TIMEOUT] Test exceeded maximum time (%0d cycles)", TIMEOUT_TOTAL);
+                $display("[FAIL] Test terminated due to timeout");
+                test_fail = test_fail + 1;
+                $finish;
+            end
+        end else begin
+            cycle_count <= 0;
+        end
+    end
+    
     // Test task: MCU reads packet
     task mcu_read_packet;
         integer i;
@@ -169,6 +190,7 @@ module tb_system_full;
         $display("========================================");
         $display("Full System Integration Test");
         $display("========================================");
+        $display("Timeout: %0d cycles (~%0d seconds)", TIMEOUT_TOTAL, TIMEOUT_TOTAL * CLK_PERIOD / 1_000_000_000);
         
         // Initialize
         fpga_rst_n = 0;
@@ -182,10 +204,26 @@ module tb_system_full;
         #(100 * CLK_PERIOD);
         fpga_rst_n = 1;
         
-        $display("\n[TEST] Waiting for FPGA initialization...");
+        $display("\n[TEST] Waiting for FPGA initialization... (timeout: %0d cycles)", TIMEOUT_INIT);
         
-        // Wait for initialization (2 seconds + initialization time)
-        #(2500000 * CLK_PERIOD); // ~2.5 seconds at 3MHz
+        // Wait for initialization with timeout
+        fork
+            begin
+                wait(led_initialized == 1 || led_error == 1);
+                $display("[INFO] FPGA initialization completed after %0d cycles", cycle_count);
+            end
+            begin
+                #(TIMEOUT_INIT * CLK_PERIOD);
+                if (!led_initialized && !led_error) begin
+                    $display("\n[TIMEOUT] FPGA initialization did not complete within %0d cycles", TIMEOUT_INIT);
+                    $display("[FAIL] FPGA stuck in initialization");
+                    test_fail = test_fail + 1;
+                end
+            end
+        join_any
+        disable fork;
+        
+        #(100 * CLK_PERIOD);
         
         if (led_initialized) begin
             $display("[PASS] FPGA initialized (LED on)");

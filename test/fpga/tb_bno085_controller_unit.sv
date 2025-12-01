@@ -94,6 +94,26 @@ module tb_bno085_controller_unit;
     integer test_pass = 0;
     integer test_fail = 0;
     
+    // Timeout parameters
+    parameter TIMEOUT_INIT = 10_000_000; // 10M cycles = ~3.3 seconds at 3MHz
+    parameter TIMEOUT_TOTAL = 20_000_000; // 20M cycles = ~6.7 seconds total
+    
+    // Timeout monitoring
+    integer cycle_count = 0;
+    always @(posedge clk) begin
+        if (rst_n) begin
+            cycle_count <= cycle_count + 1;
+            if (cycle_count > TIMEOUT_TOTAL) begin
+                $display("\n[TIMEOUT] Test exceeded maximum time (%0d cycles)", TIMEOUT_TOTAL);
+                $display("[FAIL] Test terminated due to timeout");
+                test_fail = test_fail + 1;
+                $finish;
+            end
+        end else begin
+            cycle_count <= 0;
+        end
+    end
+    
     // Test tasks
     task check_initialized;
         begin
@@ -113,17 +133,46 @@ module tb_bno085_controller_unit;
         $display("========================================");
         $display("BNO085 Controller Unit Tests");
         $display("========================================");
+        $display("Timeout: %0d cycles (~%0d seconds)", TIMEOUT_TOTAL, TIMEOUT_TOTAL * CLK_PERIOD / 1_000_000_000);
         
         // Initialize
+        $display("[INFO] Starting test - asserting reset");
         rst_n = 0;
         
         #(100 * CLK_PERIOD);
+        $display("[INFO] Releasing reset");
         rst_n = 1;
+        $display("[INFO] Reset released, starting initialization wait");
         
-        $display("\n[TEST] Initialization sequence");
+        $display("\n[TEST] Initialization sequence (timeout: %0d cycles)", TIMEOUT_INIT);
         
-        // Wait for initialization
-        wait(initialized == 1 || error == 1);
+        // Wait for initialization with timeout
+        begin
+            integer timeout_cycles = 0;
+            logic init_complete = 0;
+            
+            // Check every 100k cycles
+            while (!init_complete && timeout_cycles < TIMEOUT_INIT) begin
+                #(100000 * CLK_PERIOD);
+                timeout_cycles = timeout_cycles + 100000;
+                
+                if (initialized || error) begin
+                    init_complete = 1;
+                    $display("[INFO] Initialization completed after ~%0d cycles", timeout_cycles);
+                end else if (timeout_cycles % 1000000 == 0) begin
+                    $display("[DEBUG] Cycle %0d: initialized=%0d error=%0d cs_n=%0d ps0_wake=%0d int_n=%0d", 
+                             timeout_cycles, initialized, error, cs_n, ps0_wake, int_n);
+                end
+            end
+            
+            if (!init_complete) begin
+                $display("\n[TIMEOUT] Initialization did not complete within %0d cycles", TIMEOUT_INIT);
+                $display("[FAIL] Controller stuck - initialized=%0d error=%0d cs_n=%0d ps0_wake=%0d int_n=%0d", 
+                         initialized, error, cs_n, ps0_wake, int_n);
+                test_fail = test_fail + 1;
+            end
+        end
+        
         #(100 * CLK_PERIOD);
         
         check_initialized();
