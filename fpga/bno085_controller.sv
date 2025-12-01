@@ -206,10 +206,8 @@ module bno085_controller (
             // Default assignments
             spi_start <= 1'b0;
             spi_tx_valid <= 1'b0;
-            // NOTE: quat_valid and gyro_valid are NOT cleared here - they are "sticky"
-            // Once set, they remain high until reset. This ensures the SPI slave module
-            // can reliably capture them during clock domain crossing.
-            // Valid flags are only cleared on reset (handled in reset block above).
+            quat_valid <= 1'b0;
+            gyro_valid <= 1'b0;
             
             case (state)
                 // 1. Wait after reset to ensure sensor is ready (~100ms)
@@ -407,7 +405,6 @@ module bno085_controller (
                     if (spi_rx_valid && !spi_busy) begin
                         // Parse on the fly - per datasheet 1.3.5.2
                         // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
-                        // Also handle Channel 2 (control) responses (Product ID, Get Feature Response, etc.)
                         if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
                             case (byte_cnt)
                                 0: current_report_id <= spi_rx_data;
@@ -415,93 +412,78 @@ module bno085_controller (
                                 2: report_status <= spi_rx_data; // Status (accuracy in bits 1:0)
                                 3: report_delay <= spi_rx_data;  // Delay (lower 8 bits)
                                 4: begin
-                                    // Rotation Vector: I (X) component LSB (little-endian per datasheet 1.2.2.2)
-                                    // Gyroscope: X-axis LSB
+                                    // Rotation Vector: X-axis LSB (little-endian per datasheet 1.2.2.2)
                                     if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                        temp_byte_lsb <= spi_rx_data; // I (X) LSB
+                                        temp_byte_lsb <= spi_rx_data;
                                     end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
                                         temp_byte_lsb <= spi_rx_data; // Gyro X LSB
                                     end
                                 end
                                 5: begin
                                     if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                        quat_x <= {spi_rx_data, temp_byte_lsb}; // I (X) MSB,LSB
+                                        quat_x <= {spi_rx_data, temp_byte_lsb}; // X-axis MSB,LSB
                                     end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
                                         gyro_x <= {spi_rx_data, temp_byte_lsb}; // X-axis MSB,LSB
                                     end
                                 end
                                 6: begin
                                     if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                        temp_byte_lsb <= spi_rx_data; // J (Y) LSB
+                                        temp_byte_lsb <= spi_rx_data; // Y-axis LSB
                                     end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
                                         temp_byte_lsb <= spi_rx_data; // Gyro Y LSB
                                     end
                                 end
                                 7: begin
                                     if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                        quat_y <= {spi_rx_data, temp_byte_lsb}; // J (Y) MSB,LSB
+                                        quat_y <= {spi_rx_data, temp_byte_lsb}; // Y-axis MSB,LSB
                                     end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
                                         gyro_y <= {spi_rx_data, temp_byte_lsb}; // Y-axis MSB,LSB
                                     end
                                 end
                                 8: begin
                                     if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                        temp_byte_lsb <= spi_rx_data; // K (Z) LSB
+                                        temp_byte_lsb <= spi_rx_data; // Z-axis LSB
                                     end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
                                         temp_byte_lsb <= spi_rx_data; // Gyro Z LSB
                                     end
                                 end
                                 9: begin
                                     if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                        quat_z <= {spi_rx_data, temp_byte_lsb}; // K (Z) MSB,LSB
+                                        quat_z <= {spi_rx_data, temp_byte_lsb}; // Z-axis MSB,LSB
                                     end else if (current_report_id == REPORT_ID_GYROSCOPE) begin
                                         gyro_z <= {spi_rx_data, temp_byte_lsb}; // Z-axis MSB,LSB
-                                        gyro_valid <= 1'b1; // Gyro complete - set valid flag
+                                        gyro_valid <= 1'b1; // Gyro complete
                                     end
                                 end
                                 10: begin
                                     if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                        temp_byte_lsb <= spi_rx_data; // Real (W) LSB
+                                        temp_byte_lsb <= spi_rx_data; // W-axis LSB
                                     end
                                 end
                                 11: begin
                                     if (current_report_id == REPORT_ID_ROTATION_VECTOR) begin
-                                        quat_w <= {spi_rx_data, temp_byte_lsb}; // Real (W) MSB,LSB
-                                        quat_valid <= 1'b1; // Quaternion complete - set valid flag
+                                        quat_w <= {spi_rx_data, temp_byte_lsb}; // W-axis MSB,LSB
+                                        quat_valid <= 1'b1; // Quaternion complete
                                     end
-                                end
-                                default: begin
-                                    // Ignore extra bytes in report (if any)
                                 end
                             endcase
                         end
-                        // Note: We skip parsing Channel 2 (control) responses (Product ID, Get Feature, etc.)
-                        // These are handled during initialization and don't contain sensor data
 
                         byte_cnt <= byte_cnt + 1;
                         
                         // Continue reading if more data
-                        // packet_length includes SHTP header (4 bytes), so payload length = packet_length - 4
-                        // We've already read the header, so we need to read (packet_length - 4) payload bytes
-                        // byte_cnt counts payload bytes (0 to packet_length-5), so read while byte_cnt < (packet_length - 4)
-                        if (byte_cnt < (packet_length - 4)) begin
+                        if (byte_cnt < (packet_length - 5)) begin
                             spi_tx_data <= 8'h00; 
                             spi_tx_valid <= 1'b1; 
                             spi_start <= 1'b1;
                         end else begin
-                            // Packet complete - deassert CS after reading all payload bytes
-                            // Check if INT is still asserted (more data available)
+                            // Packet complete
                             cs_n <= 1'b1;
                             byte_cnt <= 8'd0;
-                            // If INT is still low, there may be more packets - go back to read header
-                            if (!int_n_sync) begin
-                                state <= READ_HEADER_START;
-                            end else begin
-                                state <= WAIT_DATA;
-                            end
+                            state <= WAIT_DATA;
                         end
                     end else if (!spi_busy && byte_cnt < (packet_length - 4)) begin
-                        // Continue reading payload - ensure we read all bytes
+                        // Continue reading payload
                         spi_tx_data <= 8'h00; 
                         spi_tx_valid <= 1'b1; 
                         spi_start <= 1'b1;

@@ -295,11 +295,14 @@ void parseSensorDataPacket(const uint8_t *packet,
     // Sensor 1 Flags (byte 15)
     *quat1_valid = packet[15] & 0x01;
     *gyro1_valid = (packet[15] >> 1) & 0x01;
+    uint8_t initialized = (packet[15] >> 2) & 0x01;
+    uint8_t error = (packet[15] >> 3) & 0x01;
     
     // Debug: Print parsed values
     debug_printf("[SENSOR] Quat1: w=%d x=%d y=%d z=%d\r\n", *quat1_w, *quat1_x, *quat1_y, *quat1_z);
     debug_printf("[SENSOR] Gyro1: x=%d y=%d z=%d\r\n", *gyro1_x, *gyro1_y, *gyro1_z);
-    debug_printf("[SENSOR] Flags: quat_valid=%d gyro_valid=%d\r\n", *quat1_valid, *gyro1_valid);
+    debug_printf("[SENSOR] Flags: quat_valid=%d gyro_valid=%d init=%d error=%d\r\n", 
+                 *quat1_valid, *gyro1_valid, initialized, error);
     
     // Sensor 2 - set to 0/invalid (not in 16-byte packet, kept for future compatibility)
     *quat2_w = *quat2_x = *quat2_y = *quat2_z = 0;

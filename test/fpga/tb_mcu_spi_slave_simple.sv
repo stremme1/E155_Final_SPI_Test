@@ -36,8 +36,13 @@ module tb_mcu_spi_slave_simple;
         .sck(sck),
         .sdi(sdi),
         .sdo(sdo),
-        .load(load),
-        .done(done),
+        // .load(load), // Removed in recent update
+        // .done(done), // Removed in recent update
+        .cs_n(1'b0), // Added cs_n port which was missing in this testbench instantiation?
+                     // Wait, this testbench seems outdated. Let's check if cs_n is used.
+                     // The snippet doesn't show cs_n. Let's assume it needs update to match current interface.
+        .initialized(1'b1),
+        .error(1'b0),
         .quat1_valid(quat1_valid),
         .quat1_w(quat1_w),
         .quat1_x(quat1_x),

@@ -22,6 +22,8 @@ module spi_slave_mcu(
     
     // Sensor data inputs (RAW data from BNO085 controller)
     // Sensor 1 (Right Hand) - Single sensor only
+    input  logic        initialized,
+    input  logic        error,
     input  logic        quat1_valid,
     input  logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z,
     input  logic        gyro1_valid,
@@ -32,7 +34,7 @@ module spi_slave_mcu(
     // Byte 0:    Header (0xAA)
     // Byte 1-8:  Sensor 1 Quaternion (w, x, y, z - MSB,LSB each)
     // Byte 9-14: Sensor 1 Gyroscope (x, y, z - MSB,LSB each)
-    // Byte 15:   Sensor 1 Flags (bit 0=quat_valid, bit 1=gyro_valid)
+    // Byte 15:   Sensor 1 Flags (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=error)
     
     localparam PACKET_SIZE = 16;
     localparam HEADER_BYTE = 8'hAA;
@@ -71,16 +73,16 @@ module spi_slave_mcu(
     // 3. Capture multi-bit data on CS falling edge (safe due to setup time)
     
     // Stage 1: Capture sensor data in clk domain (registered to prevent glitches)
-    // Note: Packet builder already provides sticky valid flags, so we don't need to latch them again
-    // Just register the data and valid flags for CDC
     logic quat1_valid_clk, gyro1_valid_clk;
+    logic initialized_clk, error_clk;
     logic signed [15:0] quat1_w_clk, quat1_x_clk, quat1_y_clk, quat1_z_clk;
     logic signed [15:0] gyro1_x_clk, gyro1_y_clk, gyro1_z_clk;
     
     always_ff @(posedge clk) begin
-        // Register data and valid flags from packet builder (already sticky)
         quat1_valid_clk <= quat1_valid;
         gyro1_valid_clk <= gyro1_valid;
+        initialized_clk <= initialized;
+        error_clk <= error;
         quat1_w_clk <= quat1_w;
         quat1_x_clk <= quat1_x;
         quat1_y_clk <= quat1_y;
@@ -94,12 +96,18 @@ module spi_slave_mcu(
     // Synchronize on clk to ensure stable capture
     logic quat1_valid_sync1, quat1_valid_sync2;
     logic gyro1_valid_sync1, gyro1_valid_sync2;
+    logic initialized_sync1, initialized_sync2;
+    logic error_sync1, error_sync2;
     
     always_ff @(posedge clk) begin
         quat1_valid_sync1 <= quat1_valid_clk;
         quat1_valid_sync2 <= quat1_valid_sync1;
         gyro1_valid_sync1 <= gyro1_valid_clk;
         gyro1_valid_sync2 <= gyro1_valid_sync1;
+        initialized_sync1 <= initialized_clk;
+        initialized_sync2 <= initialized_sync1;
+        error_sync1 <= error_clk;
+        error_sync2 <= error_sync1;
     end
     
     // ========================================================================
@@ -109,6 +117,7 @@ module spi_slave_mcu(
     // Capture on CS falling edge from registered clk-domain data
     // Safe because: data is registered (stable), CS provides setup time before first SCK
     logic quat1_valid_snap, gyro1_valid_snap;
+    logic initialized_snap, error_snap;
     logic signed [15:0] quat1_w_snap, quat1_x_snap, quat1_y_snap, quat1_z_snap;
     logic signed [15:0] gyro1_x_snap, gyro1_y_snap, gyro1_z_snap;
     
@@ -128,22 +137,10 @@ module spi_slave_mcu(
     assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
-    // Capture snapshot on CS falling edge AND continuously when CS is high
-    // This ensures we capture the latest data right before transaction starts
+    // Update snapshot continuously when CS is high, freeze when CS is low (during transaction)
+    // Also initialize snapshot on first clock to ensure it has data even before first CS transaction
     always_ff @(posedge clk) begin
-        if (cs_falling_edge) begin
-            // CS falling edge: Capture data immediately (highest priority)
-            // This ensures we get the latest data right before transaction starts
-            quat1_w_snap <= quat1_w_clk;
-            quat1_x_snap <= quat1_x_clk;
-            quat1_y_snap <= quat1_y_clk;
-            quat1_z_snap <= quat1_z_clk;
-            gyro1_x_snap <= gyro1_x_clk;
-            gyro1_y_snap <= gyro1_y_clk;
-            gyro1_z_snap <= gyro1_z_clk;
-            quat1_valid_snap <= quat1_valid_sync2;
-            gyro1_valid_snap <= gyro1_valid_sync2;
-        end else if (cs_n) begin
+        if (cs_n) begin
             // CS high: Update snapshot continuously with latest data
             // This ensures we always have the latest data when CS goes low
             quat1_w_snap <= quat1_w_clk;
@@ -155,9 +152,28 @@ module spi_slave_mcu(
             gyro1_z_snap <= gyro1_z_clk;
             quat1_valid_snap <= quat1_valid_sync2;
             gyro1_valid_snap <= gyro1_valid_sync2;
+            initialized_snap <= initialized_sync2;
+            error_snap <= error_sync2;
         end
         // When CS is low (during transaction), snapshot does NOT update - it remains stable
         // This ensures data consistency during the entire SPI transaction
+        // Note: Snapshot is initialized on first clock cycle when CS is high
+    end
+    
+    // Initialize snapshot on first clock (before any CS transaction)
+    // This ensures snapshot has valid data even if CS goes low immediately
+    initial begin
+        quat1_w_snap = 16'h0000;
+        quat1_x_snap = 16'h0000;
+        quat1_y_snap = 16'h0000;
+        quat1_z_snap = 16'h0000;
+        gyro1_x_snap = 16'h0000;
+        gyro1_y_snap = 16'h0000;
+        gyro1_z_snap = 16'h0000;
+        quat1_valid_snap = 1'b0;
+        gyro1_valid_snap = 1'b0;
+        initialized_snap = 1'b0;
+        error_snap = 1'b0;
     end
     
     // Packet buffer - assembled from SNAPSHOT data (stable during transaction)
@@ -208,7 +224,7 @@ module spi_slave_mcu(
             assign packet_buffer[14] = gyro1_z_snap[7:0];   // Z LSB
             
             // Sensor 1 Flags - from snapshot
-            assign packet_buffer[15] = {6'h0, gyro1_valid_snap, quat1_valid_snap};
+            assign packet_buffer[15] = {4'h0, error_snap, initialized_snap, gyro1_valid_snap, quat1_valid_snap};
         end
     endgenerate
     

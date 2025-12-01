@@ -44,6 +44,8 @@ module tb_spi_slave_unit_tests;
         .sck(sck),
         .sdi(1'b0),
         .sdo(sdo),
+        .initialized(1'b1),
+        .error(1'b0),
         .quat1_valid(quat1_valid),
         .quat1_w(quat1_w),
         .quat1_x(quat1_x),

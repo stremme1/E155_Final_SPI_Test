@@ -1,0 +1,115 @@
+C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_add_round_key_tb.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_add_round_key_tb.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module testbench_aes_add_round_key
+
+Top level modules:
+	testbench_aes_add_round_key
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/key_expansion.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/key_expansion.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module key_expansion
+
+Top level modules:
+	key_expansion
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/mixcolumns.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/mixcolumns.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module mixcolumns
+-- Compiling module mixcolumn
+
+Top level modules:
+	mixcolumns
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/sbox_sync.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/sbox_sync.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module sbox_sync
+
+Top level modules:
+	sbox_sync
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_shiftrows.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_shiftrows.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module testbench_shiftrows
+
+Top level modules:
+	testbench_shiftrows
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_core.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_core.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module aes_core
+
+Top level modules:
+	aes_core
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_sbox_tb.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_sbox_tb.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module testbench_aes_sbox
+
+Top level modules:
+	testbench_aes_sbox
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_spi_tb.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_spi_tb.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module testbench_aes_spi
+
+Top level modules:
+	testbench_aes_spi
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/galoismult.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/galoismult.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module galoismult
+
+Top level modules:
+	galoismult
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/key_expansion_tb.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/key_expansion_tb.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module testbench_key_expansion
+
+Top level modules:
+	testbench_key_expansion
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_shiftcolumns_tb.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_shiftcolumns_tb.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module testbench_mixcolumns
+
+Top level modules:
+	testbench_mixcolumns
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_spi.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_spi.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module aes_spi
+
+Top level modules:
+	aes_spi
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_core_tb.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes_core_tb.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module testbench_aes_core
+
+Top level modules:
+	testbench_aes_core
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/add_round_key.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/add_round_key.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module add_round_key
+
+Top level modules:
+	add_round_key
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/shiftrows.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/shiftrows.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module shiftrows
+-- Compiling module shiftrow
+
+Top level modules:
+	shiftrows
+
+} {} {}} C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes.sv {1 {vlog -work work -vopt -sv -stats=none C:/Users/sanarayanan/my_designs/AES/source/AES_code/aes.sv
+Questa Lattice OEM Edition-64 vlog 2024.2 Compiler 2024.05 May 20 2024
+-- Compiling module aes
+
+Top level modules:
+	aes
+
+} {} {}}
