@@ -335,19 +335,16 @@ module bno085_controller (
 
                 READ_HEADER_START: begin
                     // CS setup before SPI - per datasheet 6.5.2
+                    // Per datasheet 6.5.4: When CS goes low, INT deasserts
+                    // So we should start reading immediately after CS goes low
                     cs_n <= 1'b0;
-                    if (!int_n_sync) begin
-                        // Start first SPI transaction to read header
-                        spi_tx_data <= 8'h00; 
-                        spi_tx_valid <= 1'b1; 
-                        spi_start <= 1'b1;
-                        byte_cnt <= 8'd0;
-                        state <= READ_HEADER;
-                    end else begin
-                        // INT deasserted, no data
-                        cs_n <= 1'b1;
-                        state <= WAIT_DATA;
-                    end
+                    // Start first SPI transaction to read header
+                    // Don't check INT here - CS low causes INT to deassert per datasheet
+                    spi_tx_data <= 8'h00; 
+                    spi_tx_valid <= 1'b1; 
+                    spi_start <= 1'b1;
+                    byte_cnt <= 8'd0;
+                    state <= READ_HEADER;
                 end
                 
                 READ_HEADER: begin
