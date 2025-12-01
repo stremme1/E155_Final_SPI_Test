@@ -425,12 +425,11 @@ module bno085_controller_simple (
                             spi_tx_valid <= 1'b1;
                             spi_start <= 1'b1;
                         end else begin
-                            // Packet complete
+                            // Packet complete - but DON'T clear valid flags yet!
+                            // They need to persist for at least one clock cycle so SPI slave can latch them
+                            // Valid flags will be cleared in ST_IDLE state (next clock cycle)
                             cs_n <= 1'b1;
                             byte_cnt <= 8'd0;
-                            // Clear valid flags when packet is complete (they've been latched by SPI slave)
-                            quat_valid <= 1'b0;
-                            gyro_valid <= 1'b0;
                             if (init_step < 2'd3) begin
                                 // Still initializing - read response but don't process, move to next step
                                 init_step <= init_step + 1;
@@ -456,6 +455,10 @@ module bno085_controller_simple (
                 ST_IDLE: begin
                     cs_n <= 1'b1;
                     ps0_wake <= 1'b1; // Ensure wake is released
+                    // Clear valid flags when entering IDLE (after SPI slave has had time to latch them)
+                    // This ensures valid flags persist for at least one clock cycle after being set
+                    quat_valid <= 1'b0;
+                    gyro_valid <= 1'b0;
                     if (!int_n_sync) begin
                         state <= ST_READ_HEADER_START;
                         byte_cnt <= 8'd0;
