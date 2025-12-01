@@ -128,12 +128,19 @@ module tb_bno085_controller_unit;
         end
     endtask
     
+    // VCD dump for debugging
+    initial begin
+        $dumpfile("test/fpga/tb_bno085_controller_unit.vcd");
+        $dumpvars(0, tb_bno085_controller_unit);
+    end
+    
     // Main test sequence
     initial begin
         $display("========================================");
         $display("BNO085 Controller Unit Tests");
         $display("========================================");
         $display("Timeout: %0d cycles (~%0d seconds)", TIMEOUT_TOTAL, TIMEOUT_TOTAL * CLK_PERIOD / 1_000_000_000);
+        $display("VCD file: test/fpga/tb_bno085_controller_unit.vcd");
         
         // Initialize
         $display("[INFO] Starting test - asserting reset");
@@ -162,6 +169,10 @@ module tb_bno085_controller_unit;
                 end else if (timeout_cycles % 1000000 == 0) begin
                     $display("[DEBUG] Cycle %0d: initialized=%0d error=%0d cs_n=%0d ps0_wake=%0d int_n=%0d", 
                              timeout_cycles, initialized, error, cs_n, ps0_wake, int_n);
+                end else if (timeout_cycles > 300000 && timeout_cycles < 310000 && timeout_cycles % 10000 == 0) begin
+                    // Detailed debug around expected INT assertion
+                    $display("[DEBUG] Cycle %0d: int_n=%0d ps0_wake=%0d cs_n=%0d", 
+                             timeout_cycles, int_n, ps0_wake, cs_n);
                 end
             end
             
