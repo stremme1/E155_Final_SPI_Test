@@ -194,6 +194,7 @@ module spi_slave_mcu(
         if (!snapshot_initialized) begin
             // First clock: Initialize snapshot - only update if valid data is present
             // This prevents all-zeros if BNO085 hasn't produced data yet
+            // But if valid data is present, capture it immediately
             if (quat1_valid_latched) begin
                 quat1_w_snap <= quat1_w_clk;
                 quat1_x_snap <= quat1_x_clk;
