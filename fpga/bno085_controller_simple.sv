@@ -54,8 +54,9 @@ module bno085_controller_simple (
         ST_RESET,
         ST_WAKE_ASSERT,
         ST_WAIT_INT,
+        ST_CS_SETUP,
         ST_SEND_COMMAND,
-        ST_WAIT_RESPONSE,
+        ST_DONE_CHECK,
         ST_SPI_READ_HEADER,
         ST_SPI_READ_PAYLOAD,
         ST_IDLE
@@ -207,14 +208,14 @@ module bno085_controller_simple (
                 end
                 
                 ST_WAIT_INT: begin
-                    ps0_wake <= 1'b1; // Release WAKE
+                    // Don't release WAKE here - wait until CS is asserted
                     if (!int_n_sync) begin
-                        // INT asserted - sensor is ready
+                        // INT asserted, sensor is ready
                         if (init_step < 2'd3) begin
-                            // Still initializing - send command first
-                            cs_n <= 1'b0;
+                            // Still initializing - setup CS first
+                            delay_counter <= 19'd0;
                             byte_cnt <= 8'd0;
-                            state <= ST_SEND_COMMAND;
+                            state <= ST_CS_SETUP;
                         end else begin
                             // Initialized - read data directly
                             cs_n <= 1'b0;
@@ -231,6 +232,15 @@ module bno085_controller_simple (
                     end else begin
                         delay_counter <= delay_counter + 1;
                     end
+                end
+                
+                // CS setup before SPI transaction - per datasheet 6.5.2 (tcssu = 0.1 µs min)
+                ST_CS_SETUP: begin
+                    cs_n <= 1'b0; // Assert CS
+                    ps0_wake <= 1'b1; // Release Wake once CS is asserted (per original controller)
+                    delay_counter <= 19'd0;
+                    byte_cnt <= 8'd0;
+                    state <= ST_SEND_COMMAND;
                 end
                 
                 ST_SEND_COMMAND: begin
@@ -250,30 +260,31 @@ module bno085_controller_simple (
                             spi_tx_valid <= 1'b0;
                         end
                     end else begin
-                        // Command sent - release CS and wait for response
+                        // Done sending all bytes - don't wait for response during init
                         cs_n <= 1'b1;
                         byte_cnt <= 8'd0;
+                        state <= ST_DONE_CHECK;
                         delay_counter <= 19'd0;
-                        state <= ST_WAIT_RESPONSE;
                     end
                 end
                 
-                ST_WAIT_RESPONSE: begin
+                // Check if more commands or done (matches original controller)
+                ST_DONE_CHECK: begin
                     cs_n <= 1'b1;
-                    if (!int_n_sync) begin
-                        // Response ready - start reading
-                        cs_n <= 1'b0;
-                        byte_cnt <= 8'd0;
-                        spi_tx_data <= 8'h00; // Send 0x00 while reading
-                        spi_tx_valid <= 1'b1;
-                        spi_start <= 1'b1;
-                        state <= ST_SPI_READ_HEADER;
-                    end else if (delay_counter >= 19'd30_000) begin
-                        // Timeout waiting for response
-                        error <= 1'b1;
-                        state <= ST_RESET;
-                    end else begin
+                    ps0_wake <= 1'b1; // Ensure PS0 is high before next wake cycle
+                    // Delay 10ms between commands
+                    if (delay_counter < 19'd30_000) begin
                         delay_counter <= delay_counter + 1;
+                    end else begin
+                        delay_counter <= 19'd0;
+                        if (init_step < 2'd2) begin
+                            init_step <= init_step + 1;
+                            state <= ST_WAKE_ASSERT; // Go back to Wake for next command
+                        end else begin
+                            initialized <= 1'b1;
+                            init_step <= 2'd3; // Mark as done
+                            state <= ST_IDLE;
+                        end
                     end
                 end
                 
