@@ -182,8 +182,11 @@ module bno085_controller_simple (
             // Default assignments
             spi_start <= 1'b0;
             spi_tx_valid <= 1'b0;
-            quat_valid <= 1'b0;
-            gyro_valid <= 1'b0;
+            // CRITICAL: Don't clear valid flags in default - they are pulse signals
+            // that should persist for at least one clock cycle after being set
+            // They will be cleared when explicitly needed (e.g., when new report starts)
+            // quat_valid <= 1'b0;  // REMOVED - let it persist
+            // gyro_valid <= 1'b0;  // REMOVED - let it persist
             
             case (state)
                 ST_RESET: begin
@@ -425,6 +428,9 @@ module bno085_controller_simple (
                             // Packet complete
                             cs_n <= 1'b1;
                             byte_cnt <= 8'd0;
+                            // Clear valid flags when packet is complete (they've been latched by SPI slave)
+                            quat_valid <= 1'b0;
+                            gyro_valid <= 1'b0;
                             if (init_step < 2'd3) begin
                                 // Still initializing - read response but don't process, move to next step
                                 init_step <= init_step + 1;
