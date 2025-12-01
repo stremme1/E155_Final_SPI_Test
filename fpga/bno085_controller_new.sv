@@ -410,9 +410,10 @@ module bno085_controller_new (
                     // Per datasheet 6.5.4: When CS goes low, INT deasserts
                     // So we should start reading immediately after CS goes low
                     cs_n <= 1'b0;
-                    // Prepare first SPI transaction to read header
-                    // Don't assert start yet - wait for proper handshake
-                    spi_tx_data <= 8'h00; 
+                    // Start first SPI transaction to read header immediately
+                    spi_tx_data <= 8'h00;
+                    spi_tx_valid <= 1'b1;
+                    spi_start <= 1'b1;
                     byte_cnt <= 8'd0;
                     state <= READ_HEADER;
                 end
@@ -420,13 +421,9 @@ module bno085_controller_new (
                 READ_HEADER: begin
                     cs_n <= 1'b0;
                     
-                    // FIX 1: Proper handshake - hold start until acknowledged
-                    if (!spi_busy && spi_tx_ready) begin
-                        // Ready to start transaction
-                        spi_tx_data <= 8'h00;
-                        spi_tx_valid <= 1'b1;
-                        spi_start <= 1'b1;  // Assert start and hold until busy
-                    end else if (!spi_busy && spi_start) begin
+                    // FIX 1: Hold start until SPI master acknowledges (goes busy)
+                    // Only hold if we've already asserted start
+                    if (spi_start && !spi_busy) begin
                         // Waiting for SPI master to acknowledge - keep holding start
                         spi_start <= 1'b1;
                         spi_tx_valid <= 1'b1;
@@ -443,27 +440,38 @@ module bno085_controller_new (
                             0: begin
                                 packet_length[7:0] <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
-                                // Prepare next byte (don't start yet - will be handled by handshake logic)
+                                // Start next transaction immediately
                                 spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
                             end
                             1: begin
                                 // Mask continuation bit (bit 15) per datasheet 1.3.1
                                 packet_length[15:8] <= spi_rx_data;
                                 packet_length[15] <= 1'b0; // Clear continuation bit
                                 byte_cnt <= byte_cnt + 1;
+                                // Start next transaction immediately
                                 spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
                             end
                             2: begin
                                 channel <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
+                                // Start next transaction immediately
                                 spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
                             end
                             3: begin
                                 // Validate packet length (max 32766 per datasheet 1.3.1)
                                 if (packet_length > 16'd4 && packet_length < 16'd32767) begin
                                     byte_cnt <= 8'd0;
                                     state <= READ_PAYLOAD;
+                                    // Start first payload byte transaction immediately
                                     spi_tx_data <= 8'h00;
+                                    spi_tx_valid <= 1'b1;
+                                    spi_start <= 1'b1;
                                 end else begin
                                     // Invalid length
                                     cs_n <= 1'b1; 
@@ -471,20 +479,20 @@ module bno085_controller_new (
                                 end
                             end
                         endcase
+                    end else if (!spi_busy && byte_cnt < 4 && !spi_start) begin
+                        // Retry: Continue reading header if transaction didn't start
+                        spi_tx_data <= 8'h00;
+                        spi_tx_valid <= 1'b1;
+                        spi_start <= 1'b1;
                     end
-                    // FIX 2: Removed retry loop - wait for proper handshake instead
                 end
                 
                 READ_PAYLOAD: begin
                     cs_n <= 1'b0;
                     
-                    // FIX 1: Proper handshake - hold start until acknowledged
-                    if (!spi_busy && spi_tx_ready) begin
-                        // Ready to start transaction
-                        spi_tx_data <= 8'h00;
-                        spi_tx_valid <= 1'b1;
-                        spi_start <= 1'b1;  // Assert start and hold until busy
-                    end else if (!spi_busy && spi_start) begin
+                    // FIX 1: Hold start until SPI master acknowledges (goes busy)
+                    // Only hold if we've already asserted start
+                    if (spi_start && !spi_busy) begin
                         // Waiting for SPI master to acknowledge - keep holding start
                         spi_start <= 1'b1;
                         spi_tx_valid <= 1'b1;
@@ -569,16 +577,22 @@ module bno085_controller_new (
                         // packet_length includes 4-byte header, so payload is (packet_length - 4) bytes
                         // After incrementing, byte_cnt is the number of payload bytes read so far
                         if ((byte_cnt + 1) < (packet_length - 4)) begin
-                            // Prepare next byte (don't start yet - will be handled by handshake logic)
+                            // Start next transaction immediately
                             spi_tx_data <= 8'h00;
+                            spi_tx_valid <= 1'b1;
+                            spi_start <= 1'b1;
                         end else begin
                             // Packet complete
                             cs_n <= 1'b1;
                             byte_cnt <= 8'd0;
                             state <= WAIT_DATA;
                         end
+                    end else if (!spi_busy && byte_cnt < (packet_length - 4) && !spi_start) begin
+                        // Retry: Continue reading payload if transaction didn't start
+                        spi_tx_data <= 8'h00;
+                        spi_tx_valid <= 1'b1;
+                        spi_start <= 1'b1;
                     end
-                    // FIX 2: Removed retry loop - wait for proper handshake instead
                 end
                 
                 ERROR_STATE: begin
