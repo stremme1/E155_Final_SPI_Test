@@ -323,29 +323,87 @@ module bno085_controller (
                     end
                 end
                 
-                // 5b. Read response to drain it (don't process, just clear INT)
+                // 5b. Read response to drain it (read header first, then full packet)
                 INIT_READ_RESPONSE: begin
                     cs_n <= 1'b0;
-                    if (byte_cnt == 0) begin
-                        // Start reading
-                        spi_tx_data <= 8'h00;
-                        spi_tx_valid <= 1'b1;
-                        spi_start <= 1'b1;
-                        byte_cnt <= byte_cnt + 1;
-                    end else if (spi_rx_valid && !spi_busy) begin
-                        // Read next byte
-                        if (byte_cnt < 8'd20) begin  // Read up to 20 bytes (enough for any response)
+                    if (spi_rx_valid && !spi_busy) begin
+                        if (byte_cnt < 4) begin
+                            // Reading header
+                            case (byte_cnt)
+                                0: begin
+                                    packet_length[7:0] <= spi_rx_data;
+                                    byte_cnt <= byte_cnt + 1;
+                                    spi_tx_data <= 8'h00;
+                                    spi_tx_valid <= 1'b1;
+                                    spi_start <= 1'b1;
+                                end
+                                1: begin
+                                    packet_length[15:8] <= spi_rx_data;
+                                    packet_length[15] <= 1'b0; // Clear continuation bit
+                                    byte_cnt <= byte_cnt + 1;
+                                    spi_tx_data <= 8'h00;
+                                    spi_tx_valid <= 1'b1;
+                                    spi_start <= 1'b1;
+                                end
+                                2: begin
+                                    // Read channel (ignore it)
+                                    byte_cnt <= byte_cnt + 1;
+                                    spi_tx_data <= 8'h00;
+                                    spi_tx_valid <= 1'b1;
+                                    spi_start <= 1'b1;
+                                end
+                                3: begin
+                                    // Header complete - validate and start payload
+                                    if (packet_length > 16'd4 && packet_length < 16'd32767) begin
+                                        byte_cnt <= 8'd0; // Reset for payload counting
+                                        spi_tx_data <= 8'h00;
+                                        spi_tx_valid <= 1'b1;
+                                        spi_start <= 1'b1;
+                                    end else begin
+                                        // Invalid length - done
+                                        cs_n <= 1'b1;
+                                        byte_cnt <= 8'd0;
+                                        state <= INIT_DONE_CHECK;
+                                        delay_counter <= 19'd0;
+                                    end
+                                end
+                            endcase
+                        end else begin
+                            // Reading payload bytes (byte_cnt is payload byte count, 0-indexed)
+                            byte_cnt <= byte_cnt + 1;
+                            if ((byte_cnt + 1) < (packet_length - 4)) begin
+                                // More payload to read
+                                spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
+                            end else begin
+                                // Done reading full response
+                                cs_n <= 1'b1;
+                                byte_cnt <= 8'd0;
+                                state <= INIT_DONE_CHECK;
+                                delay_counter <= 19'd0;
+                            end
+                        end
+                    end else if (byte_cnt == 0 && !spi_busy) begin
+                        // Start reading header (or payload if header already read)
+                        if (packet_length == 16'd0) begin
+                            // Haven't read header yet - start header
                             spi_tx_data <= 8'h00;
                             spi_tx_valid <= 1'b1;
                             spi_start <= 1'b1;
-                            byte_cnt <= byte_cnt + 1;
                         end else begin
-                            // Done reading response
-                            cs_n <= 1'b1;
-                            byte_cnt <= 8'd0;
-                            state <= INIT_DONE_CHECK;
-                            delay_counter <= 19'd0;
+                            // Header already read - continue payload
+                            if (byte_cnt < (packet_length - 4)) begin
+                                spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
+                            end
                         end
+                    end else if (!spi_busy && byte_cnt > 0 && byte_cnt < (packet_length - 4)) begin
+                        // Continue reading payload (byte_cnt is payload byte count)
+                        spi_tx_data <= 8'h00;
+                        spi_tx_valid <= 1'b1;
+                        spi_start <= 1'b1;
                     end
                 end
                 
