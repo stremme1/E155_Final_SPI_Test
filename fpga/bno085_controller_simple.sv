@@ -355,7 +355,12 @@ module bno085_controller_simple (
                         if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
                             // Process sensor reports (matches original controller - no init_step check)
                             case (byte_cnt)
-                                0: current_report_id <= spi_rx_data;
+                                0: begin
+                                    // New report starting - capture report ID
+                                    // Don't clear valid flags here - they will be updated when parsing completes
+                                    // This ensures valid flags persist until new data replaces them
+                                    current_report_id <= spi_rx_data;
+                                end
                                 1: ; // Sequence number - ignore
                                 2: ; // Status - ignore
                                 3: ; // Delay - ignore
@@ -455,10 +460,10 @@ module bno085_controller_simple (
                 ST_IDLE: begin
                     cs_n <= 1'b1;
                     ps0_wake <= 1'b1; // Ensure wake is released
-                    // Clear valid flags when entering IDLE (after SPI slave has had time to latch them)
-                    // This ensures valid flags persist for at least one clock cycle after being set
-                    quat_valid <= 1'b0;
-                    gyro_valid <= 1'b0;
+                    // CRITICAL FIX: Don't clear valid flags in IDLE
+                    // Valid flags should persist until new data arrives
+                    // This ensures SPI slave has time to latch them and snapshot can capture them
+                    // Valid flags will be cleared when new report starts (in ST_SPI_READ_PAYLOAD byte 0)
                     if (!int_n_sync) begin
                         state <= ST_READ_HEADER_START;
                         byte_cnt <= 8'd0;

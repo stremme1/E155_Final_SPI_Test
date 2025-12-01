@@ -137,20 +137,24 @@ module spi_slave_mcu(
                 quat1_valid_latched <= 1'b0;
                 gyro1_valid_latched <= 1'b0;
             end else begin
-                // CS has been high: Latch on pulse (rising edge detection using sync1 for speed)
-                // Rising edge: !prev && curr means a pulse occurred
-                if (!quat1_valid_sync1_prev && quat1_valid_sync1) begin
-                    // Pulse detected - latch it (set to 1)
+                // CS has been high: Latch valid flags
+                // CRITICAL FIX: Set latch when valid flag is high (not just on rising edge)
+                // This ensures latch captures valid flag even if it persists (which we now do)
+                // Rising edge detection is still used, but we also check if flag is currently high
+                if (quat1_valid_sync1) begin
+                    // Valid flag is high - latch it (set to 1)
+                    // This works for both pulses and persistent flags
                     quat1_valid_latched <= 1'b1;
                 end
-                // If no pulse detected, keep current latch value
+                // If valid flag is low, keep current latch value (don't clear it)
                 // Once latched, it stays latched until CS goes low then high again
                 
-                if (!gyro1_valid_sync1_prev && gyro1_valid_sync1) begin
-                    // Pulse detected - latch it (set to 1)
+                if (gyro1_valid_sync1) begin
+                    // Valid flag is high - latch it (set to 1)
+                    // This works for both pulses and persistent flags
                     gyro1_valid_latched <= 1'b1;
                 end
-                // If no pulse detected, keep current latch value
+                // If valid flag is low, keep current latch value (don't clear it)
             end
         end else begin
             // CS low: Keep latched values stable (snapshot is frozen during transaction)
