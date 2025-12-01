@@ -312,8 +312,10 @@ module bno085_controller (
                     ps0_wake <= 1'b1;
                     if (!int_n_sync) begin
                         // Response ready - read it to drain the buffer
-                        state <= INIT_READ_RESPONSE;
+                        // Reset state for reading
                         byte_cnt <= 8'd0;
+                        packet_length <= 16'd0;
+                        state <= INIT_READ_RESPONSE;
                     end else if (delay_counter >= 19'd150_000) begin
                         // Timeout (50ms) - sensor didn't respond, move on anyway
                         delay_counter <= 19'd0;
@@ -327,6 +329,8 @@ module bno085_controller (
                 // Use packet_length to track header read: 0 = not read, >0 = header read, reading payload
                 INIT_READ_RESPONSE: begin
                     cs_n <= 1'b0;
+                    
+                    // Priority 1: Process received data (if we have it)
                     if (spi_rx_valid && !spi_busy) begin
                         if (packet_length == 16'd0) begin
                             // Reading header
@@ -387,16 +391,21 @@ module bno085_controller (
                                 delay_counter <= 19'd0;
                             end
                         end
-                    end else if (packet_length == 16'd0 && byte_cnt == 0 && !spi_busy) begin
-                        // Start reading header
+                    end
+                    // Priority 2: Start new transaction if needed
+                    else if (packet_length == 16'd0 && byte_cnt == 8'd0 && !spi_busy && spi_tx_ready) begin
+                        // Start reading header - must check tx_ready to ensure SPI master is ready
                         spi_tx_data <= 8'h00;
                         spi_tx_valid <= 1'b1;
                         spi_start <= 1'b1;
-                    end else if (packet_length > 16'd0 && !spi_busy && byte_cnt < (packet_length - 4)) begin
+                    end else if (packet_length > 16'd0 && !spi_busy && spi_tx_ready && byte_cnt < (packet_length - 4)) begin
                         // Continue reading payload
                         spi_tx_data <= 8'h00;
                         spi_tx_valid <= 1'b1;
                         spi_start <= 1'b1;
+                    end else if (spi_busy) begin
+                        // Transfer in progress, release start after first cycle
+                        spi_start <= 1'b0;
                     end
                 end
                 

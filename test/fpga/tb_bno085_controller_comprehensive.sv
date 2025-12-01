@@ -102,6 +102,8 @@ module tb_bno085_controller_comprehensive;
     logic int_assert_pending = 0;
     logic [18:0] reset_int_delay = 0;
     logic ps0_wake_prev = 1;
+    logic [18:0] wake_int_delay = 0;
+    logic wake_detected = 0;
     
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -110,8 +112,17 @@ module tb_bno085_controller_comprehensive;
             mock_cs_prev <= 1'b1;
             reset_int_delay <= 0;
             ps0_wake_prev <= 1;
+            wake_int_delay <= 0;
+            wake_detected <= 0;
         end else begin
             mock_cs_prev <= cs_n;
+            
+            // Detect PS0/WAKE falling edge
+            if (ps0_wake_prev == 1 && ps0_wake == 0) begin
+                // Wake signal detected - start delay counter
+                wake_detected <= 1'b1;
+                wake_int_delay <= 19'd0;
+            end
             ps0_wake_prev <= ps0_wake;
             
             // After reset, assert INT after delay (sensor ready)
@@ -122,14 +133,22 @@ module tb_bno085_controller_comprehensive;
                 reset_int_delay <= reset_int_delay + 1;
             end
             
-            // Assert INT when PS0/WAKE goes low (wake signal)
-            if (ps0_wake_prev == 1 && ps0_wake == 0) begin
-                // Wake signal - assert INT after delay
-                int_assert_pending <= 1'b1;
+            // After wake signal, assert INT after delay (per datasheet: twk = 150µs max)
+            if (wake_detected) begin
+                if (wake_int_delay < 19'd450) begin // 150µs @ 3MHz = 450 cycles
+                    wake_int_delay <= wake_int_delay + 1;
+                end else begin
+                    int_n <= 1'b0; // Assert INT after wake delay
+                    wake_detected <= 1'b0;
+                    wake_int_delay <= 0;
+                end
             end
             
-            // INT assertion is handled in the posedge cs_n block above
-            // This block just handles deassertion
+            // INT assertion for responses is handled in the posedge cs_n block
+            if (int_should_assert && cs_n == 1) begin
+                int_n <= 1'b0;
+                int_should_assert <= 1'b0;
+            end
             
             // Deassert INT when CS goes low (per datasheet 6.5.4)
             if (cs_n == 0) begin
@@ -188,14 +207,18 @@ module tb_bno085_controller_comprehensive;
     
     // SPI Transmit - shift MISO on falling edge (Mode 3)
     // Per datasheet: Mode 3 (CPOL=1, CPHA=1) - data is sampled on rising edge, so we shift on falling edge
+    // First bit must be stable before first clock edge, then shift after each bit is sampled
     always @(negedge sclk) begin
         if (!cs_n) begin
             if (mock_response_len > 0 && mock_response_ptr < mock_response_len) begin
-                miso = mock_tx_byte[7];
+                // Shift to next bit (except first bit which is already on MISO)
+                if (mock_tx_bit_cnt > 0) begin
+                    mock_tx_byte = {mock_tx_byte[6:0], 1'b0};
+                end
                 mock_tx_bit_cnt = mock_tx_bit_cnt + 1;
                 
                 if (mock_tx_bit_cnt == 8) begin
-                    $display("[%0t] MOCK: Transmitted byte %0d: %02h", $time, mock_response_ptr, mock_tx_byte);
+                    $display("[%0t] MOCK: Transmitted byte %0d: %02h", $time, mock_response_ptr, mock_response[mock_response_ptr]);
                     mock_tx_bit_cnt = 0;
                     mock_response_ptr = mock_response_ptr + 1;
                     if (mock_response_ptr < mock_response_len) begin
@@ -204,12 +227,19 @@ module tb_bno085_controller_comprehensive;
                         mock_tx_byte = 8'h00;
                         $display("[%0t] MOCK: All %0d bytes transmitted", $time, mock_response_len);
                     end
-                end else begin
-                    mock_tx_byte = {mock_tx_byte[6:0], 1'b0};
                 end
             end else begin
                 miso = 1'b0;
             end
+        end
+    end
+    
+    // MISO output - always output MSB of current byte
+    always @(*) begin
+        if (!cs_n && mock_response_len > 0 && mock_response_ptr < mock_response_len) begin
+            miso = mock_tx_byte[7];
+        end else begin
+            miso = 1'b0;
         end
     end
     
@@ -260,7 +290,6 @@ module tb_bno085_controller_comprehensive;
             mock_tx_byte = mock_response[0];
             mock_response_ptr = 0;
             mock_tx_bit_cnt = 0;
-            miso = mock_response[0][7]; // Set MSB immediately (Mode 3: data ready before first clock)
             $display("[%0t] MOCK: CS low, starting to transmit response (len=%0d, first_byte=%02h)", 
                      $time, mock_response_len, mock_response[0]);
         end
@@ -362,7 +391,11 @@ module tb_bno085_controller_comprehensive;
             mock_response_len = 16;
             mock_response_ptr = 0;
             mock_tx_byte = mock_response[0];
-            // INT will be asserted by the always_ff block when CS goes high
+            command_received = 1; // Mark that we have data ready
+            // Assert INT immediately to indicate data ready
+            #1000;
+            int_n <= 1'b0;
+            $display("[%0t] MOCK: Asserted INT for Rotation Vector report", $time);
         end
     endtask
     
@@ -392,7 +425,11 @@ module tb_bno085_controller_comprehensive;
             mock_response_len = 14;
             mock_response_ptr = 0;
             mock_tx_byte = mock_response[0];
-            // INT will be asserted by the always_ff block when CS goes high
+            command_received = 1; // Mark that we have data ready
+            // Assert INT immediately to indicate data ready
+            #1000;
+            int_n <= 1'b0;
+            $display("[%0t] MOCK: Asserted INT for Gyroscope report", $time);
         end
     endtask
     
@@ -547,7 +584,7 @@ module tb_bno085_controller_comprehensive;
         $finish;
     end
     
-    // Monitor state changes
+    // Monitor state changes and SPI signals
     logic [3:0] prev_state = 0;
     initial begin
         prev_state = 0;
@@ -556,6 +593,40 @@ module tb_bno085_controller_comprehensive;
             if (dut.state != prev_state) begin
                 $display("[%0t] STATE: %0d -> %0d", $time, prev_state, dut.state);
                 prev_state = dut.state;
+            end
+            
+            // Debug SPI master signals in INIT_READ_RESPONSE
+            if (dut.state == 7) begin // INIT_READ_RESPONSE
+                if (dut.spi_start && dut.spi_tx_valid) begin
+                    $display("[%0t] DEBUG: SPI start requested (tx_ready=%0d, busy=%0d, packet_len=%0d, byte_cnt=%0d)", 
+                             $time, spi_tx_ready, spi_busy, dut.packet_length, dut.byte_cnt);
+                end
+                if (spi_rx_valid) begin
+                    $display("[%0t] DEBUG: SPI byte received: %02h (packet_len=%0d, byte_cnt=%0d)", 
+                             $time, spi_rx_data, dut.packet_length, dut.byte_cnt);
+                end
+                // Debug why SPI isn't starting
+                if (!dut.spi_start && (dut.packet_length == 0) && (dut.byte_cnt == 0)) begin
+                    static integer debug_count = 0;
+                    if (debug_count < 10) begin
+                        $display("[%0t] DEBUG: SPI not starting - tx_ready=%0d, busy=%0d, rx_valid=%0d, packet_len=%0d, byte_cnt=%0d", 
+                                 $time, spi_tx_ready, spi_busy, spi_rx_valid, dut.packet_length, dut.byte_cnt);
+                        debug_count = debug_count + 1;
+                    end
+                end
+            end
+        end
+    end
+    
+    // Monitor SCLK
+    logic sclk_prev = 1;
+    integer sclk_edges = 0;
+    initial begin
+        forever begin
+            @(posedge sclk or negedge sclk);
+            sclk_edges = sclk_edges + 1;
+            if (sclk_edges <= 20) begin
+                $display("[%0t] DEBUG: SCLK edge #%0d (sclk=%0d)", $time, sclk_edges, sclk);
             end
         end
     end
