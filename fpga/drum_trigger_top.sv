@@ -149,7 +149,7 @@ module drum_trigger_top (
     );
     
     // BNO085 Controller for Sensor 1
-    bno085_controller bno085_ctrl_inst1 (
+    bno085_controller_new bno085_ctrl_inst1 (
         .clk(clk),
         .rst_n(rst_n),
         .spi_start(spi1_start),

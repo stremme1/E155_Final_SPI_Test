@@ -6,10 +6,10 @@
 // Optimized for low resource usage (ROM-based initialization, no large buffers)
 //
 // FIXES APPLIED:
-// 1. Hold spi_start until SPI master acknowledges (spi_busy goes high)
-// 2. Remove retry loops that cause infinite zero-sending
-// 3. Register rx_valid to extend detection window
-// 4. Improved handshake logic for reliable SPI communication
+// 1. Simplified SPI handshake: hold spi_start until busy, rely on master acknowledgment
+// 2. Robust rx_valid detection: latch rx_valid to catch 1-cycle pulse from master
+// 3. Correct SHTP parsing: separate SHTP sequence number from report sequence number
+// 4. Continuous CS transaction: maintain CS low for full packet read
 
 module bno085_controller_new (
     input  logic        clk,
@@ -100,14 +100,8 @@ module bno085_controller_new (
     logic [7:0] report_delay;
     
     // FIX 3: Register rx_valid to extend detection window
-    // This prevents missing the one-cycle rx_valid pulse
+    // Managed inside state machine always_ff to avoid race conditions
     logic spi_rx_valid_reg;
-    logic spi_rx_valid_prev;
-    
-    // FIX 1 & 2: Handshake state tracking
-    // Track when we've started a transaction and are waiting for completion
-    logic spi_transaction_started;
-    logic spi_transaction_complete;
     
     // ========================================================================
     // Initialization Command ROM
@@ -192,53 +186,6 @@ module bno085_controller_new (
         end
     end
     
-    // FIX 3: Register rx_valid to extend detection window
-    // Capture rx_valid pulse and hold it until we process it
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            spi_rx_valid_reg <= 1'b0;
-            spi_rx_valid_prev <= 1'b0;
-        end else begin
-            spi_rx_valid_prev <= spi_rx_valid;
-            // Set register when rx_valid goes high, clear when we process it
-            if (spi_rx_valid) begin
-                spi_rx_valid_reg <= 1'b1;
-            end else if (spi_transaction_complete) begin
-                spi_rx_valid_reg <= 1'b0;
-            end
-        end
-    end
-    
-    // FIX 1 & 2: Track SPI transaction state
-    // Detect when transaction starts (spi_busy goes high) and completes (spi_busy goes low with rx_valid)
-    logic spi_busy_prev;
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            spi_busy_prev <= 1'b0;
-            spi_transaction_started <= 1'b0;
-            spi_transaction_complete <= 1'b0;
-        end else begin
-            spi_busy_prev <= spi_busy;
-            
-            // Detect transaction start: busy goes from low to high
-            if (!spi_busy_prev && spi_busy) begin
-                spi_transaction_started <= 1'b1;
-            end
-            
-            // Detect transaction complete: busy goes from high to low AND we have rx_valid
-            if (spi_busy_prev && !spi_busy && (spi_rx_valid || spi_rx_valid_reg)) begin
-                spi_transaction_complete <= 1'b1;
-                spi_transaction_started <= 1'b0;
-            end else if (spi_busy_prev && !spi_busy) begin
-                // Transaction ended but no rx_valid yet (shouldn't happen, but clear flag)
-                spi_transaction_started <= 1'b0;
-                spi_transaction_complete <= 1'b0;
-            end else begin
-                spi_transaction_complete <= 1'b0;
-            end
-        end
-    end
-    
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state <= INIT_WAIT_RESET;
@@ -259,6 +206,7 @@ module bno085_controller_new (
             report_seq_num <= 8'd0;
             report_status <= 8'd0;
             report_delay <= 8'd0;
+            spi_rx_valid_reg <= 1'b0;
             
             quat_w <= 16'd0;
             quat_x <= 16'd0;
@@ -270,10 +218,15 @@ module bno085_controller_new (
             
         end else begin
             // Default assignments
-            spi_start <= 1'b0;  // FIX 1: Only assert when needed, hold until acknowledged
+            spi_start <= 1'b0;  
             spi_tx_valid <= 1'b0;
             quat_valid <= 1'b0;
             gyro_valid <= 1'b0;
+            
+            // Latch rx_valid (default behavior, can be overridden by state machine consumption)
+            if (spi_rx_valid) begin
+                spi_rx_valid_reg <= 1'b1;
+            end
             
             case (state)
                 // 1. Wait after reset to ensure sensor is ready (~100ms)
@@ -343,31 +296,27 @@ module bno085_controller_new (
                     state <= INIT_SEND_BODY;
                 end
                 
-                // 4. Send Command Body (FIXED handshake)
+                // 4. Send Command Body
                 INIT_SEND_BODY: begin
                     cs_n <= 1'b0;
                     
                     if (byte_cnt < get_cmd_len(cmd_select)) begin
-                        // FIX 1: Hold spi_start until SPI master acknowledges (goes busy)
-                        if (!spi_busy && spi_tx_ready) begin
-                            // Ready to start new transaction
+                        if ((spi_rx_valid || spi_rx_valid_reg) && !spi_busy) begin
+                            // Transfer complete, consume rx_valid
+                            spi_rx_valid_reg <= 1'b0;
+                            byte_cnt <= byte_cnt + 1;
+                            
+                            // Start next byte immediately if more to send
+                            if ((byte_cnt + 1) < get_cmd_len(cmd_select)) begin
+                                spi_tx_data <= get_init_byte(cmd_select, byte_cnt + 1);
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
+                            end
+                        end else if (!spi_busy) begin
+                            // Start transaction (or retry/hold start)
                             spi_tx_data <= get_init_byte(cmd_select, byte_cnt);
                             spi_tx_valid <= 1'b1;
-                            spi_start <= 1'b1;  // Assert start and hold until busy
-                        end else if (!spi_busy && spi_start) begin
-                            // Waiting for SPI master to acknowledge - keep holding start
                             spi_start <= 1'b1;
-                            spi_tx_valid <= 1'b1;
-                        end else if (spi_busy) begin
-                            // Transaction in progress - SPI master has seen start, can release it
-                            spi_start <= 1'b0;
-                            spi_tx_valid <= 1'b0;
-                        end
-                        
-                        // FIX 3: Use registered rx_valid for more reliable detection
-                        if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy)) begin
-                            // Transfer complete, advance to next byte
-                            byte_cnt <= byte_cnt + 1;
                         end
                     end else begin
                         // Done sending all bytes
@@ -424,10 +373,14 @@ module bno085_controller_new (
                     cs_n <= 1'b0;
                     // FIX 3: Use registered rx_valid for reliable detection (extends one-cycle pulse)
                     if ((spi_rx_valid || spi_rx_valid_reg) && !spi_busy) begin
+                        // Consume rx_valid
+                        spi_rx_valid_reg <= 1'b0;
+                        
                         case (byte_cnt)
                             0: begin
                                 packet_length[7:0] <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
+                                // Start next transaction immediately
                                 spi_tx_data <= 8'h00; 
                                 spi_tx_valid <= 1'b1; 
                                 spi_start <= 1'b1;
@@ -437,6 +390,7 @@ module bno085_controller_new (
                                 packet_length[15:8] <= spi_rx_data;
                                 packet_length[15] <= 1'b0; // Clear continuation bit
                                 byte_cnt <= byte_cnt + 1;
+                                // Start next transaction immediately
                                 spi_tx_data <= 8'h00; 
                                 spi_tx_valid <= 1'b1; 
                                 spi_start <= 1'b1;
@@ -444,6 +398,7 @@ module bno085_controller_new (
                             2: begin
                                 channel <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
+                                // Start next transaction immediately
                                 spi_tx_data <= 8'h00; 
                                 spi_tx_valid <= 1'b1; 
                                 spi_start <= 1'b1;
@@ -470,7 +425,7 @@ module bno085_controller_new (
                             end
                         endcase
                     end else if (!spi_busy && byte_cnt < 4) begin
-                        // Continue reading header
+                        // Continue reading header - Hold/Assert start
                         spi_tx_data <= 8'h00; 
                         spi_tx_valid <= 1'b1; 
                         spi_start <= 1'b1;
@@ -481,12 +436,15 @@ module bno085_controller_new (
                     cs_n <= 1'b0;
                     // FIX 3: Use registered rx_valid for reliable detection (extends one-cycle pulse)
                     if ((spi_rx_valid || spi_rx_valid_reg) && !spi_busy) begin
+                        // Consume rx_valid
+                        spi_rx_valid_reg <= 1'b0;
+                        
                         // Parse on the fly - per datasheet 1.3.5.2
                         // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
                         if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
                             case (byte_cnt)
                                 0: current_report_id <= spi_rx_data;
-                                1: report_seq_num <= spi_rx_data; // Sensor report sequence number (for drop detection per datasheet 1.3.5.2)
+                                1: report_seq_num <= spi_rx_data; // Sensor report sequence number
                                 2: report_status <= spi_rx_data; // Status (accuracy in bits 1:0)
                                 3: report_delay <= spi_rx_data;  // Delay (lower 8 bits)
                                 4: begin
@@ -563,7 +521,7 @@ module bno085_controller_new (
                             state <= WAIT_DATA;
                         end
                     end else if (!spi_busy && byte_cnt < (packet_length - 4)) begin
-                        // Continue reading payload
+                        // Continue reading payload - Hold/Assert start
                         spi_tx_data <= 8'h00; 
                         spi_tx_valid <= 1'b1; 
                         spi_start <= 1'b1;
@@ -584,4 +542,3 @@ module bno085_controller_new (
     end
     
 endmodule
-
