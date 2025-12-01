@@ -59,6 +59,8 @@ module bno085_controller (
         INIT_WAIT_INT,
         INIT_CS_SETUP,      // Added: CS setup before SPI transaction
         INIT_SEND_BODY,
+        INIT_WAIT_RESPONSE, // Wait for INT after sending command
+        INIT_READ_RESPONSE, // Read response to drain it
         INIT_DONE_CHECK,
         WAIT_DATA,
         READ_HEADER_START,
@@ -296,15 +298,58 @@ module bno085_controller (
                             spi_tx_valid <= 1'b0;
                         end
                     end else begin
-                        // Done sending all bytes
+                        // Done sending all bytes - now wait for response
                         cs_n <= 1'b1;
                         byte_cnt <= 8'd0;
-                        state <= INIT_DONE_CHECK;
+                        state <= INIT_WAIT_RESPONSE;
                         delay_counter <= 19'd0;
                     end
                 end
                 
-                // 5. Check if more commands or done
+                // 5a. Wait for INT (response ready) after sending command
+                INIT_WAIT_RESPONSE: begin
+                    cs_n <= 1'b1;
+                    ps0_wake <= 1'b1;
+                    if (!int_n_sync) begin
+                        // Response ready - read it to drain the buffer
+                        state <= INIT_READ_RESPONSE;
+                        byte_cnt <= 8'd0;
+                    end else if (delay_counter >= 19'd150_000) begin
+                        // Timeout (50ms) - sensor didn't respond, move on anyway
+                        delay_counter <= 19'd0;
+                        state <= INIT_DONE_CHECK;
+                    end else begin
+                        delay_counter <= delay_counter + 1;
+                    end
+                end
+                
+                // 5b. Read response to drain it (don't process, just clear INT)
+                INIT_READ_RESPONSE: begin
+                    cs_n <= 1'b0;
+                    if (byte_cnt == 0) begin
+                        // Start reading
+                        spi_tx_data <= 8'h00;
+                        spi_tx_valid <= 1'b1;
+                        spi_start <= 1'b1;
+                        byte_cnt <= byte_cnt + 1;
+                    end else if (spi_rx_valid && !spi_busy) begin
+                        // Read next byte
+                        if (byte_cnt < 8'd20) begin  // Read up to 20 bytes (enough for any response)
+                            spi_tx_data <= 8'h00;
+                            spi_tx_valid <= 1'b1;
+                            spi_start <= 1'b1;
+                            byte_cnt <= byte_cnt + 1;
+                        end else begin
+                            // Done reading response
+                            cs_n <= 1'b1;
+                            byte_cnt <= 8'd0;
+                            state <= INIT_DONE_CHECK;
+                            delay_counter <= 19'd0;
+                        end
+                    end
+                end
+                
+                // 5c. Check if more commands or done
                 INIT_DONE_CHECK: begin
                     cs_n <= 1'b1;
                     ps0_wake <= 1'b1; // Ensure PS0 is high before next wake cycle
@@ -404,7 +449,12 @@ module bno085_controller (
                         // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
                         if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
                             case (byte_cnt)
-                                0: current_report_id <= spi_rx_data;
+                                0: begin
+                                    current_report_id <= spi_rx_data;
+                                    // Clear valid flags when starting new report
+                                    quat_valid <= 1'b0;
+                                    gyro_valid <= 1'b0;
+                                end
                                 1: last_seq_num <= spi_rx_data; // Sequence number (for drop detection)
                                 2: report_status <= spi_rx_data; // Status (accuracy in bits 1:0)
                                 3: report_delay <= spi_rx_data;  // Delay (lower 8 bits)

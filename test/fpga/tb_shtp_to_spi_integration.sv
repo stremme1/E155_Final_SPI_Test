@@ -1,30 +1,29 @@
 `timescale 1ns / 1ps
 
-/**
- * Integration Testbench: SHTP Reports -> SPI Slave Output
- * 
- * Tests the complete data path:
- * 1. Mock BNO085 sends SHTP rotation vector and gyroscope reports
- * 2. BNO085 controller parses the reports
- * 3. SPI slave captures the data
- * 4. MCU reads the data via SPI and verifies it matches the SHTP input
- * 
- * This testbench ensures that sensor data flows correctly from SHTP to SPI output.
- */
+// SHTP to SPI Integration Testbench
+// Tests that SPI slave correctly captures and outputs SHTP sensor data
+// Verifies pulse valid signals are not lost and data is correctly formatted
+// Per BNO08X datasheet Section 1.3.5.2 for sensor report formats
 
 module tb_shtp_to_spi_integration;
 
-    // Clock and reset
-    logic clk, rst_n;
-    parameter CLK_PERIOD = 333; // 3MHz
+    // Clock
+    logic clk;
     
-    // BNO085 SPI Interface
-    logic sclk, mosi, miso1, cs_n1, ps0_wake1, int1;
+    // SPI interface (MCU is master, CS-based protocol)
+    logic cs_n;      // Chip select from MCU (active low)
+    logic sck;       // SPI clock from MCU
+    logic sdi;       // SPI data in (MOSI - not used in read-only mode)
+    logic sdo;       // SPI data out (MISO to MCU)
     
-    // MCU SPI Interface
-    logic mcu_sck, mcu_sdi, mcu_sdo, mcu_cs_n;
+    // Sensor data inputs (simulating BNO085 controller outputs)
+    logic quat1_valid, gyro1_valid;
+    logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z;
+    logic signed [15:0] gyro1_x, gyro1_y, gyro1_z;
+    logic initialized, error;
     
-    // Clock generation
+    // Clock generation (3MHz FPGA clock)
+    parameter CLK_PERIOD = 333;
     always begin
         clk = 0;
         #(CLK_PERIOD/2);
@@ -32,94 +31,22 @@ module tb_shtp_to_spi_integration;
         #(CLK_PERIOD/2);
     end
     
-    // Reset generation
+    // MCU SPI clock - NOT continuous! Only toggles during SPI transactions
+    // SCK starts idle low (SPI Mode 0: CPOL=0)
+    parameter SCK_PERIOD = 1000;  // 1MHz (1000ns period)
     initial begin
-        rst_n = 0;
-        #(CLK_PERIOD * 10);
-        rst_n = 1;
-        $display("[TEST] Reset released at time %0t", $time);
+        sck = 0;  // Idle low for SPI Mode 0
     end
     
-    // ============================================
-    // Mock BNO085 Sensor
-    // ============================================
-    mock_bno085 sensor_model (
+    // DUT
+    spi_slave_mcu dut (
         .clk(clk),
-        .rst_n(rst_n),
-        .ps0_wake(ps0_wake1),
-        .cs_n(cs_n1),
-        .sclk(sclk),
-        .mosi(mosi),
-        .miso(miso1),
-        .int_n(int1)
-    );
-    
-    // ============================================
-    // SPI Master for BNO085
-    // ============================================
-    logic spi1_start, spi1_tx_valid, spi1_tx_ready, spi1_rx_valid, spi1_busy;
-    logic [7:0] spi1_tx_data, spi1_rx_data;
-    
-    spi_master #(.CLK_DIV(2)) spi_master_inst1 (
-        .clk(clk),
-        .rst_n(rst_n),
-        .start(spi1_start),
-        .tx_valid(spi1_tx_valid),
-        .tx_data(spi1_tx_data),
-        .tx_ready(spi1_tx_ready),
-        .rx_valid(spi1_rx_valid),
-        .rx_data(spi1_rx_data),
-        .busy(spi1_busy),
-        .sclk(sclk),
-        .mosi(mosi),
-        .miso(miso1)
-    );
-    
-    // ============================================
-    // BNO085 Controller
-    // ============================================
-    logic quat1_valid, gyro1_valid;
-    logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z;
-    logic signed [15:0] gyro1_x, gyro1_y, gyro1_z;
-    logic initialized1, error1;
-    
-    bno085_controller bno085_ctrl_inst1 (
-        .clk(clk),
-        .rst_n(rst_n),
-        .spi_start(spi1_start),
-        .spi_tx_valid(spi1_tx_valid),
-        .spi_tx_data(spi1_tx_data),
-        .spi_tx_ready(spi1_tx_ready),
-        .spi_rx_valid(spi1_rx_valid),
-        .spi_rx_data(spi1_rx_data),
-        .spi_busy(spi1_busy),
-        .cs_n(cs_n1),
-        .ps0_wake(ps0_wake1),
-        .int_n(int1),
-        .quat_valid(quat1_valid),
-        .quat_w(quat1_w),
-        .quat_x(quat1_x),
-        .quat_y(quat1_y),
-        .quat_z(quat1_z),
-        .gyro_valid(gyro1_valid),
-        .gyro_x(gyro1_x),
-        .gyro_y(gyro1_y),
-        .gyro_z(gyro1_z),
-        .initialized(initialized1),
-        .error(error1)
-    );
-    
-    // ============================================
-    // SPI Slave (MCU Interface)
-    // ============================================
-    spi_slave_mcu spi_slave_inst (
-        .clk(clk),
-        .cs_n(mcu_cs_n),
-        .sck(mcu_sck),
-        .sdi(mcu_sdi),
-        .sdo(mcu_sdo),
-        .initialized(initialized1),
-        .error(error1),
+        .cs_n(cs_n),
+        .sck(sck),
+        .sdi(sdi),
+        .sdo(sdo),
+        .initialized(initialized),
+        .error(error),
         .quat1_valid(quat1_valid),
         .quat1_w(quat1_w),
         .quat1_x(quat1_x),
@@ -131,67 +58,25 @@ module tb_shtp_to_spi_integration;
         .gyro1_z(gyro1_z)
     );
     
-    // ============================================
-    // MCU SPI Master Simulation
-    // ============================================
-    // Simulates MCU reading 16-byte packet via SPI Mode 0
-    // Modifies received_packet array directly
-    // Based on working testbench pattern from tb_spi_slave_mcu_debug.sv
-    task mcu_read_packet;
-        integer i, j;
-        parameter SCK_PERIOD = 1000; // 1MHz SPI clock
-        begin
-            // CS goes low to start transaction
-            mcu_cs_n = 1'b0;
-            mcu_sck = 1'b0; // SCK starts low (SPI Mode 0)
-            #(CLK_PERIOD * 10); // Setup time - wait for FPGA to set up first byte
-            
-            // Read 16 bytes (128 bits total)
-            // SPI Mode 0: MSB first, sample on rising edge
-            for (i = 0; i < 16; i = i + 1) begin
-                received_packet[i] = 8'h00;
-                
-                // Read 8 bits MSB first (SPI Mode 0: SCK starts low, first edge is rising)
-                for (j = 7; j >= 0; j = j - 1) begin
-                    // Rising edge - MCU samples
-                    mcu_sck = 1'b1;
-                    #(SCK_PERIOD/4);  // Small delay for sampling
-                    received_packet[i][j] = mcu_sdo;
-                    #(SCK_PERIOD/2 - SCK_PERIOD/4);
-                    
-                    // Falling edge - FPGA shifts to prepare next bit (except after last bit)
-                    if (j > 0 || i < 15) begin
-                        mcu_sck = 1'b0;
-                        #(SCK_PERIOD/2);
-                    end
-                end
-            end
-            
-            // CS goes high to end transaction
-            mcu_sck = 1'b0; // Return SCK to idle low
-            #(CLK_PERIOD);
-            mcu_cs_n = 1'b1;
-            #(CLK_PERIOD * 2);
-        end
-    endtask
+    // Access internal signals for debugging
+    wire quat1_valid_snap = dut.quat1_valid_snap;
+    wire gyro1_valid_snap = dut.gyro1_valid_snap;
+    wire signed [15:0] quat1_w_snap = dut.quat1_w_snap;
+    wire signed [15:0] quat1_x_snap = dut.quat1_x_snap;
+    wire signed [15:0] quat1_y_snap = dut.quat1_y_snap;
+    wire signed [15:0] quat1_z_snap = dut.quat1_z_snap;
+    wire signed [15:0] gyro1_x_snap = dut.gyro1_x_snap;
+    wire signed [15:0] gyro1_y_snap = dut.gyro1_y_snap;
+    wire signed [15:0] gyro1_z_snap = dut.gyro1_z_snap;
+    wire initialized_snap = dut.initialized_snap;
+    wire error_snap = dut.error_snap;
+    wire [7:0] packet_buffer_15 = dut.packet_buffer[15];
     
-    // ============================================
-    // Test Variables
-    // ============================================
+    // Test variables
     logic [7:0] received_packet [0:15];
     integer test_count = 0;
     integer pass_count = 0;
     integer fail_count = 0;
-    
-    // Expected values from SHTP reports
-    logic signed [15:0] expected_quat_w, expected_quat_x, expected_quat_y, expected_quat_z;
-    logic signed [15:0] expected_gyro_x, expected_gyro_y, expected_gyro_z;
-    
-    // Received data from SPI
-    logic signed [15:0] received_quat_w, received_quat_x, received_quat_y, received_quat_z;
-    logic signed [15:0] received_gyro_x, received_gyro_y, received_gyro_z;
-    logic [7:0] flags;
-    logic quat_valid_flag, gyro_valid_flag, init_flag, error_flag;
     
     // Helper task to check and report
     task check_test(input string test_name, input logic condition);
@@ -205,236 +90,463 @@ module tb_shtp_to_spi_integration;
         end
     endtask
     
-    // Helper to print packet
-    task print_packet;
-        integer i;
+    // ========================================================================
+    // BNO085 Controller Simulator Tasks
+    // ========================================================================
+    // These tasks simulate the BNO085 controller outputting sensor data
+    // with pulse valid signals (high for ONE clock cycle only)
+    
+    // Task: Output quaternion data with valid pulse
+    // Per datasheet: Rotation Vector report (Report ID=0x05)
+    // Data format: X, Y, Z, W as 16-bit signed values (little-endian in SHTP)
+    task output_quaternion(
+        input signed [15:0] w, x, y, z
+    );
         begin
-            $write("Packet: ");
-            for (i = 0; i < 16; i = i + 1) begin
-                $write("0x%02x ", received_packet[i]);
-            end
-            $write("\n");
+            // Set data values
+            quat1_w <= w;
+            quat1_x <= x;
+            quat1_y <= y;
+            quat1_z <= z;
+            
+            // Pulse valid signal (high for ONE clock cycle)
+            quat1_valid <= 1'b1;
+            @(posedge clk);
+            quat1_valid <= 1'b0;
+            
+            $display("[%0t] BNO085: Quaternion output - w=%d x=%d y=%d z=%d (valid pulse)", 
+                     $time, w, x, y, z);
         end
     endtask
     
-    // ============================================
-    // Main Test Sequence
-    // ============================================
+    // Task: Output gyroscope data with valid pulse
+    // Per datasheet Figure 1-34: Calibrated gyroscope report (Report ID=0x02)
+    // Data format: X, Y, Z as 16-bit signed values (little-endian in SHTP)
+    task output_gyroscope(
+        input signed [15:0] x, y, z
+    );
+        begin
+            // Set data values
+            gyro1_x <= x;
+            gyro1_y <= y;
+            gyro1_z <= z;
+            
+            // Pulse valid signal (high for ONE clock cycle)
+            gyro1_valid <= 1'b1;
+            @(posedge clk);
+            gyro1_valid <= 1'b0;
+            
+            $display("[%0t] BNO085: Gyroscope output - x=%d y=%d z=%d (valid pulse)", 
+                     $time, x, y, z);
+        end
+    endtask
+    
+    // ========================================================================
+    // MCU SPI Master Task
+    // ========================================================================
+    // Task: MCU reads 16-byte packet via SPI Mode 0
+    // SPI Mode 0: CPOL=0 (idle low), CPHA=0 (sample on rising edge)
+    task mcu_read_packet;
+        integer i, j;
+        begin
+            $display("[%0t] MCU: Starting SPI transaction - CS goes low", $time);
+            
+            // CS goes low to start transaction
+            cs_n = 1'b0;
+            #(5 * CLK_PERIOD);  // Setup time for first bit
+            
+            // Read 16 bytes (128 bits total)
+            // SPI Mode 0: CPOL=0 (idle low), CPHA=0 (sample on rising, change on falling)
+            for (i = 0; i < 16; i = i + 1) begin
+                received_packet[i] = 8'h00;
+                
+                // Read 8 bits MSB first (SPI Mode 0: SCK starts low, first edge is rising)
+                for (j = 7; j >= 0; j = j - 1) begin
+                    // Rising edge - MCU samples
+                    sck = 1'b1;
+                    #(10);  // Small delay for sampling
+                    received_packet[i][j] = sdo;
+                    #(SCK_PERIOD/2 - 10);
+                    
+                    // Falling edge - FPGA shifts to prepare next bit (except after last bit)
+                    if (j > 0 || i < 15) begin
+                        sck = 1'b0;
+                        #(SCK_PERIOD/2);
+                    end
+                end
+                
+                $display("[%0t] MCU: Byte[%0d] = 0x%02X", $time, i, received_packet[i]);
+            end
+            
+            // CS goes high to end transaction
+            sck = 1'b0;  // Ensure SCK is low before CS goes high
+            #(SCK_PERIOD);
+            cs_n = 1'b1;
+            #(5 * CLK_PERIOD);
+            
+            $display("[%0t] MCU: Packet complete - CS high", $time);
+        end
+    endtask
+    
+    // Task: Verify received packet matches expected values
+    task verify_packet(
+        input signed [15:0] exp_quat_w, exp_quat_x, exp_quat_y, exp_quat_z,
+        input signed [15:0] exp_gyro_x, exp_gyro_y, exp_gyro_z,
+        input exp_quat_valid, exp_gyro_valid, exp_init, exp_error
+    );
+        integer i;
+        logic [7:0] exp_flags;
+        logic signed [15:0] recv_quat_w, recv_quat_x, recv_quat_y, recv_quat_z;
+        logic signed [15:0] recv_gyro_x, recv_gyro_y, recv_gyro_z;
+        logic recv_quat_valid, recv_gyro_valid, recv_init, recv_error;
+        begin
+            // Verify header
+            check_test("Packet header = 0xAA", received_packet[0] == 8'hAA);
+            
+            // Extract quaternion (MSB,LSB format)
+            recv_quat_w = {received_packet[1], received_packet[2]};
+            recv_quat_x = {received_packet[3], received_packet[4]};
+            recv_quat_y = {received_packet[5], received_packet[6]};
+            recv_quat_z = {received_packet[7], received_packet[8]};
+            
+            // Extract gyroscope (MSB,LSB format)
+            recv_gyro_x = {received_packet[9], received_packet[10]};
+            recv_gyro_y = {received_packet[11], received_packet[12]};
+            recv_gyro_z = {received_packet[13], received_packet[14]};
+            
+            // Extract flags
+            recv_quat_valid = received_packet[15][0];
+            recv_gyro_valid = received_packet[15][1];
+            recv_init = received_packet[15][2];
+            recv_error = received_packet[15][3];
+            exp_flags = {4'h0, exp_error, exp_init, exp_gyro_valid, exp_quat_valid};
+            
+            // Verify quaternion
+            check_test("Quaternion W", recv_quat_w == exp_quat_w);
+            check_test("Quaternion X", recv_quat_x == exp_quat_x);
+            check_test("Quaternion Y", recv_quat_y == exp_quat_y);
+            check_test("Quaternion Z", recv_quat_z == exp_quat_z);
+            
+            // Verify gyroscope
+            check_test("Gyroscope X", recv_gyro_x == exp_gyro_x);
+            check_test("Gyroscope Y", recv_gyro_y == exp_gyro_y);
+            check_test("Gyroscope Z", recv_gyro_z == exp_gyro_z);
+            
+            // Verify flags
+            check_test("Flags byte", received_packet[15] == exp_flags);
+            check_test("Quat valid flag", recv_quat_valid == exp_quat_valid);
+            check_test("Gyro valid flag", recv_gyro_valid == exp_gyro_valid);
+            check_test("Init flag", recv_init == exp_init);
+            check_test("Error flag", recv_error == exp_error);
+        end
+    endtask
+    
+    // ========================================================================
+    // Test Cases
+    // ========================================================================
+    
     initial begin
-        // Initialize SPI signals
-        mcu_cs_n = 1'b1;
-        mcu_sck = 1'b0;
-        mcu_sdi = 1'b0;
+        // Initialize signals
+        cs_n = 1'b1;
+        sck = 1'b0;
+        sdi = 1'b0;
+        quat1_valid = 1'b0;
+        gyro1_valid = 1'b0;
+        quat1_w = 16'h0000;
+        quat1_x = 16'h0000;
+        quat1_y = 16'h0000;
+        quat1_z = 16'h0000;
+        gyro1_x = 16'h0000;
+        gyro1_y = 16'h0000;
+        gyro1_z = 16'h0000;
+        initialized = 1'b1;
+        error = 1'b0;
         
-        $display("\n==========================================");
-        $display("SHTP to SPI Integration Test");
-        $display("==========================================\n");
+        // Wait for initial reset
+        #(10 * CLK_PERIOD);
         
-        // Wait for initialization to complete
-        $display("[TEST] Step 1: Waiting for BNO085 initialization...");
-        wait(initialized1 == 1'b1);
-        $display("[TEST] BNO085 initialized at time %0t", $time);
-        #(CLK_PERIOD * 100); // Wait a bit more for stability
+        $display("\n========================================");
+        $display("SHTP to SPI Integration Testbench");
+        $display("========================================\n");
         
-        // Test 1: Send Rotation Vector report and verify SPI output
-        $display("\n[TEST] Step 2: Sending Rotation Vector Report");
-        expected_quat_w = 16'h4000;  // 1.0 in Q14 format
-        expected_quat_x = 16'h0000;
-        expected_quat_y = 16'h0000;
-        expected_quat_z = 16'h0000;
+        // ====================================================================
+        // TC1: Valid quaternion pulse when CS is high
+        // ====================================================================
+        $display("[TC1] Valid quaternion pulse when CS is high");
+        $display("----------------------------------------");
         
-        // Wait for controller to be in WAIT_DATA state
-        // WAIT_DATA state value is 7 (from bno085_controller enum)
-        // Use a timeout to avoid infinite wait
-        fork
-            begin
-                // Wait for valid data or timeout
-                wait(quat1_valid == 1'b1 || gyro1_valid == 1'b1 || initialized1 == 1'b1);
+        // Output quaternion data (valid pulse)
+        output_quaternion(16'd1000, 16'd2000, 16'd3000, 16'd4000);
+        
+        // Wait a few clocks to ensure snapshot is captured
+        #(10 * CLK_PERIOD);
+        
+        // Verify snapshot captured the data
+        $display("[%0t] Snapshot check: quat1_w_snap=%d (expected 1000)", $time, quat1_w_snap);
+        check_test("TC1: Snapshot captured quat W", quat1_w_snap == 16'd1000);
+        check_test("TC1: Snapshot captured quat X", quat1_x_snap == 16'd2000);
+        check_test("TC1: Snapshot captured quat Y", quat1_y_snap == 16'd3000);
+        check_test("TC1: Snapshot captured quat Z", quat1_z_snap == 16'd4000);
+        check_test("TC1: Snapshot captured quat_valid", quat1_valid_snap == 1'b1);
+        
+        // Read packet and verify
+        mcu_read_packet();
+        verify_packet(16'd1000, 16'd2000, 16'd3000, 16'd4000,
+                      16'h0000, 16'h0000, 16'h0000,
+                      1'b1, 1'b0, 1'b1, 1'b0);
+        
+        #(10 * CLK_PERIOD);
+        $display("");
+        
+        // ====================================================================
+        // TC2: Valid gyroscope pulse when CS is high
+        // ====================================================================
+        $display("[TC2] Valid gyroscope pulse when CS is high");
+        $display("----------------------------------------");
+        
+        // Output gyroscope data (valid pulse)
+        output_gyroscope(16'd500, 16'd600, 16'd700);
+        
+        // Wait a few clocks to ensure snapshot is captured
+        #(10 * CLK_PERIOD);
+        
+        // Verify snapshot captured the data
+        $display("[%0t] Snapshot check: gyro1_x_snap=%d (expected 500)", $time, gyro1_x_snap);
+        check_test("TC2: Snapshot captured gyro X", gyro1_x_snap == 16'd500);
+        check_test("TC2: Snapshot captured gyro Y", gyro1_y_snap == 16'd600);
+        check_test("TC2: Snapshot captured gyro Z", gyro1_z_snap == 16'd700);
+        check_test("TC2: Snapshot captured gyro_valid", gyro1_valid_snap == 1'b1);
+        
+        // Read packet and verify
+        mcu_read_packet();
+        verify_packet(16'd1000, 16'd2000, 16'd3000, 16'd4000,  // Previous quat still there
+                      16'd500, 16'd600, 16'd700,
+                      1'b1, 1'b1, 1'b1, 1'b0);  // Both valid now
+        
+        #(10 * CLK_PERIOD);
+        $display("");
+        
+        // ====================================================================
+        // TC3: Valid pulse during SPI transaction (should be captured on next CS high)
+        // ====================================================================
+        $display("[TC3] Valid pulse during SPI transaction");
+        $display("----------------------------------------");
+        
+        // Start SPI transaction
+        cs_n = 1'b0;
+        #(5 * CLK_PERIOD);
+        
+        // Output new quaternion data DURING transaction (should not affect current transaction)
+        output_quaternion(16'd1111, 16'd2222, 16'd3333, 16'd4444);
+        
+        // Complete current transaction (should still have old data)
+        cs_n = 1'b1;
+        #(5 * CLK_PERIOD);
+        
+        // Read packet - should have OLD data (snapshot frozen during transaction)
+        mcu_read_packet();
+        verify_packet(16'd1000, 16'd2000, 16'd3000, 16'd4000,  // Old quat
+                      16'd500, 16'd600, 16'd700,  // Old gyro
+                      1'b1, 1'b1, 1'b1, 1'b0);
+        
+        // Wait for snapshot to update (CS is high now)
+        #(10 * CLK_PERIOD);
+        
+        // Verify snapshot now has new data
+        check_test("TC3: Snapshot updated after CS high", quat1_w_snap == 16'd1111);
+        
+        // Read packet again - should have NEW data
+        mcu_read_packet();
+        verify_packet(16'd1111, 16'd2222, 16'd3333, 16'd4444,  // New quat
+                      16'd500, 16'd600, 16'd700,  // Old gyro still
+                      1'b1, 1'b1, 1'b1, 1'b0);
+        
+        #(10 * CLK_PERIOD);
+        $display("");
+        
+        // ====================================================================
+        // TC4: Multiple valid pulses (latest data should be captured)
+        // ====================================================================
+        $display("[TC4] Multiple valid pulses - latest data captured");
+        $display("----------------------------------------");
+        
+        // Output multiple quaternion updates
+        output_quaternion(16'd100, 16'd200, 16'd300, 16'd400);
+        #(5 * CLK_PERIOD);
+        output_quaternion(16'd200, 16'd300, 16'd400, 16'd500);
+        #(5 * CLK_PERIOD);
+        output_quaternion(16'd300, 16'd400, 16'd500, 16'd600);
+        
+        // Wait for snapshot to capture latest
+        #(10 * CLK_PERIOD);
+        
+        // Verify snapshot has LATEST data
+        check_test("TC4: Snapshot has latest quat W", quat1_w_snap == 16'd300);
+        check_test("TC4: Snapshot has latest quat X", quat1_x_snap == 16'd400);
+        
+        // Read packet and verify latest data
+        mcu_read_packet();
+        verify_packet(16'd300, 16'd400, 16'd500, 16'd600,  // Latest quat
+                      16'd500, 16'd600, 16'd700,  // Previous gyro
+                      1'b1, 1'b1, 1'b1, 1'b0);
+        
+        #(10 * CLK_PERIOD);
+        $display("");
+        
+        // ====================================================================
+        // TC5: Valid pulse immediately before CS goes low
+        // ====================================================================
+        $display("[TC5] Valid pulse immediately before CS goes low");
+        $display("----------------------------------------");
+        
+        // Output new quaternion
+        output_quaternion(16'd9999, 16'd8888, 16'd7777, 16'd6666);
+        
+        // Immediately start SPI transaction (within same clock cycle or next)
+        #(1 * CLK_PERIOD);
+        cs_n = 1'b0;
+        #(5 * CLK_PERIOD);
+        
+        // Verify snapshot was captured (should have new data or old, depending on timing)
+        $display("[%0t] Snapshot check: quat1_w_snap=%d", $time, quat1_w_snap);
+        
+        // Complete transaction
+        cs_n = 1'b1;
+        #(10 * CLK_PERIOD);
+        
+        // Verify snapshot now has new data
+        check_test("TC5: Snapshot updated after CS high", quat1_w_snap == 16'd9999);
+        
+        // Read packet and verify
+        mcu_read_packet();
+        verify_packet(16'd9999, 16'd8888, 16'd7777, 16'd6666,  // New quat
+                      16'd500, 16'd600, 16'd700,  // Previous gyro
+                      1'b1, 1'b1, 1'b1, 1'b0);
+        
+        #(10 * CLK_PERIOD);
+        $display("");
+        
+        // ====================================================================
+        // TC6: Continuous data updates (100Hz simulation)
+        // ====================================================================
+        $display("[TC6] Continuous data updates (100Hz simulation)");
+        $display("----------------------------------------");
+        
+        // Simulate 100Hz updates (10ms = 10,000,000ns at 3MHz = 30,000 clocks)
+        // But for simulation speed, use shorter intervals
+        begin
+            integer update_count;
+            for (update_count = 0; update_count < 5; update_count = update_count + 1) begin
+            output_quaternion(16'd1000 + update_count, 
+                            16'd2000 + update_count, 
+                            16'd3000 + update_count, 
+                            16'd4000 + update_count);
+                output_gyroscope(16'd100 + update_count,
+                                16'd200 + update_count,
+                                16'd300 + update_count);
+                #(100 * CLK_PERIOD);  // Simulate ~33us between updates (much faster than real 10ms)
             end
-            begin
-                #(CLK_PERIOD * 10_000_000); // 10M cycle timeout
-                $display("[WARNING] Timeout waiting for controller state");
-            end
-        join_any
-        #(CLK_PERIOD * 100);
-        
-        // Ensure INT is high before sending
-        if (int1 == 1'b0) begin
-            wait(int1 == 1'b1);
-            #(CLK_PERIOD * 100);
         end
         
-        $display("  Sending Rotation Vector: W=0x%04h X=0x%04h Y=0x%04h Z=0x%04h",
-                 expected_quat_w, expected_quat_x, expected_quat_y, expected_quat_z);
+        // Wait for snapshot to capture latest
+        #(10 * CLK_PERIOD);
         
-        // Send the report
-        sensor_model.send_rotation_vector(
-            expected_quat_x, expected_quat_y, expected_quat_z, expected_quat_w
-        );
+        // Verify snapshot has latest data
+        check_test("TC6: Snapshot has latest quat W", quat1_w_snap == 16'd1004);
+        check_test("TC6: Snapshot has latest gyro X", gyro1_x_snap == 16'd104);
         
-        // Wait for controller to parse the report
-        wait(quat1_valid == 1'b1);
-        $display("[TEST] Quaternion received by controller");
-        $display("  W=0x%04h X=0x%04h Y=0x%04h Z=0x%04h", 
-                 quat1_w, quat1_x, quat1_y, quat1_z);
-        
-        // Verify controller received correct data
-        check_test("Quaternion W matches", quat1_w == expected_quat_w);
-        check_test("Quaternion X matches", quat1_x == expected_quat_x);
-        check_test("Quaternion Y matches", quat1_y == expected_quat_y);
-        check_test("Quaternion Z matches", quat1_z == expected_quat_z);
-        
-        // Wait for SPI slave to capture snapshot (need multiple clock cycles for CDC)
-        // Also ensure CS is high so snapshot can update
-        // Ensure CS is high (from previous transaction if any)
-        mcu_cs_n = 1'b1;
-        #(CLK_PERIOD * 500); // Wait for snapshot to update (multiple cycles for CDC)
-        
-        // Read packet via SPI
-        $display("\n[TEST] Step 3: Reading packet via MCU SPI");
+        // Read packet and verify latest data
         mcu_read_packet();
-        print_packet();
+        verify_packet(16'd1004, 16'd2004, 16'd3004, 16'd4004,  // Latest quat
+                      16'd104, 16'd204, 16'd304,  // Latest gyro
+                      1'b1, 1'b1, 1'b1, 1'b0);
         
-        // Verify header
-        check_test("Header byte is 0xAA", received_packet[0] == 8'hAA);
+        #(10 * CLK_PERIOD);
+        $display("");
         
-        // Verify quaternion data (MSB,LSB format)
-        received_quat_w = {received_packet[1], received_packet[2]};
-        received_quat_x = {received_packet[3], received_packet[4]};
-        received_quat_y = {received_packet[5], received_packet[6]};
-        received_quat_z = {received_packet[7], received_packet[8]};
+        // ====================================================================
+        // TC7: Verify flags byte includes all bits correctly
+        // ====================================================================
+        $display("[TC7] Verify flags byte includes all bits correctly");
+        $display("----------------------------------------");
         
-        $display("  Received Quaternion: W=0x%04h X=0x%04h Y=0x%04h Z=0x%04h",
-                 received_quat_w, received_quat_x, received_quat_y, received_quat_z);
+        // Test with error flag set
+        error = 1'b1;
+        #(10 * CLK_PERIOD);
         
-        check_test("SPI Quaternion W matches", received_quat_w == expected_quat_w);
-        check_test("SPI Quaternion X matches", received_quat_x == expected_quat_x);
-        check_test("SPI Quaternion Y matches", received_quat_y == expected_quat_y);
-        check_test("SPI Quaternion Z matches", received_quat_z == expected_quat_z);
-        
-        // Verify flags byte
-        flags = received_packet[15];
-        quat_valid_flag = flags[0];
-        gyro_valid_flag = flags[1];
-        init_flag = flags[2];
-        error_flag = flags[3];
-        
-        $display("  Flags byte: 0x%02x (quat_valid=%d, gyro_valid=%d, init=%d, error=%d)",
-                 flags, quat_valid_flag, gyro_valid_flag, init_flag, error_flag);
-        
-        check_test("Quaternion valid flag set", quat_valid_flag == 1'b1);
-        check_test("Initialized flag set", init_flag == 1'b1);
-        check_test("Error flag clear", error_flag == 1'b0);
-        
-        // Test 2: Send Gyroscope report and verify SPI output
-        $display("\n[TEST] Step 4: Sending Gyroscope Report");
-        expected_gyro_x = 16'd100;
-        expected_gyro_y = 16'd200;
-        expected_gyro_z = 16'd300;
-        
-        // Wait for controller to be ready (gyro valid will be set when report is processed)
-        // Use a timeout to avoid infinite wait
-        fork
-            begin
-                wait(gyro1_valid == 1'b1 || quat1_valid == 1'b0); // Wait for gyro or quat to clear
-            end
-            begin
-                #(CLK_PERIOD * 10_000_000); // 10M cycle timeout
-                $display("[WARNING] Timeout waiting for controller to be ready");
-            end
-        join_any
-        #(CLK_PERIOD * 100);
-        
-        // Ensure INT is high before sending
-        if (int1 == 1'b0) begin
-            wait(int1 == 1'b1);
-            #(CLK_PERIOD * 100);
-        end
-        
-        $display("  Sending Gyroscope: X=%d Y=%d Z=%d",
-                 expected_gyro_x, expected_gyro_y, expected_gyro_z);
-        
-        // Send the report (need to check mock_bno085 signature)
-        // For now, assume it takes x, y, z as inputs
-        sensor_model.send_gyroscope(expected_gyro_x, expected_gyro_y, expected_gyro_z);
-        
-        // Wait for controller to parse the report
-        wait(gyro1_valid == 1'b1);
-        $display("[TEST] Gyroscope received by controller");
-        $display("  X=%d Y=%d Z=%d", gyro1_x, gyro1_y, gyro1_z);
-        
-        // Verify controller received correct data
-        check_test("Gyroscope X matches", gyro1_x == expected_gyro_x);
-        check_test("Gyroscope Y matches", gyro1_y == expected_gyro_y);
-        check_test("Gyroscope Z matches", gyro1_z == expected_gyro_z);
-        
-        // Wait for SPI slave to capture snapshot (need multiple clock cycles for CDC)
-        // Ensure CS is high so snapshot can update
-        mcu_cs_n = 1'b1;
-        #(CLK_PERIOD * 500); // Wait for snapshot to update (multiple cycles for CDC)
-        
-        // Read packet via SPI
-        $display("\n[TEST] Step 5: Reading packet via MCU SPI (with gyro data)");
+        // Read packet and verify flags
         mcu_read_packet();
-        print_packet();
+        check_test("TC7: Flags byte bit 3 (error) = 1", received_packet[15][3] == 1'b1);
+        check_test("TC7: Flags byte bit 2 (init) = 1", received_packet[15][2] == 1'b1);
+        check_test("TC7: Flags byte bit 1 (gyro_valid) = 1", received_packet[15][1] == 1'b1);
+        check_test("TC7: Flags byte bit 0 (quat_valid) = 1", received_packet[15][0] == 1'b1);
         
-        // Verify gyroscope data (MSB,LSB format)
-        received_gyro_x = {received_packet[9], received_packet[10]};
-        received_gyro_y = {received_packet[11], received_packet[12]};
-        received_gyro_z = {received_packet[13], received_packet[14]};
+        // Test with initialized = 0
+        initialized = 1'b0;
+        error = 1'b0;
+        quat1_valid = 1'b0;  // Clear valid flags
+        gyro1_valid = 1'b0;
+        #(10 * CLK_PERIOD);
         
-        $display("  Received Gyroscope: X=%d Y=%d Z=%d",
-                 received_gyro_x, received_gyro_y, received_gyro_z);
-        
-        check_test("SPI Gyroscope X matches", received_gyro_x == expected_gyro_x);
-        check_test("SPI Gyroscope Y matches", received_gyro_y == expected_gyro_y);
-        check_test("SPI Gyroscope Z matches", received_gyro_z == expected_gyro_z);
-        
-        // Verify flags byte
-        flags = received_packet[15];
-        quat_valid_flag = flags[0];
-        gyro_valid_flag = flags[1];
-        init_flag = flags[2];
-        error_flag = flags[3];
-        
-        $display("  Flags byte: 0x%02x (quat_valid=%d, gyro_valid=%d, init=%d, error=%d)",
-                 flags, quat_valid_flag, gyro_valid_flag, init_flag, error_flag);
-        
-        check_test("Gyroscope valid flag set", gyro_valid_flag == 1'b1);
-        check_test("Quaternion valid flag still set", quat_valid_flag == 1'b1);
-        
-        // Test 3: Verify data persists across multiple SPI reads
-        $display("\n[TEST] Step 6: Verifying data persists across multiple SPI reads");
-        #(CLK_PERIOD * 100);
-        
+        // Read packet and verify flags
         mcu_read_packet();
-        received_quat_w = {received_packet[1], received_packet[2]};
-        received_gyro_x = {received_packet[9], received_packet[10]};
+        check_test("TC7: Flags byte with init=0, error=0, valid=0", received_packet[15] == 8'h00);
         
-        check_test("Quaternion persists", received_quat_w == expected_quat_w);
-        check_test("Gyroscope persists", received_gyro_x == expected_gyro_x);
+        // Restore
+        initialized = 1'b1;
+        #(10 * CLK_PERIOD);
         
-        // Print summary
-        $display("\n==========================================");
+        $display("");
+        
+        // ====================================================================
+        // TC8: Verify data format (MSB,LSB per byte, signed 16-bit values)
+        // ====================================================================
+        $display("[TC8] Verify data format (MSB,LSB, signed 16-bit)");
+        $display("----------------------------------------");
+        
+        // Test with negative values (signed 16-bit)
+        output_quaternion(-16'd1000, -16'd2000, 16'd3000, -16'd4000);
+        output_gyroscope(-16'd500, 16'd600, -16'd700);
+        
+        #(10 * CLK_PERIOD);
+        
+        // Read packet and verify
+        mcu_read_packet();
+        verify_packet(-16'd1000, -16'd2000, 16'd3000, -16'd4000,
+                      -16'd500, 16'd600, -16'd700,
+                      1'b1, 1'b1, 1'b1, 1'b0);
+        
+        // Verify byte order (MSB,LSB)
+        // For -1000 (0xFC18): MSB=0xFC, LSB=0x18
+        check_test("TC8: Quat W MSB correct", received_packet[1] == 8'hFC);
+        check_test("TC8: Quat W LSB correct", received_packet[2] == 8'h18);
+        
+        // For 3000 (0x0BB8): MSB=0x0B, LSB=0xB8
+        check_test("TC8: Quat Y MSB correct", received_packet[5] == 8'h0B);
+        check_test("TC8: Quat Y LSB correct", received_packet[6] == 8'hB8);
+        
+        #(10 * CLK_PERIOD);
+        $display("");
+        
+        // ====================================================================
+        // Test Summary
+        // ====================================================================
+        $display("\n========================================");
         $display("Test Summary");
-        $display("==========================================");
+        $display("========================================");
         $display("Total tests: %0d", test_count);
         $display("Passed: %0d", pass_count);
         $display("Failed: %0d", fail_count);
         
         if (fail_count == 0) begin
-            $display("\n[SUCCESS] All tests passed!");
+            $display("\n*** ALL TESTS PASSED ***");
         end else begin
-            $display("\n[FAILURE] Some tests failed!");
+            $display("\n*** SOME TESTS FAILED ***");
         end
         
-        $finish;
-    end
-    
-    // Timeout
-    initial begin
-        #(CLK_PERIOD * 50_000_000); // 50M cycles timeout
-        $display("\n[ERROR] Test timeout!");
+        $display("\n========================================\n");
+        
+        #(100 * CLK_PERIOD);
         $finish;
     end
 
