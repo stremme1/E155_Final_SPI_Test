@@ -67,15 +67,20 @@ module mock_bno085 (
             int_n <= 1'b1;
             state <= ASLEEP;
         end else begin
-            // Assert INT after controller's reset delay completes (300k cycles) plus a small margin
-            // This ensures INT is ready when controller enters INIT_WAIT_INT state
+            // Assert INT after controller's reset delay completes (300k cycles) plus WAKE delay (450 cycles)
+            // Controller sequence: ST_RESET (300k) -> ST_WAKE (450) -> ST_WAIT_INT (waits for INT)
+            // So we need INT asserted by cycle 300,450 + some margin
             if (reset_delay_counter < 19'd301_000) begin
                 reset_delay_counter <= reset_delay_counter + 1;
             end else if (reset_delay_counter == 19'd301_000) begin
                 // Sensor is ready - assert INT (active low)
+                // This happens after controller enters ST_WAIT_INT
                 int_n <= 1'b0;
                 reset_delay_counter <= reset_delay_counter + 1; // Prevent re-triggering
                 state <= AWAKE;
+            end else begin
+                // Keep INT asserted once it's set
+                int_n <= 1'b0;
             end
         end
     end
@@ -157,7 +162,8 @@ module mock_bno085 (
             
             // Deassert INT when CS goes low (per datasheet: "deassert as soon as CS is detected")
             // This happens at the start of a new transaction
-            if (cs_n_prev && !cs_n_sync && int_n == 0) begin
+            // BUT: Don't deassert if we're in initial wake-up phase (before first transaction)
+            if (cs_n_prev && !cs_n_sync && int_n == 0 && state == AWAKE) begin
                 int_n <= 1'b1;
             end
         end
