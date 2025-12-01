@@ -420,29 +420,14 @@ module bno085_controller_new (
                 
                 READ_HEADER: begin
                     cs_n <= 1'b0;
-                    
-                    // FIX 1: Hold start until SPI master acknowledges (goes busy)
-                    // Only hold if we've already asserted start
-                    if (spi_start && !spi_busy) begin
-                        // Waiting for SPI master to acknowledge - keep holding start
-                        spi_start <= 1'b1;
-                        spi_tx_valid <= 1'b1;
-                    end else if (spi_busy) begin
-                        // Transaction in progress - SPI master has seen start, can release it
-                        spi_start <= 1'b0;
-                        spi_tx_valid <= 1'b0;
-                    end
-                    
-                    // FIX 3: Use registered rx_valid for reliable detection
-                    // Process received data when transaction completes
-                    if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy)) begin
+                    // FIX 3: Use registered rx_valid for reliable detection (extends one-cycle pulse)
+                    if ((spi_rx_valid || spi_rx_valid_reg) && !spi_busy) begin
                         case (byte_cnt)
                             0: begin
                                 packet_length[7:0] <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
-                                // Start next transaction immediately
-                                spi_tx_data <= 8'h00;
-                                spi_tx_valid <= 1'b1;
+                                spi_tx_data <= 8'h00; 
+                                spi_tx_valid <= 1'b1; 
                                 spi_start <= 1'b1;
                             end
                             1: begin
@@ -450,17 +435,15 @@ module bno085_controller_new (
                                 packet_length[15:8] <= spi_rx_data;
                                 packet_length[15] <= 1'b0; // Clear continuation bit
                                 byte_cnt <= byte_cnt + 1;
-                                // Start next transaction immediately
-                                spi_tx_data <= 8'h00;
-                                spi_tx_valid <= 1'b1;
+                                spi_tx_data <= 8'h00; 
+                                spi_tx_valid <= 1'b1; 
                                 spi_start <= 1'b1;
                             end
                             2: begin
                                 channel <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
-                                // Start next transaction immediately
-                                spi_tx_data <= 8'h00;
-                                spi_tx_valid <= 1'b1;
+                                spi_tx_data <= 8'h00; 
+                                spi_tx_valid <= 1'b1; 
                                 spi_start <= 1'b1;
                             end
                             3: begin
@@ -468,9 +451,8 @@ module bno085_controller_new (
                                 if (packet_length > 16'd4 && packet_length < 16'd32767) begin
                                     byte_cnt <= 8'd0;
                                     state <= READ_PAYLOAD;
-                                    // Start first payload byte transaction immediately
-                                    spi_tx_data <= 8'h00;
-                                    spi_tx_valid <= 1'b1;
+                                    spi_tx_data <= 8'h00; 
+                                    spi_tx_valid <= 1'b1; 
                                     spi_start <= 1'b1;
                                 end else begin
                                     // Invalid length
@@ -479,32 +461,18 @@ module bno085_controller_new (
                                 end
                             end
                         endcase
-                    end else if (!spi_busy && byte_cnt < 4 && !spi_start) begin
-                        // Retry: Continue reading header if transaction didn't start
-                        spi_tx_data <= 8'h00;
-                        spi_tx_valid <= 1'b1;
+                    end else if (!spi_busy && byte_cnt < 4) begin
+                        // Continue reading header
+                        spi_tx_data <= 8'h00; 
+                        spi_tx_valid <= 1'b1; 
                         spi_start <= 1'b1;
                     end
                 end
                 
                 READ_PAYLOAD: begin
                     cs_n <= 1'b0;
-                    
-                    // FIX 1: Hold start until SPI master acknowledges (goes busy)
-                    // Only hold if we've already asserted start
-                    if (spi_start && !spi_busy) begin
-                        // Waiting for SPI master to acknowledge - keep holding start
-                        spi_start <= 1'b1;
-                        spi_tx_valid <= 1'b1;
-                    end else if (spi_busy) begin
-                        // Transaction in progress - SPI master has seen start, can release it
-                        spi_start <= 1'b0;
-                        spi_tx_valid <= 1'b0;
-                    end
-                    
-                    // FIX 3: Use registered rx_valid for reliable detection
-                    // Process received data when transaction completes
-                    if (spi_transaction_complete || (spi_rx_valid_reg && !spi_busy)) begin
+                    // FIX 3: Use registered rx_valid for reliable detection (extends one-cycle pulse)
+                    if ((spi_rx_valid || spi_rx_valid_reg) && !spi_busy) begin
                         // Parse on the fly - per datasheet 1.3.5.2
                         // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
                         if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
@@ -577,9 +545,8 @@ module bno085_controller_new (
                         // packet_length includes 4-byte header, so payload is (packet_length - 4) bytes
                         // After incrementing, byte_cnt is the number of payload bytes read so far
                         if ((byte_cnt + 1) < (packet_length - 4)) begin
-                            // Start next transaction immediately
-                            spi_tx_data <= 8'h00;
-                            spi_tx_valid <= 1'b1;
+                            spi_tx_data <= 8'h00; 
+                            spi_tx_valid <= 1'b1; 
                             spi_start <= 1'b1;
                         end else begin
                             // Packet complete
@@ -587,10 +554,10 @@ module bno085_controller_new (
                             byte_cnt <= 8'd0;
                             state <= WAIT_DATA;
                         end
-                    end else if (!spi_busy && byte_cnt < (packet_length - 4) && !spi_start) begin
-                        // Retry: Continue reading payload if transaction didn't start
-                        spi_tx_data <= 8'h00;
-                        spi_tx_valid <= 1'b1;
+                    end else if (!spi_busy && byte_cnt < (packet_length - 4)) begin
+                        // Continue reading payload
+                        spi_tx_data <= 8'h00; 
+                        spi_tx_valid <= 1'b1; 
                         spi_start <= 1'b1;
                     end
                 end
