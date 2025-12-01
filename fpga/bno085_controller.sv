@@ -469,7 +469,9 @@ module bno085_controller (
                         byte_cnt <= byte_cnt + 1;
                         
                         // Continue reading if more data
-                        if (byte_cnt < (packet_length - 5)) begin
+                        // packet_length includes 4-byte header, so payload is (packet_length - 4) bytes
+                        // After incrementing, byte_cnt is the number of payload bytes read so far
+                        if ((byte_cnt + 1) < (packet_length - 4)) begin
                             spi_tx_data <= 8'h00; 
                             spi_tx_valid <= 1'b1; 
                             spi_start <= 1'b1;
