@@ -208,6 +208,7 @@ module tb_bno085_controller_comprehensive;
     // SPI Transmit - shift MISO on falling edge (Mode 3)
     // Per datasheet: Mode 3 (CPOL=1, CPHA=1) - data is sampled on rising edge, so we shift on falling edge
     // First bit must be stable before first clock edge, then shift after each bit is sampled
+    // NOTE: Do NOT assign miso here - it's driven by the always @(*) block below
     always @(negedge sclk) begin
         if (!cs_n) begin
             if (mock_response_len > 0 && mock_response_ptr < mock_response_len) begin
@@ -218,18 +219,19 @@ module tb_bno085_controller_comprehensive;
                 mock_tx_bit_cnt = mock_tx_bit_cnt + 1;
                 
                 if (mock_tx_bit_cnt == 8) begin
-                    $display("[%0t] MOCK: Transmitted byte %0d: %02h", $time, mock_response_ptr, mock_response[mock_response_ptr]);
+                    $display("[%0t] MOCK: Transmitted byte %0d: %02h (next_ptr=%0d)", 
+                             $time, mock_response_ptr, mock_response[mock_response_ptr], mock_response_ptr + 1);
                     mock_tx_bit_cnt = 0;
                     mock_response_ptr = mock_response_ptr + 1;
                     if (mock_response_ptr < mock_response_len) begin
                         mock_tx_byte = mock_response[mock_response_ptr];
+                        $display("[%0t] MOCK: Loaded next byte %0d: %02h", 
+                                 $time, mock_response_ptr, mock_response[mock_response_ptr]);
                     end else begin
                         mock_tx_byte = 8'h00;
                         $display("[%0t] MOCK: All %0d bytes transmitted", $time, mock_response_len);
                     end
                 end
-            end else begin
-                miso = 1'b0;
             end
         end
     end
@@ -265,10 +267,11 @@ module tb_bno085_controller_comprehensive;
         mock_rx_byte = 0;
         mock_received_length = 0;
         
-        // If response was fully sent, prepare for next
+        // If response was fully sent, clear it completely
         if (mock_response_ptr >= mock_response_len && mock_response_len > 0) begin
-            $display("[%0t] MOCK: Response fully sent (ptr=%0d, len=%0d)", 
+            $display("[%0t] MOCK: Response fully sent (ptr=%0d, len=%0d), clearing", 
                      $time, mock_response_ptr, mock_response_len);
+            // Clear the response buffer completely to prevent stale data
             mock_response_len = 0;
             mock_response_ptr = 0;
             response_sent_count = response_sent_count + 1;
@@ -284,14 +287,24 @@ module tb_bno085_controller_comprehensive;
     end
     
     // Reset transmit state when CS goes low (start of new transaction)
+    // IMPORTANT: Don't reset mock_response_ptr here - it should continue from where it left off
+    // Only reset if this is a completely new response (mock_response_ptr == 0 or response was fully sent)
     always @(negedge cs_n) begin
         if (mock_response_len > 0) begin
-            // Reload first byte when CS goes low to start transmitting
-            mock_tx_byte = mock_response[0];
-            mock_response_ptr = 0;
-            mock_tx_bit_cnt = 0;
-            $display("[%0t] MOCK: CS low, starting to transmit response (len=%0d, first_byte=%02h)", 
-                     $time, mock_response_len, mock_response[0]);
+            // Only reset if we're starting a new response (ptr was reset or response was fully sent)
+            if (mock_response_ptr == 0 || mock_response_ptr >= mock_response_len) begin
+                mock_tx_byte = mock_response[0];
+                mock_response_ptr = 0;
+                mock_tx_bit_cnt = 0;
+                $display("[%0t] MOCK: CS low, starting NEW response (len=%0d, first_byte=%02h)", 
+                         $time, mock_response_len, mock_response[0]);
+            end else begin
+                // Continue from where we left off
+                mock_tx_byte = mock_response[mock_response_ptr];
+                mock_tx_bit_cnt = 0;
+                $display("[%0t] MOCK: CS low, continuing response (ptr=%0d, byte=%02h)", 
+                         $time, mock_response_ptr, mock_response[mock_response_ptr]);
+            end
         end
     end
     
@@ -368,6 +381,12 @@ module tb_bno085_controller_comprehensive;
         input [15:0] w, x, y, z;
         integer i;
         begin
+            // Clear any previous response
+            mock_response_len = 0;
+            mock_response_ptr = 0;
+            mock_tx_bit_cnt = 0;
+            command_received = 0;
+            
             $display("[%0t] MOCK: Queuing Rotation Vector: W=%04h X=%04h Y=%04h Z=%04h", $time, w, x, y, z);
             // SHTP Header (4 bytes)
             mock_response[0] = 8'h10; // Length LSB (16 bytes total: 4 header + 12 payload)
@@ -395,7 +414,7 @@ module tb_bno085_controller_comprehensive;
             // Assert INT immediately to indicate data ready
             #1000;
             int_n <= 1'b0;
-            $display("[%0t] MOCK: Asserted INT for Rotation Vector report", $time);
+            $display("[%0t] MOCK: Asserted INT for Rotation Vector report (len=%0d)", $time, mock_response_len);
         end
     endtask
     
@@ -404,6 +423,12 @@ module tb_bno085_controller_comprehensive;
         input [15:0] x, y, z;
         integer i;
         begin
+            // Clear any previous response
+            mock_response_len = 0;
+            mock_response_ptr = 0;
+            mock_tx_bit_cnt = 0;
+            command_received = 0;
+            
             $display("[%0t] MOCK: Queuing Gyroscope: X=%04h Y=%04h Z=%04h", $time, x, y, z);
             // SHTP Header (4 bytes)
             mock_response[0] = 8'h0A; // Length LSB (10 bytes total: 4 header + 6 payload)
@@ -429,7 +454,7 @@ module tb_bno085_controller_comprehensive;
             // Assert INT immediately to indicate data ready
             #1000;
             int_n <= 1'b0;
-            $display("[%0t] MOCK: Asserted INT for Gyroscope report", $time);
+            $display("[%0t] MOCK: Asserted INT for Gyroscope report (len=%0d)", $time, mock_response_len);
         end
     endtask
     
@@ -612,6 +637,31 @@ module tb_bno085_controller_comprehensive;
                         $display("[%0t] DEBUG: SPI not starting - tx_ready=%0d, busy=%0d, rx_valid=%0d, packet_len=%0d, byte_cnt=%0d", 
                                  $time, spi_tx_ready, spi_busy, spi_rx_valid, dut.packet_length, dut.byte_cnt);
                         debug_count = debug_count + 1;
+                    end
+                end
+            end
+            
+            // Debug READ_HEADER state
+            if (dut.state == 11) begin // READ_HEADER
+                if (spi_rx_valid) begin
+                    $display("[%0t] DEBUG: Header byte %0d: %02h (packet_len=%0d, channel=%02h, rx_valid=%0d, busy=%0d)", 
+                             $time, dut.byte_cnt, spi_rx_data, dut.packet_length, dut.channel, spi_rx_valid, spi_busy);
+                end
+            end
+            
+            // Debug SPI master rx_data updates
+            if (spi_rx_valid) begin
+                $display("[%0t] DEBUG: SPI Master rx_valid=1, rx_data=%02h", $time, spi_rx_data);
+            end
+            
+            // Debug READ_PAYLOAD state
+            if (dut.state == 12) begin // READ_PAYLOAD
+                if (spi_rx_valid) begin
+                    $display("[%0t] DEBUG: Payload byte %0d: %02h (report_id=%02h, channel=%02h, quat_w=%04h, quat_valid=%0d)", 
+                             $time, dut.byte_cnt, spi_rx_data, dut.current_report_id, dut.channel, quat_w, quat_valid);
+                    if (dut.byte_cnt == 11 && dut.current_report_id == 8'h05) begin
+                        $display("[%0t] DEBUG: Processing byte 11 - should set quat_valid! quat_w=%04h", 
+                                 $time, quat_w);
                     end
                 end
             end

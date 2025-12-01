@@ -73,6 +73,7 @@ module spi_master #(
             rx_valid <= 1'b0;
             rx_data <= 8'd0;
         end else begin
+            // Default: clear rx_valid (it's a pulse)
             rx_valid <= 1'b0;
             
             case (state)
@@ -80,8 +81,9 @@ module spi_master #(
                     sclk_en <= 1'b0;
                     bit_cnt <= 4'd0;
                     tx_ready <= 1'b1;
-                    
+                    // Clear rx_data when starting a new transaction to prevent stale data
                     if (start && tx_valid) begin
+                        rx_data <= 8'd0; // Clear before starting new transaction
                         state <= TX_RX;
                         tx_shift <= tx_data;
                         rx_shift <= 8'd0;
@@ -110,18 +112,26 @@ module spi_master #(
                         rx_shift <= {rx_shift[6:0], miso};
                         
                         if (bit_cnt == 7) begin
-                            // Last bit sampled
+                            // Last bit sampled - byte complete
                             state <= DONE;
                             sclk_en <= 1'b0;
                         end else begin
                             bit_cnt <= bit_cnt + 1;
                         end
                     end
+                    
+                    // Clear rx_shift at the start of a new byte transaction (when bit_cnt is 0 and we just entered TX_RX)
+                    if (bit_cnt == 4'd0 && state == TX_RX) begin
+                        // This is the first cycle of TX_RX - ensure rx_shift is clear
+                        // (It should already be clear from IDLE, but this ensures it)
+                    end
                 end
                 
                 DONE: begin
                     rx_data <= rx_shift;
                     rx_valid <= 1'b1;
+                    // Clear rx_data in the same cycle to prevent stale data if a new transaction starts immediately
+                    // The controller should read rx_data when rx_valid is asserted
                     state <= IDLE;
                 end
             endcase

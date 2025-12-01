@@ -450,17 +450,25 @@ module bno085_controller (
                     // Per datasheet 6.5.4: When CS goes low, INT deasserts
                     // So we should start reading immediately after CS goes low
                     cs_n <= 1'b0;
-                    // Start first SPI transaction to read header
-                    // Don't check INT here - CS low causes INT to deassert per datasheet
-                    spi_tx_data <= 8'h00; 
-                    spi_tx_valid <= 1'b1; 
-                    spi_start <= 1'b1;
+                    // Reset state for reading new packet
                     byte_cnt <= 8'd0;
+                    packet_length <= 16'd0;
+                    channel <= 8'd0;
+                    current_report_id <= 8'd0; // Reset report ID
+                    // Wait one cycle to ensure SPI master has cleared any stale rx_data
+                    // Then start first SPI transaction to read header
+                    // Don't check INT here - CS low causes INT to deassert per datasheet
                     state <= READ_HEADER;
                 end
                 
                 READ_HEADER: begin
                     cs_n <= 1'b0;
+                    // Start SPI transaction if not already started
+                    if (!spi_busy && byte_cnt == 8'd0 && packet_length == 16'd0) begin
+                        spi_tx_data <= 8'h00; 
+                        spi_tx_valid <= 1'b1; 
+                        spi_start <= 1'b1;
+                    end
                     if (spi_rx_valid && !spi_busy) begin
                         case (byte_cnt)
                             0: begin
@@ -480,6 +488,7 @@ module bno085_controller (
                                 spi_start <= 1'b1;
                             end
                             2: begin
+                                // Read channel - this is the actual channel from the sensor
                                 channel <= spi_rx_data;
                                 byte_cnt <= byte_cnt + 1;
                                 spi_tx_data <= 8'h00; 
@@ -489,7 +498,9 @@ module bno085_controller (
                             3: begin
                                 // Validate packet length (max 32766 per datasheet 1.3.1)
                                 if (packet_length > 16'd4 && packet_length < 16'd32767) begin
+                                    // Reset payload byte counter and clear report ID
                                     byte_cnt <= 8'd0;
+                                    current_report_id <= 8'd0;
                                     state <= READ_PAYLOAD;
                                     spi_tx_data <= 8'h00; 
                                     spi_tx_valid <= 1'b1; 
@@ -583,17 +594,18 @@ module bno085_controller (
                             endcase
                         end
 
-                        byte_cnt <= byte_cnt + 1;
-                        
-                        // Continue reading if more data
+                        // Check if more data to read BEFORE incrementing
                         // packet_length includes 4-byte header, so payload is (packet_length - 4) bytes
-                        // After incrementing, byte_cnt is the number of payload bytes read so far
-                        if ((byte_cnt + 1) < (packet_length - 4)) begin
+                        // byte_cnt is the current byte index (0-indexed from Report ID)
+                        // We need to read bytes 0 through (packet_length - 5) inclusive
+                        if (byte_cnt < (packet_length - 5)) begin
+                            // More payload to read - increment and continue
+                            byte_cnt <= byte_cnt + 1;
                             spi_tx_data <= 8'h00; 
                             spi_tx_valid <= 1'b1; 
                             spi_start <= 1'b1;
                         end else begin
-                            // Packet complete
+                            // Packet complete - just processed the last payload byte (byte_cnt was the last index)
                             cs_n <= 1'b1;
                             byte_cnt <= 8'd0;
                             state <= WAIT_DATA;
