@@ -480,11 +480,31 @@ module bno085_controller (
                             3: begin
                                 // Validate packet length (max 32766 per datasheet 1.3.1)
                                 if (packet_length > 16'd4 && packet_length < 16'd32767) begin
-                                    byte_cnt <= 8'd0;
-                                    state <= READ_PAYLOAD;
-                                    spi_tx_data <= 8'h00; 
-                                    spi_tx_valid <= 1'b1; 
-                                    spi_start <= 1'b1;
+                                    // Check if this is a report channel we care about
+                                    if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
+                                        // Valid report channel - read payload
+                                        byte_cnt <= 8'd0;
+                                        state <= READ_PAYLOAD;
+                                        spi_tx_data <= 8'h00; 
+                                        spi_tx_valid <= 1'b1; 
+                                        spi_start <= 1'b1;
+                                    end else begin
+                                        // Not a report channel (e.g., Channel 2 response) - skip it
+                                        // Read and discard the payload to drain it
+                                        if ((packet_length - 4) > 0) begin
+                                            // Need to read payload to drain - use a simple counter
+                                            byte_cnt <= 8'd0; // Reset for payload drain
+                                            // Start reading payload to drain
+                                            spi_tx_data <= 8'h00;
+                                            spi_tx_valid <= 1'b1;
+                                            spi_start <= 1'b1;
+                                        end else begin
+                                            // No payload - done, go back to wait
+                                            cs_n <= 1'b1;
+                                            byte_cnt <= 8'd0;
+                                            state <= WAIT_DATA;
+                                        end
+                                    end
                                 end else begin
                                     // Invalid length
                                     cs_n <= 1'b1; 
@@ -497,6 +517,20 @@ module bno085_controller (
                         spi_tx_data <= 8'h00; 
                         spi_tx_valid <= 1'b1; 
                         spi_start <= 1'b1;
+                    end else if (!spi_busy && byte_cnt >= 0 && byte_cnt < (packet_length - 4) && 
+                                (channel != CHANNEL_REPORTS && channel != CHANNEL_GYRO_RV)) begin
+                        // Draining non-report channel payload
+                        byte_cnt <= byte_cnt + 1;
+                        if ((byte_cnt + 1) < (packet_length - 4)) begin
+                            spi_tx_data <= 8'h00;
+                            spi_tx_valid <= 1'b1;
+                            spi_start <= 1'b1;
+                        end else begin
+                            // Done draining - go back to wait
+                            cs_n <= 1'b1;
+                            byte_cnt <= 8'd0;
+                            state <= WAIT_DATA;
+                        end
                     end
                 end
                 
