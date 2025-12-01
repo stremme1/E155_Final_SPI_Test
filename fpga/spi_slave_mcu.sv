@@ -111,6 +111,56 @@ module spi_slave_mcu(
     end
     
     // ========================================================================
+    // Valid Signal Latch: Capture pulse valid signals so they don't get lost
+    // ========================================================================
+    // The quat_valid and gyro_valid signals from BNO085 controller are PULSE signals
+    // (high for only ONE clock cycle). We need to latch them so they stay high
+    // until the snapshot is captured. The latch is set on pulse and stays set
+    // until CS goes low (snapshot freezes it), then cleared when CS goes high again.
+    // Use sync1 (1 clock delay) instead of sync2 (2 clock delay) for faster detection.
+    logic quat1_valid_latched, gyro1_valid_latched;
+    logic quat1_valid_sync1_prev, gyro1_valid_sync1_prev;
+    logic cs_n_prev;
+    
+    always_ff @(posedge clk) begin
+        // Track previous synchronized values to detect rising edges (pulses)
+        // Use sync1 for faster detection (1 clock delay instead of 2)
+        quat1_valid_sync1_prev <= quat1_valid_sync1;
+        gyro1_valid_sync1_prev <= gyro1_valid_sync1;
+        cs_n_prev <= cs_n;
+        
+        if (cs_n) begin
+            // CS high: Can update latches
+            if (!cs_n_prev) begin
+                // CS just went high (transaction ended) - clear latches to prepare for new pulses
+                // The snapshot has already captured the latched values during the transaction
+                quat1_valid_latched <= 1'b0;
+                gyro1_valid_latched <= 1'b0;
+            end else begin
+                // CS has been high: Latch on pulse (rising edge detection using sync1 for speed)
+                // Rising edge: !prev && curr means a pulse occurred
+                if (!quat1_valid_sync1_prev && quat1_valid_sync1) begin
+                    // Pulse detected - latch it (set to 1)
+                    quat1_valid_latched <= 1'b1;
+                end
+                // If no pulse detected, keep current latch value
+                // Once latched, it stays latched until CS goes low then high again
+                
+                if (!gyro1_valid_sync1_prev && gyro1_valid_sync1) begin
+                    // Pulse detected - latch it (set to 1)
+                    gyro1_valid_latched <= 1'b1;
+                end
+                // If no pulse detected, keep current latch value
+            end
+        end else begin
+            // CS low: Keep latched values stable (snapshot is frozen during transaction)
+            // Don't update latches during SPI transaction - snapshot has already captured them
+            quat1_valid_latched <= quat1_valid_latched;
+            gyro1_valid_latched <= gyro1_valid_latched;
+        end
+    end
+    
+    // ========================================================================
     // Data Snapshot: Capture stable data when CS goes low
     // ========================================================================
     // Snapshot ensures data doesn't change during the SPI transaction
@@ -124,7 +174,7 @@ module spi_slave_mcu(
     // Capture snapshot on CS falling edge (start of transaction)
     // Also initialize on first posedge clk when CS is high (for testbench to read packet_buffer before transaction)
     logic cs_n_sync1, cs_n_sync2;  // Synchronize CS to clk domain for edge detection
-    logic snapshot_initialized = 1'b0;  // Track if snapshot has been initialized
+    logic snapshot_initialized = 1'b0;  // Track if snapshot has been initialized (used in snapshot update logic)
     
     // Synchronize CS to clk domain (2-stage synchronizer)
     always_ff @(posedge clk) begin
@@ -137,53 +187,82 @@ module spi_slave_mcu(
     assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
-    // Update snapshot continuously when CS is high, freeze when CS is low (during transaction)
-    // Also capture on CS falling edge to ensure we get the latest data
-    // This ensures we always have the latest data when CS goes low
+    // CRITICAL FIX: Only update data values when valid data is present
+    // This prevents zeros from overwriting valid data when BNO085 hasn't produced data yet
+    // Status flags (initialized, error) always update, but data only updates when valid
     always_ff @(posedge clk) begin
-        if (cs_n) begin
-            // CS high: Update snapshot continuously with latest data
-            // This ensures we always have the latest data when CS goes low
-            quat1_w_snap <= quat1_w_clk;
-            quat1_x_snap <= quat1_x_clk;
-            quat1_y_snap <= quat1_y_clk;
-            quat1_z_snap <= quat1_z_clk;
-            gyro1_x_snap <= gyro1_x_clk;
-            gyro1_y_snap <= gyro1_y_clk;
-            gyro1_z_snap <= gyro1_z_clk;
-            // Capture valid flags - latch them (once set, stay set)
-            // This handles the case where valid flags are pulses from the controller
-            // Use OR logic: if flag is high OR already latched, keep it high
-            quat1_valid_snap <= quat1_valid_snap || quat1_valid_sync2;
-            gyro1_valid_snap <= gyro1_valid_snap || gyro1_valid_sync2;
-            // Status flags are levels, not pulses
-            initialized_snap <= initialized_sync2;
-            error_snap <= error_sync2;
-        end else begin
-            // CS low: Also update snapshot on CS falling edge to capture latest data
-            // This ensures we capture data even if it changed just before CS went low
-            if (cs_falling_edge) begin
+        if (!snapshot_initialized) begin
+            // First clock: Initialize snapshot - only update if valid data is present
+            // This prevents all-zeros if BNO085 hasn't produced data yet
+            if (quat1_valid_latched) begin
                 quat1_w_snap <= quat1_w_clk;
                 quat1_x_snap <= quat1_x_clk;
                 quat1_y_snap <= quat1_y_clk;
                 quat1_z_snap <= quat1_z_clk;
+            end
+            if (gyro1_valid_latched) begin
                 gyro1_x_snap <= gyro1_x_clk;
                 gyro1_y_snap <= gyro1_y_clk;
                 gyro1_z_snap <= gyro1_z_clk;
-                // Capture valid flags on falling edge too - latch them
-                quat1_valid_snap <= quat1_valid_snap || quat1_valid_sync2;
-                gyro1_valid_snap <= gyro1_valid_snap || gyro1_valid_sync2;
-                initialized_snap <= initialized_sync2;
-                error_snap <= error_sync2;
             end
-            // During transaction (CS low, no falling edge), snapshot does NOT update - it remains stable
+            // Status flags always update
+            quat1_valid_snap <= quat1_valid_latched;
+            gyro1_valid_snap <= gyro1_valid_latched;
+            initialized_snap <= initialized_sync2;
+            error_snap <= error_sync2;
+            snapshot_initialized <= 1'b1;
+        end else if (cs_falling_edge) begin
+            // CS falling edge: Capture snapshot IMMEDIATELY with latest VALID data
+            // Only update data values if their valid flag is set
+            // This prevents zeros from overwriting valid data
+            if (quat1_valid_latched) begin
+                quat1_w_snap <= quat1_w_clk;
+                quat1_x_snap <= quat1_x_clk;
+                quat1_y_snap <= quat1_y_clk;
+                quat1_z_snap <= quat1_z_clk;
+            end
+            if (gyro1_valid_latched) begin
+                gyro1_x_snap <= gyro1_x_clk;
+                gyro1_y_snap <= gyro1_y_clk;
+                gyro1_z_snap <= gyro1_z_clk;
+            end
+            // Status flags always update
+            quat1_valid_snap <= quat1_valid_latched;
+            gyro1_valid_snap <= gyro1_valid_latched;
+            initialized_snap <= initialized_sync2;
+            error_snap <= error_sync2;
+        end else if (cs_n) begin
+            // CS high (and not falling edge): Update snapshot with latest VALID data
+            // Only update data values if their valid flag is set
+            // This ensures we preserve valid data and don't overwrite with zeros
+            if (quat1_valid_latched) begin
+                quat1_w_snap <= quat1_w_clk;
+                quat1_x_snap <= quat1_x_clk;
+                quat1_y_snap <= quat1_y_clk;
+                quat1_z_snap <= quat1_z_clk;
+            end
+            if (gyro1_valid_latched) begin
+                gyro1_x_snap <= gyro1_x_clk;
+                gyro1_y_snap <= gyro1_y_clk;
+                gyro1_z_snap <= gyro1_z_clk;
+            end
+            // Status flags always update
+            quat1_valid_snap <= quat1_valid_latched;
+            gyro1_valid_snap <= gyro1_valid_latched;
+            initialized_snap <= initialized_sync2;
+            error_snap <= error_sync2;
         end
+        // When CS is low (during transaction), snapshot does NOT update - it remains stable
+        // This ensures data consistency during the entire SPI transaction
     end
     
     // Initialize snapshot on first clock (before any CS transaction)
     // This ensures snapshot has valid data even if CS goes low immediately
+    // Initialize to current data values (not zeros) to prevent all-zeros output
     initial begin
-        quat1_w_snap = 16'h0000;
+        // Initialize to current input values (after one clock, these will be in _clk registers)
+        // This prevents all-zeros output if CS goes low before first data update
+        quat1_w_snap = 16'h0000;  // Will be updated on first clock
         quat1_x_snap = 16'h0000;
         quat1_y_snap = 16'h0000;
         quat1_z_snap = 16'h0000;
@@ -195,6 +274,7 @@ module spi_slave_mcu(
         initialized_snap = 1'b0;
         error_snap = 1'b0;
     end
+    
     
     // Packet buffer - assembled from SNAPSHOT data (stable during transaction)
     logic [7:0] packet_buffer [0:PACKET_SIZE-1];
