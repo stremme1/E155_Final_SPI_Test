@@ -138,7 +138,8 @@ module spi_slave_mcu(
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
     // Update snapshot continuously when CS is high, freeze when CS is low (during transaction)
-    // Also initialize snapshot on first clock to ensure it has data even before first CS transaction
+    // Also capture on CS falling edge to ensure we get the latest data
+    // This ensures we always have the latest data when CS goes low
     always_ff @(posedge clk) begin
         if (cs_n) begin
             // CS high: Update snapshot continuously with latest data
@@ -150,14 +151,33 @@ module spi_slave_mcu(
             gyro1_x_snap <= gyro1_x_clk;
             gyro1_y_snap <= gyro1_y_clk;
             gyro1_z_snap <= gyro1_z_clk;
-            quat1_valid_snap <= quat1_valid_sync2;
-            gyro1_valid_snap <= gyro1_valid_sync2;
+            // Capture valid flags - latch them (once set, stay set)
+            // This handles the case where valid flags are pulses from the controller
+            // Use OR logic: if flag is high OR already latched, keep it high
+            quat1_valid_snap <= quat1_valid_snap || quat1_valid_sync2;
+            gyro1_valid_snap <= gyro1_valid_snap || gyro1_valid_sync2;
+            // Status flags are levels, not pulses
             initialized_snap <= initialized_sync2;
             error_snap <= error_sync2;
+        end else begin
+            // CS low: Also update snapshot on CS falling edge to capture latest data
+            // This ensures we capture data even if it changed just before CS went low
+            if (cs_falling_edge) begin
+                quat1_w_snap <= quat1_w_clk;
+                quat1_x_snap <= quat1_x_clk;
+                quat1_y_snap <= quat1_y_clk;
+                quat1_z_snap <= quat1_z_clk;
+                gyro1_x_snap <= gyro1_x_clk;
+                gyro1_y_snap <= gyro1_y_clk;
+                gyro1_z_snap <= gyro1_z_clk;
+                // Capture valid flags on falling edge too - latch them
+                quat1_valid_snap <= quat1_valid_snap || quat1_valid_sync2;
+                gyro1_valid_snap <= gyro1_valid_snap || gyro1_valid_sync2;
+                initialized_snap <= initialized_sync2;
+                error_snap <= error_sync2;
+            end
+            // During transaction (CS low, no falling edge), snapshot does NOT update - it remains stable
         end
-        // When CS is low (during transaction), snapshot does NOT update - it remains stable
-        // This ensures data consistency during the entire SPI transaction
-        // Note: Snapshot is initialized on first clock cycle when CS is high
     end
     
     // Initialize snapshot on first clock (before any CS transaction)
