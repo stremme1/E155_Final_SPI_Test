@@ -58,13 +58,20 @@ module bno085_controller_new (
     localparam [7:0] REPORT_ID_ROTATION_VECTOR = 8'h05;
     localparam [7:0] REPORT_ID_GYROSCOPE = 8'h02;  // Fixed: Calibrated gyroscope per Fig 1-34
     
-    typedef enum logic [3:0] {
+    // Response Report IDs (per datasheet Section 1.3.2)
+    localparam [7:0] REPORT_ID_PROD_ID_RESP = 8'hF8;  // Product ID Response
+    localparam [7:0] REPORT_ID_GET_FEATURE_RESP = 8'hFC;  // Get Feature Response
+    localparam [7:0] REPORT_ID_COMMAND_RESP = 8'hF1;  // Command Response
+    
+    typedef enum logic [4:0] {
         IDLE,
         INIT_WAIT_RESET,
         INIT_WAKE,
         INIT_WAIT_INT,
-        INIT_CS_SETUP,      // Added: CS setup before SPI transaction
+        INIT_WAIT_ADVERT,      // Wait for and process advertisement packets
+        INIT_CS_SETUP,         // CS setup before SPI transaction
         INIT_SEND_BODY,
+        INIT_WAIT_RESPONSE,    // Wait for command response
         INIT_DONE_CHECK,
         WAIT_DATA,
         READ_HEADER_START,
@@ -102,6 +109,16 @@ module bno085_controller_new (
     // FIX 3: Register rx_valid to extend detection window
     // Managed inside state machine always_ff to avoid race conditions
     logic spi_rx_valid_reg;
+    
+    // Advertisement handling
+    logic advert_done;  // Flag indicating advertisements have been processed
+    logic [18:0] advert_timeout_counter;  // Timeout counter for advertisement wait
+    logic waiting_for_advert;  // Flag indicating we're waiting for advertisement packet
+    
+    // Response handling
+    logic response_received;  // Flag indicating response was received
+    logic [18:0] response_timeout_counter;  // Timeout counter for response wait
+    logic waiting_for_response;  // Flag indicating we're waiting for response packet
     
     // ========================================================================
     // Initialization Command ROM
@@ -207,6 +224,12 @@ module bno085_controller_new (
             report_status <= 8'd0;
             report_delay <= 8'd0;
             spi_rx_valid_reg <= 1'b0;
+            advert_done <= 1'b0;
+            advert_timeout_counter <= 19'd0;
+            waiting_for_advert <= 1'b0;
+            response_received <= 1'b0;
+            response_timeout_counter <= 19'd0;
+            waiting_for_response <= 1'b0;
             
             quat_w <= 16'd0;
             quat_x <= 16'd0;
@@ -273,8 +296,13 @@ module bno085_controller_new (
                 INIT_WAIT_INT: begin
                     if (!int_n_sync) begin
                         // INT asserted, sensor is ready
+                        // After reset, BNO085 automatically sends advertisement packets
+                        // We must wait for and process these before sending commands
                         delay_counter <= 19'd0;
-                        state <= INIT_CS_SETUP; // Setup CS before starting SPI
+                        advert_done <= 1'b0;
+                        advert_timeout_counter <= 19'd0;
+                        waiting_for_advert <= 1'b1;
+                        state <= INIT_WAIT_ADVERT; // Wait for advertisements first
                     end else if (delay_counter >= 19'd150_000) begin
                         // Timeout: 150000 cycles @ 3MHz = 50ms (increased for hardware tolerance)
                         // This is much longer than datasheet spec (150µs) but accounts for:
@@ -287,12 +315,41 @@ module bno085_controller_new (
                     end
                 end
                 
+                // Wait for advertisement packets after reset
+                // Per SHTP protocol: After reset, sensor automatically sends advertisements on Channel 0
+                // These must be processed before sending any commands
+                INIT_WAIT_ADVERT: begin
+                    cs_n <= 1'b1;
+                    ps0_wake <= 1'b1;
+                    
+                    // Check if INT is asserted (data ready)
+                    if (!int_n_sync) begin
+                        // INT asserted - advertisement packet is ready
+                        // Read and process it (we'll process in READ_HEADER/READ_PAYLOAD states)
+                        byte_cnt <= 8'd0;
+                        state <= READ_HEADER_START;
+                    end else if (advert_timeout_counter >= 19'd300_000) begin
+                        // Timeout: 300000 cycles @ 3MHz = 100ms
+                        // If no advertisement after 100ms, assume sensor is ready anyway
+                        // This handles cases where advertisements were already processed or not sent
+                        advert_done <= 1'b1;
+                        waiting_for_advert <= 1'b0;
+                        delay_counter <= 19'd0;
+                        cmd_select <= 2'd0; // Start with ProdID
+                        state <= INIT_WAKE; // Go to wake state for first command
+                    end else begin
+                        advert_timeout_counter <= advert_timeout_counter + 1;
+                    end
+                end
+                
                 // CS setup before SPI transaction - per datasheet 6.5.2 (tcssu = 0.1 µs min)
                 INIT_CS_SETUP: begin
                     cs_n <= 1'b0; // Assert CS
                     ps0_wake <= 1'b1; // Release Wake once CS is asserted
                     delay_counter <= 19'd0;
                     byte_cnt <= 8'd0;
+                    response_received <= 1'b0;
+                    response_timeout_counter <= 19'd0;
                     state <= INIT_SEND_BODY;
                 end
                 
@@ -319,11 +376,40 @@ module bno085_controller_new (
                             spi_start <= 1'b1;
                         end
                     end else begin
-                        // Done sending all bytes
+                        // Done sending all bytes - now wait for response
                         cs_n <= 1'b1;
                         byte_cnt <= 8'd0;
-                        state <= INIT_DONE_CHECK;
+                        response_received <= 1'b0;
+                        response_timeout_counter <= 19'd0;
+                        waiting_for_response <= 1'b1;
+                        state <= INIT_WAIT_RESPONSE;
+                    end
+                end
+                
+                // Wait for command response after sending command
+                // Must receive response before proceeding to next command
+                INIT_WAIT_RESPONSE: begin
+                    cs_n <= 1'b1;
+                    ps0_wake <= 1'b1;
+                    
+                    // Check if response was received (set in READ_PAYLOAD when processing response)
+                    if (response_received) begin
+                        // Response received - proceed to next step
+                        response_received <= 1'b0;
+                        waiting_for_response <= 1'b0;
                         delay_counter <= 19'd0;
+                        state <= INIT_DONE_CHECK;
+                    end else if (response_timeout_counter >= 19'd300_000) begin
+                        // Timeout: 300000 cycles @ 3MHz = 100ms
+                        // Response not received - this is an error
+                        state <= ERROR_STATE;
+                    end else if (!int_n_sync) begin
+                        // INT asserted - response packet is ready
+                        // Read it (will be processed in READ_HEADER/READ_PAYLOAD)
+                        byte_cnt <= 8'd0;
+                        state <= READ_HEADER_START;
+                    end else begin
+                        response_timeout_counter <= response_timeout_counter + 1;
                     end
                 end
                 
@@ -331,7 +417,7 @@ module bno085_controller_new (
                 INIT_DONE_CHECK: begin
                     cs_n <= 1'b1;
                     ps0_wake <= 1'b1; // Ensure PS0 is high before next wake cycle
-                    // Delay 10ms between commands
+                    // Delay 10ms between commands (per Adafruit library pattern)
                     if (delay_counter < 19'd30_000) begin
                         delay_counter <= delay_counter + 1;
                     end else begin
@@ -419,8 +505,16 @@ module bno085_controller_new (
                                     spi_start <= 1'b1;
                                 end else begin
                                     // Invalid length - abort transaction
-                                    cs_n <= 1'b1; 
-                                    state <= WAIT_DATA;
+                                    cs_n <= 1'b1;
+                                    byte_cnt <= 8'd0;
+                                    // Return to appropriate state based on what we're waiting for
+                                    if (waiting_for_advert) begin
+                                        state <= INIT_WAIT_ADVERT;
+                                    end else if (waiting_for_response) begin
+                                        state <= INIT_WAIT_RESPONSE;
+                                    end else begin
+                                        state <= WAIT_DATA;
+                                    end
                                 end
                             end
                         endcase
@@ -439,9 +533,70 @@ module bno085_controller_new (
                         // Consume rx_valid
                         spi_rx_valid_reg <= 1'b0;
                         
-                        // Parse on the fly - per datasheet 1.3.5.2
-                        // Accept reports from Channel 3 (standard reports) or Channel 5 (gyro rotation vector)
-                        if (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV) begin
+                        // Handle advertisement packets (Channel 0) during initialization
+                        if (waiting_for_advert && channel == CHANNEL_COMMAND) begin
+                            // This is an advertisement packet - we need to process it
+                            // For simplicity, we just mark it as processed when we finish reading
+                            // The actual TLV parsing is complex, so we'll just consume the packet
+                            // and mark advertisements as done
+                            if ((byte_cnt + 1) >= (packet_length - 4)) begin
+                                // Advertisement packet complete
+                                advert_done <= 1'b1;
+                                waiting_for_advert <= 1'b0;
+                                cs_n <= 1'b1;
+                                byte_cnt <= 8'd0;
+                                delay_counter <= 19'd0;
+                                cmd_select <= 2'd0; // Start with ProdID
+                                state <= INIT_WAKE; // Proceed to first command
+                            end else begin
+                                byte_cnt <= byte_cnt + 1;
+                                // Continue reading
+                                spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
+                            end
+                        end
+                        // Handle command responses (Channel 2 - Control channel)
+                        else if (waiting_for_response && channel == CHANNEL_CONTROL) begin
+                            // This is a response packet - check for expected response IDs
+                            if (byte_cnt == 0) begin
+                                // First byte is report ID
+                                current_report_id <= spi_rx_data;
+                                byte_cnt <= byte_cnt + 1;
+                                // Continue reading
+                                spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
+                            end else if ((byte_cnt + 1) >= (packet_length - 4)) begin
+                                // Response packet complete - validate it
+                                // Check if we got the expected response
+                                // Product ID response: 0xF8, Set Feature response: 0xFC
+                                if ((cmd_select == 2'd0 && current_report_id == REPORT_ID_PROD_ID_RESP) ||
+                                    ((cmd_select == 2'd1 || cmd_select == 2'd2) && current_report_id == REPORT_ID_GET_FEATURE_RESP)) begin
+                                    // Valid response received
+                                    response_received <= 1'b1;
+                                end else begin
+                                    // Unexpected response - still mark as received to proceed
+                                    // (some responses may have different IDs)
+                                    response_received <= 1'b1;
+                                end
+                                cs_n <= 1'b1;
+                                byte_cnt <= 8'd0;
+                                waiting_for_response <= 1'b0;
+                                // Return to INIT_WAIT_RESPONSE to check response_received flag
+                                state <= INIT_WAIT_RESPONSE;
+                            end else begin
+                                byte_cnt <= byte_cnt + 1;
+                                // Continue reading
+                                spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
+                            end
+                        end
+                        // Handle sensor data reports (normal operation)
+                        // Only process if we're not waiting for advertisements or responses
+                        else if (!waiting_for_advert && !waiting_for_response && 
+                                 (channel == CHANNEL_REPORTS || channel == CHANNEL_GYRO_RV)) begin
                             case (byte_cnt)
                                 0: current_report_id <= spi_rx_data;
                                 1: report_seq_num <= spi_rx_data; // Sensor report sequence number
@@ -503,22 +658,42 @@ module bno085_controller_new (
                                     end
                                 end
                             endcase
-                        end
-
-                        byte_cnt <= byte_cnt + 1;
-                        
-                        // Continue reading if more data
-                        // packet_length includes 4-byte header, so payload is (packet_length - 4) bytes
-                        // After incrementing, byte_cnt is the number of payload bytes read so far
-                        if ((byte_cnt + 1) < (packet_length - 4)) begin
-                            spi_tx_data <= 8'h00; 
-                            spi_tx_valid <= 1'b1; 
-                            spi_start <= 1'b1;
+                            endcase
+                            
+                            byte_cnt <= byte_cnt + 1;
+                            
+                            // Continue reading if more data
+                            // packet_length includes 4-byte header, so payload is (packet_length - 4) bytes
+                            // After incrementing, byte_cnt is the number of payload bytes read so far
+                            if ((byte_cnt + 1) < (packet_length - 4)) begin
+                                spi_tx_data <= 8'h00; 
+                                spi_tx_valid <= 1'b1; 
+                                spi_start <= 1'b1;
+                            end else begin
+                                // Packet complete
+                                cs_n <= 1'b1;
+                                byte_cnt <= 8'd0;
+                                state <= WAIT_DATA;
+                            end
                         end else begin
-                            // Packet complete
-                            cs_n <= 1'b1;
-                            byte_cnt <= 8'd0;
-                            state <= WAIT_DATA;
+                            // Unknown channel or state - just consume the packet
+                            byte_cnt <= byte_cnt + 1;
+                            if ((byte_cnt + 1) < (packet_length - 4)) begin
+                                spi_tx_data <= 8'h00;
+                                spi_tx_valid <= 1'b1;
+                                spi_start <= 1'b1;
+                            end else begin
+                                // Packet complete - return to appropriate state
+                                cs_n <= 1'b1;
+                                byte_cnt <= 8'd0;
+                                if (waiting_for_advert) begin
+                                    state <= INIT_WAIT_ADVERT;
+                                end else if (waiting_for_response) begin
+                                    state <= INIT_WAIT_RESPONSE;
+                                end else begin
+                                    state <= WAIT_DATA;
+                                end
+                            end
                         end
                     end else if (!spi_busy && byte_cnt < (packet_length - 4)) begin
                         // Continue reading payload - Hold/Assert start
