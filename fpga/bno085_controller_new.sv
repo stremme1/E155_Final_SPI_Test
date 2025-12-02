@@ -96,9 +96,8 @@ module bno085_controller_new (
     localparam [22:0] DELAY_100MS = 23'd300_000;  // 100ms @ 3MHz = 300,000 cycles
     localparam [22:0] DELAY_1MS = 23'd3_000;  // 1ms @ 3MHz = 3,000 cycles
     
-    // Internal reset control
-    logic rst_n;  // Internal reset (controller ready)
-    logic [22:0] rst_delay_counter;  // Reset delay counter
+    // BNO085 reset control (separate from controller reset)
+    logic [22:0] bno085_rst_delay_counter;  // BNO085 reset delay counter
     
     typedef enum logic [4:0] {
         IDLE,
@@ -256,46 +255,44 @@ module bno085_controller_new (
     endfunction
 
     // ========================================================================
-    // BNO085 Reset Control
+    // BNO085 Reset Control (separate from controller reset)
     // ========================================================================
     // Per datasheet 6.5.3: BNO085 needs ~94ms after NRST release before ready
     // Sequence: FPGA reset releases -> pulse BNO085 reset low -> wait 100ms -> release BNO085 reset
     // CRITICAL: Reset signal is ACTIVE LOW: 0 = reset active, 1 = reset released
+    // CRITICAL FIX: Controller state machine uses fpga_rst_n directly (no delay)
+    // Only BNO085 reset is delayed - controller can run immediately
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
             // FPGA reset active: keep BNO085 in reset and reset counter
-            rst_delay_counter <= 23'd0;
+            bno085_rst_delay_counter <= 23'd0;
             bno085_rst_n <= 1'b0;  // Active low reset - keep sensor in reset (LOW = reset active)
-            rst_n <= 1'b0;  // Keep controller in reset too
         end else begin
             // FPGA reset released: count up to delay
-            if (rst_delay_counter < DELAY_100MS) begin
-                rst_delay_counter <= rst_delay_counter + 1;
+            if (bno085_rst_delay_counter < DELAY_100MS) begin
+                bno085_rst_delay_counter <= bno085_rst_delay_counter + 1;
             end
             
             // Reset pulse sequence
             // 1. Keep reset LOW (active) for first 1ms to ensure proper reset pulse
             // 2. Keep reset LOW until 100ms total (allows BNO085 to initialize per datasheet)
             // 3. Release reset (set to HIGH) after 100ms
-            if (rst_delay_counter < DELAY_1MS) begin
+            if (bno085_rst_delay_counter < DELAY_1MS) begin
                 // First 1ms: Keep reset LOW (active low = 0) to ensure proper reset pulse
                 bno085_rst_n <= 1'b0;
-                rst_n <= 1'b0;  // Controller still in reset
-            end else if (rst_delay_counter >= DELAY_100MS) begin
+            end else if (bno085_rst_delay_counter >= DELAY_100MS) begin
                 // After 100ms: Release BNO085 reset (set to HIGH = 1 means reset released)
                 bno085_rst_n <= 1'b1;
-                rst_n <= 1'b1;  // Release controller reset - ready to start
             end else begin
                 // Between 1ms and 100ms: Keep reset LOW (still in reset, active)
                 bno085_rst_n <= 1'b0;
-                rst_n <= 1'b0;  // Controller still in reset
             end
         end
     end
 
-    // INT pin synchronization
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+    // INT pin synchronization - use fpga_rst_n directly (no delay)
+    always_ff @(posedge clk or negedge fpga_rst_n) begin
+        if (!fpga_rst_n) begin
             int_n_sync <= 1'b1;
             int_n_prev <= 1'b1;
         end else begin
@@ -304,8 +301,9 @@ module bno085_controller_new (
         end
     end
     
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+    // State machine - use fpga_rst_n directly (no delay, like original)
+    always_ff @(posedge clk or negedge fpga_rst_n) begin
+        if (!fpga_rst_n) begin
             state <= INIT_WAIT_RESET;
             initialized <= 1'b0;
             error <= 1'b0;
@@ -596,9 +594,9 @@ module bno085_controller_new (
                             cs_hold_delay <= cs_hold_delay + 1;
                         end else begin
                             // CS hold time complete, release CS and wait for response
-                            cs_n <= 1'b1;
+                        cs_n <= 1'b1;
                             cs_hold_delay <= 3'd0;
-                            byte_cnt <= 8'd0;
+                        byte_cnt <= 8'd0;
                             response_received <= 1'b0;
                             response_timeout_counter <= 19'd0;
                             waiting_for_response <= 1'b1;
