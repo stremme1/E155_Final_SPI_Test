@@ -67,12 +67,13 @@ module drum_trigger_top (
     
     // BNO085 Reset with delay after FPGA reset release
     // Per datasheet 6.5.3: BNO085 needs ~94ms after NRST release before ready
-    // Sequence: FPGA reset releases -> wait 100ms -> release BNO085 reset -> wait 1.9s -> release controller reset
+    // Sequence: FPGA reset releases -> pulse BNO085 reset low -> wait 100ms -> release BNO085 reset -> wait 1.9s -> release controller reset
+    // CRITICAL: Reset must be pulsed (low then high) to properly reset the sensor
     always_ff @(posedge clk or negedge fpga_rst_n) begin
         if (!fpga_rst_n) begin
             // FPGA reset is active: keep BNO085 in reset and reset counter
             rst_delay_counter <= 23'd0;
-            bno085_rst_n_delayed <= 1'b0;
+            bno085_rst_n_delayed <= 1'b0;  // Active low reset - keep sensor in reset
             controller_rst_n <= 1'b0;  // Keep controller in reset too
         end else begin
             // FPGA reset released: count up to delay
@@ -80,11 +81,18 @@ module drum_trigger_top (
                 rst_delay_counter <= rst_delay_counter + 1;
             end
             
-            // Release BNO085 reset after 100ms (allows BNO085 to initialize per datasheet)
-            if (rst_delay_counter >= DELAY_100MS) begin
-                bno085_rst_n_delayed <= 1'b1;  // Release BNO085 reset
+            // CRITICAL: Reset pulse sequence
+            // 1. Keep reset low for first 1ms (3000 cycles @ 3MHz) to ensure proper reset pulse
+            // 2. Release reset after 100ms total (allows BNO085 to initialize per datasheet)
+            if (rst_delay_counter < 19'd3_000) begin
+                // First 1ms: Keep reset low (active low = 0) to ensure proper reset pulse
+                bno085_rst_n_delayed <= 1'b0;
+            end else if (rst_delay_counter >= DELAY_100MS) begin
+                // After 100ms: Release BNO085 reset (active low = 1 means reset released)
+                bno085_rst_n_delayed <= 1'b1;
             end else begin
-                bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset
+                // Between 1ms and 100ms: Keep reset low (still in reset)
+                bno085_rst_n_delayed <= 1'b0;
             end
             
             // Release controller reset after full 2-second delay
