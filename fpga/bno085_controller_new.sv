@@ -303,12 +303,15 @@ module bno085_controller_new (
             end
             
             case (state)
-                // 1. Wait after reset to ensure sensor is ready (~100ms)
+                // 1. Wait after reset to ensure sensor is ready
+                // Note: BNO085 reset was already released 100ms ago by reset control logic
+                // So we only need a short delay here to ensure sensor is stable
                 // Per datasheet 5.2.1: BNO085 may assert INT automatically after reset
                 INIT_WAIT_RESET: begin
                     cs_n <= 1'b1;
                     ps0_wake <= 1'b1; // Ensure PS0 is high (required for SPI mode)
-                    if (delay_counter < 19'd300_000) begin
+                    // Short delay: 10ms (30,000 cycles @ 3MHz) since reset was already released
+                    if (delay_counter < 19'd30_000) begin
                         delay_counter <= delay_counter + 1;
                     end else begin
                         delay_counter <= 19'd0;
@@ -349,7 +352,7 @@ module bno085_controller_new (
 
                 // 3. Wait for INT low (Sensor Ready) with timeout - per datasheet 6.5.4 (twk = 150 µs max)
                 // Hardware may need significantly more time due to signal propagation, sensor wake-up delays,
-                // and PCB routing delays. Using 50ms timeout provides substantial margin for hardware tolerance.
+                // and PCB routing delays. Using 200ms timeout provides substantial margin for hardware tolerance.
                 INIT_WAIT_INT: begin
                     if (!int_n_sync) begin
                         // INT asserted, sensor is ready
@@ -360,12 +363,13 @@ module bno085_controller_new (
                         advert_timeout_counter <= 19'd0;
                         waiting_for_advert <= 1'b1;
                         state <= INIT_WAIT_ADVERT; // Wait for advertisements first
-                    end else if (delay_counter >= 19'd150_000) begin
-                        // Timeout: 150000 cycles @ 3MHz = 50ms (increased for hardware tolerance)
+                    end else if (delay_counter >= 19'd600_000) begin
+                        // Timeout: 600000 cycles @ 3MHz = 200ms (increased for hardware tolerance)
                         // This is much longer than datasheet spec (150µs) but accounts for:
                         // - Signal propagation delays on PCB
                         // - Sensor wake-up time variations
                         // - Clock domain crossing delays
+                        // - Sensor may need more time after reset
                         state <= ERROR_STATE;
                     end else begin
                         delay_counter <= delay_counter + 1;
@@ -389,8 +393,8 @@ module bno085_controller_new (
                     end else begin
                         // INT not asserted - no more advertisement packets
                         // Check if we've read at least one advertisement or timed out
-                        if (advert_done || advert_timeout_counter >= 19'd300_000) begin
-                            // Advertisements processed or timeout - proceed to initialization commands
+                        if (advert_done || advert_timeout_counter >= 19'd600_000) begin
+                            // Advertisements processed or timeout (200ms) - proceed to initialization commands
                             advert_done <= 1'b1;
                             waiting_for_advert <= 1'b0;
                             delay_counter <= 19'd0;
@@ -429,8 +433,8 @@ module bno085_controller_new (
                         // INT asserted - sensor is ready, assert CS and start sending
                         cs_n <= 1'b0; // Assert CS now that INT is low
                         state <= INIT_SEND_BODY;
-                    end else if (delay_counter >= 19'd150_000) begin
-                        // Timeout: 150000 cycles @ 3MHz = 50ms
+                    end else if (delay_counter >= 19'd600_000) begin
+                        // Timeout: 600000 cycles @ 3MHz = 200ms
                         // INT never asserted - sensor may not be ready
                         state <= ERROR_STATE;
                     end else begin

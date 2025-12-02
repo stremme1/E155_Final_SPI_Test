@@ -104,7 +104,7 @@ module drum_trigger_top (
     
     // BNO085 Controller for Sensor 1
     // Reset control is now handled inside the controller
-    bno085_controller_new bno085_ctrl_inst1 (
+    bno085_controller_new bno085_controller (
         .clk(clk),
         .fpga_rst_n(fpga_rst_n),  // Pass FPGA reset to controller
         .spi_start(spi1_start),
