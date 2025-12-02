@@ -359,19 +359,34 @@ module bno085_controller_new (
                 end
                 
                 // CS setup before SPI transaction - per datasheet 6.5.2 (tcssu = 0.1 µs min)
+                // CRITICAL: Per Adafruit library, we must wait for INT before writing
+                // The sensor asserts INT to indicate it's ready to receive data
                 INIT_CS_SETUP: begin
-                    cs_n <= 1'b0; // Assert CS
-                    ps0_wake <= 1'b1; // Release Wake once CS is asserted
+                    cs_n <= 1'b1; // Keep CS high until INT asserts
+                    ps0_wake <= 1'b1; // Release Wake
                     delay_counter <= 19'd0;
                     byte_cnt <= 8'd0;
                     response_received <= 1'b0;
                     response_timeout_counter <= 19'd0;
-                    state <= INIT_SEND_BODY;
+                    // Wait for INT to assert before starting SPI transaction
+                    if (!int_n_sync) begin
+                        // INT asserted - sensor is ready, assert CS and start sending
+                        cs_n <= 1'b0; // Assert CS now that INT is low
+                        state <= INIT_SEND_BODY;
+                    end else if (delay_counter >= 19'd150_000) begin
+                        // Timeout: 150000 cycles @ 3MHz = 50ms
+                        // INT never asserted - sensor may not be ready
+                        state <= ERROR_STATE;
+                    end else begin
+                        delay_counter <= delay_counter + 1;
+                    end
                 end
                 
                 // 4. Send Command Body
+                // Per Adafruit library: INT must be asserted before writing
+                // Once CS goes low, INT deasserts, but we've already verified it was asserted
                 INIT_SEND_BODY: begin
-                    cs_n <= 1'b0;
+                    cs_n <= 1'b0; // Keep CS low for entire packet
                     
                     if (byte_cnt < get_cmd_len(cmd_select)) begin
                         if ((spi_rx_valid || spi_rx_valid_reg) && !spi_busy) begin
@@ -380,6 +395,8 @@ module bno085_controller_new (
                             byte_cnt <= byte_cnt + 1;
                             
                             // Start next byte immediately if more to send
+                            // Note: For multi-byte packets, we continue in same CS transaction
+                            // INT may deassert when CS goes low, but we keep CS low for full packet
                             if ((byte_cnt + 1) < get_cmd_len(cmd_select)) begin
                                 spi_tx_data <= get_init_byte(cmd_select, byte_cnt + 1);
                                 spi_tx_valid <= 1'b1;
@@ -392,7 +409,7 @@ module bno085_controller_new (
                             spi_start <= 1'b1;
                         end
                     end else begin
-                        // Done sending all bytes - now wait for response
+                        // Done sending all bytes - release CS and wait for response
                         cs_n <= 1'b1;
                         byte_cnt <= 8'd0;
                         response_received <= 1'b0;
