@@ -40,6 +40,7 @@ module drum_trigger_top (
 
     // Internal signals
     logic clk;
+    logic rst_n;
     
     // BNO085 Controller outputs (directly connected to SPI slave)
     logic quat1_valid, gyro1_valid;
@@ -51,7 +52,53 @@ module drum_trigger_top (
     logic spi1_start, spi1_tx_valid, spi1_tx_ready, spi1_rx_valid, spi1_busy;
     logic [7:0] spi1_tx_data, spi1_rx_data;
     
-    // Reset control is now handled inside the BNO085 controller module
+    // BNO085 Reset Delay Counter
+    // Per datasheet 6.5.3: After NRST release, BNO085 needs:
+    //   - t1 = 90ms for internal initialization
+    //   - t2 = 4ms for internal configuration  
+    //   - Total: ~94ms minimum, we use 100ms for safety
+    // Clock is 3MHz, so 100ms = 300,000 cycles
+    // We add 2 seconds total delay as requested
+    localparam [22:0] DELAY_100MS = 23'd300_000;  // 100ms for BNO085 initialization
+    localparam [22:0] DELAY_2SEC = 23'd6_000_000;  // 2 seconds total delay
+    logic [22:0] rst_delay_counter;
+    logic bno085_rst_n_delayed;
+    logic controller_rst_n;  // Controller reset synchronized with BNO085 reset
+    
+    // BNO085 Reset with delay after FPGA reset release
+    // Per datasheet 6.5.3: BNO085 needs ~94ms after NRST release before ready
+    // Sequence: FPGA reset releases -> wait 100ms -> release BNO085 reset -> wait 1.9s -> release controller reset
+    always_ff @(posedge clk or negedge fpga_rst_n) begin
+        if (!fpga_rst_n) begin
+            // FPGA reset is active: keep BNO085 in reset and reset counter
+            rst_delay_counter <= 23'd0;
+            bno085_rst_n_delayed <= 1'b0;
+            controller_rst_n <= 1'b0;  // Keep controller in reset too
+        end else begin
+            // FPGA reset released: count up to delay
+            if (rst_delay_counter < DELAY_2SEC) begin
+                rst_delay_counter <= rst_delay_counter + 1;
+            end
+            
+            // Release BNO085 reset after 100ms (allows BNO085 to initialize per datasheet)
+            if (rst_delay_counter >= DELAY_100MS) begin
+                bno085_rst_n_delayed <= 1'b1;  // Release BNO085 reset
+            end else begin
+                bno085_rst_n_delayed <= 1'b0;  // Keep BNO085 in reset
+            end
+            
+            // Release controller reset after full 2-second delay
+            // This ensures BNO085 has completed initialization before controller starts
+            if (rst_delay_counter >= DELAY_2SEC) begin
+                controller_rst_n <= 1'b1;  // Release controller reset
+            end else begin
+                controller_rst_n <= 1'b0;  // Keep controller in reset
+            end
+        end
+    end
+    
+    assign bno085_rst_n = bno085_rst_n_delayed;
+    assign rst_n = controller_rst_n;  // Controller reset synchronized with BNO085 reset release
     
     // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
     // CLKHF_DIV(2'b11) = divide by 16 to get 3MHz from 48MHz
@@ -74,8 +121,8 @@ module drum_trigger_top (
     // Heartbeat LED (1Hz approx)
     // 3MHz = 3,000,000 cycles/sec. 2^22 = ~4M. Bit 21 toggles every ~0.7s
     logic [21:0] heartbeat_cnt;
-    always_ff @(posedge clk or negedge fpga_rst_n) begin
-        if (!fpga_rst_n) heartbeat_cnt <= 0;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) heartbeat_cnt <= 0;
         else heartbeat_cnt <= heartbeat_cnt + 1;
     end
     assign led_heartbeat = heartbeat_cnt[21];
@@ -86,10 +133,9 @@ module drum_trigger_top (
     
     // SPI Master for BNO085 Sensor 1
     // CLK_DIV=2 matches old working code (750 kHz SPI clock @ 3MHz system clock)
-    // Note: SPI master reset is tied to FPGA reset (controller handles BNO085 reset internally)
     spi_master #(.CLK_DIV(2)) spi_master_inst1 (
         .clk(clk),
-        .rst_n(fpga_rst_n),
+        .rst_n(rst_n),
         .start(spi1_start),
         .tx_valid(spi1_tx_valid),
         .tx_data(spi1_tx_data),
@@ -103,10 +149,9 @@ module drum_trigger_top (
     );
     
     // BNO085 Controller for Sensor 1
-    // Reset control is now handled inside the controller
-    bno085_controller_new bno085_controller (
+    bno085_controller bno085_ctrl_inst1 (
         .clk(clk),
-        .fpga_rst_n(fpga_rst_n),  // Pass FPGA reset to controller
+        .rst_n(rst_n),
         .spi_start(spi1_start),
         .spi_tx_valid(spi1_tx_valid),
         .spi_tx_data(spi1_tx_data),
@@ -117,7 +162,6 @@ module drum_trigger_top (
         .cs_n(cs_n1),
         .ps0_wake(ps0_wake1),
         .int_n(int1),
-        .bno085_rst_n(bno085_rst_n),  // Reset output from controller
         .quat_valid(quat1_valid),
         .quat_w(quat1_w),
         .quat_x(quat1_x),
