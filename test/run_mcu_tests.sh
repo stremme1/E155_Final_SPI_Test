@@ -19,7 +19,7 @@ echo ""
 # Test 1.1: Quaternion Decoder
 echo "Test 1.1: Quaternion Decoder (test_bno085_decoder.c)"
 echo "---------------------------------------------------"
-if gcc test_bno085_decoder.c ../../mcu/bno085_decoder.c -o test_decoder -lm; then
+if gcc test_bno085_decoder.c ../../mcu/bno085_decoder.c mock_debug_print.c -I../../mcu -I../../mcu/CMSIS_5/CMSIS/Core/Include -o test_decoder -lm; then
     if ./test_decoder; then
         echo "[PASS] Test 1.1: Quaternion Decoder"
         rm -f test_decoder
@@ -37,7 +37,7 @@ echo ""
 # Test 1.2: Drum Detector
 echo "Test 1.2: Drum Detector (test_drum_detector.c)"
 echo "---------------------------------------------------"
-if gcc test_drum_detector.c ../../mcu/drum_detector.c ../../mcu/bno085_decoder.c -o test_detector -lm; then
+if gcc test_drum_detector.c ../../mcu/drum_detector.c ../../mcu/bno085_decoder.c mock_debug_print.c -I../../mcu -I../../mcu/CMSIS_5/CMSIS/Core/Include -o test_detector -lm; then
     if ./test_detector; then
         echo "[PASS] Test 1.2: Drum Detector"
         rm -f test_detector
@@ -84,6 +84,24 @@ if gcc test_spi_communication.c -o test_spi_comm; then
     fi
 else
     echo "[FAIL] Test 1.4: SPI Communication - Compilation failed"
+    exit 1
+fi
+echo ""
+
+# Test 1.5: Arduino Packet Parser (Nuk_Option)
+echo "Test 1.5: Arduino Packet Parser (test_arduino_packet_parser.c)"
+echo "---------------------------------------------------"
+if gcc test_arduino_packet_parser.c -o test_arduino_parser -lm; then
+    if ./test_arduino_parser; then
+        echo "[PASS] Test 1.5: Arduino Packet Parser"
+        rm -f test_arduino_parser
+    else
+        echo "[FAIL] Test 1.5: Arduino Packet Parser - Test execution failed"
+        rm -f test_arduino_parser
+        exit 1
+    fi
+else
+    echo "[FAIL] Test 1.5: Arduino Packet Parser - Compilation failed"
     exit 1
 fi
 echo ""

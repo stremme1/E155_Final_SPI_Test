@@ -7,8 +7,8 @@
 #include "STM32L432KC_RCC.h"
 #include "debug_print.h"
 
-/* Enables the SPI peripheral and intializes its clock speed (baud rate), polarity, and phase.
- *    -- br: (0b000 - 0b111). The SPI clk will be the master clock / 2^(BR+1).
+/* Enables the SPI peripheral as SLAVE and initializes polarity and phase.
+ *    -- br: Not used in slave mode (slave follows master's clock)
  *    -- cpol: clock polarity (0: inactive state is logical 0, 1: inactive state is logical 1).
  *    -- cpha: clock phase (0: data captured on leading edge of clk and changed on next edge, 
  *          1: data changed on leading edge of clk and captured on next edge)
@@ -19,56 +19,98 @@ void initSPI(int br, int cpol, int cpha) {
     
     RCC->APB2ENR |= RCC_APB2ENR_SPI1EN; // Turn on SPI1 clock domain (SPI1EN bit in APB2ENR)
 
-    // Initially assigning SPI pins
-    pinMode(SPI_SCK, GPIO_ALT); // SPI1_SCK
-    pinMode(SPI_MISO, GPIO_ALT); // SPI1_MISO
-    pinMode(SPI_MOSI, GPIO_ALT); // SPI1_MOSI
-    pinMode(SPI_CE, GPIO_OUTPUT); // Manual CS
+    // Configure SPI pins for SLAVE mode
+    pinMode(SPI_SCK, GPIO_ALT);  // SPI1_SCK (input in slave mode)
+    pinMode(SPI_MISO, GPIO_ALT); // SPI1_MISO (output in slave mode)
+    pinMode(SPI_MOSI, GPIO_ALT); // SPI1_MOSI (input in slave mode)
+    pinMode(SPI_CE, GPIO_INPUT);  // CS pin as INPUT (master controls CS)
 
-    // Set output speed type to high for SCK
-    GPIOB->OSPEEDR |= (GPIO_OSPEEDR_OSPEED3);
+    // Set output speed type to high for MISO (slave output)
+    GPIOB->OSPEEDR |= (GPIO_OSPEEDR_OSPEED4);
 
     // Set to AF05 for SPI alternate functions
-    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL3, 5);
-    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL4, 5);
-    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL5, 5);
+    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL3, 5);  // SCK
+    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL4, 5);  // MISO
+    GPIOB->AFR[0] |= _VAL2FLD(GPIO_AFRL_AFSEL5, 5);  // MOSI
     
-    SPI1->CR1 |= _VAL2FLD(SPI_CR1_BR, br); // Set baud rate divider
-    SPI1->CR1 |= (SPI_CR1_MSTR);
-    SPI1->CR1 &= ~(SPI_CR1_CPOL | SPI_CR1_CPHA | SPI_CR1_LSBFIRST | SPI_CR1_SSM);
+    // Configure SPI as SLAVE
+    // Clear MSTR bit (stay in slave mode)
+    SPI1->CR1 &= ~(SPI_CR1_MSTR);
+    
+    // Set CPOL and CPHA (Mode 0: CPOL=0, CPHA=0)
+    SPI1->CR1 &= ~(SPI_CR1_CPOL | SPI_CR1_CPHA | SPI_CR1_LSBFIRST);
     SPI1->CR1 |= _VAL2FLD(SPI_CR1_CPHA, cpha);
     SPI1->CR1 |= _VAL2FLD(SPI_CR1_CPOL, cpol);
+    
+    // Enable software slave management (SSM) - ignore hardware NSS pin
+    // Set SSI (internal slave select) high so we're always selected
+    SPI1->CR1 |= (SPI_CR1_SSM | SPI_CR1_SSI);
+    
+    // Configure data size (8 bits)
     SPI1->CR2 |= _VAL2FLD(SPI_CR2_DS, 0b0111);
-    SPI1->CR2 |= (SPI_CR2_FRXTH | SPI_CR2_SSOE);
+    
+    // Enable RX threshold (RXNE when 1 byte in FIFO)
+    SPI1->CR2 |= (SPI_CR2_FRXTH);
+    
+    // Don't set SSOE (slave select output enable) - we're slave, not master
 
     SPI1->CR1 |= (SPI_CR1_SPE); // Enable SPI
     
     // Debug: SPI initialization complete with register verification
-    // Calculate actual SPI clock based on BR value
-    int spi_clock_khz = 80000 / (1 << (br + 1));  // 80MHz / 2^(BR+1)
-    debug_printf("[SPI] SPI initialized: Mode 0, BR=%d (%d kHz), CS=PA11\r\n", br, spi_clock_khz);
+    debug_printf("[SPI] SPI initialized as SLAVE: Mode %d (CPOL=%d, CPHA=%d)\r\n", 
+                 (cpol << 1) | cpha, cpol, cpha);
     debug_printf("[SPI] CR1 register: 0x%08X\r\n", SPI1->CR1);
     debug_printf("[SPI] CR2 register: 0x%08X\r\n", SPI1->CR2);
-    debug_printf("[SPI] CPOL=%d, CPHA=%d, MSTR=%d, SPE=%d\r\n", 
+    debug_printf("[SPI] CPOL=%d, CPHA=%d, MSTR=%d, SSM=%d, SSI=%d, SPE=%d\r\n", 
                  (SPI1->CR1 & SPI_CR1_CPOL) ? 1 : 0,
                  (SPI1->CR1 & SPI_CR1_CPHA) ? 1 : 0,
                  (SPI1->CR1 & SPI_CR1_MSTR) ? 1 : 0,
+                 (SPI1->CR1 & SPI_CR1_SSM) ? 1 : 0,
+                 (SPI1->CR1 & SPI_CR1_SSI) ? 1 : 0,
                  (SPI1->CR1 & SPI_CR1_SPE) ? 1 : 0);
     
-    // Verify CS pin (PA11) is configured correctly
-    // CS should be output and initially high
-    digitalWrite(PA11, 1);  // Ensure CS starts high
-    debug_printf("[SPI] CS pin (PA11) state: %d (should be 1/high)\r\n", digitalRead(PA11));
-    debug_print("[SPI] SPI configuration verified\r\n");
+    // Verify CS pin (PA11) is configured as input
+    debug_printf("[SPI] CS pin (PA11) configured as INPUT (master controls CS)\r\n");
+    debug_print("[SPI] SPI SLAVE configuration verified\r\n");
+}
+
+/* Receives a character (1 byte) over SPI in slave mode.
+ *    -- return: the character received over SPI
+ * Note: In slave mode, we receive data when master clocks it in.
+ * We can send dummy data (0x00) while receiving. */
+char spiReceive(void) {
+    // Wait until transmit buffer is empty (can write)
+    while(!(SPI1->SR & SPI_SR_TXE));
+    
+    // Write dummy byte to trigger clock (master needs to clock to receive)
+    // In slave mode, writing to DR triggers the transaction if master is clocking
+    *(volatile char *) (&SPI1->DR) = 0x00; // Dummy byte
+    
+    // Wait until data has been received
+    while(!(SPI1->SR & SPI_SR_RXNE));
+    
+    char rec = (volatile char) SPI1->DR;
+    
+    // Debug: log SPI transaction (can be verbose - comment out if too slow)
+    // debug_printf("[SPI] RX: 0x%x\r\n", (uint8_t)rec);
+    
+    return rec; // Return received character
 }
 
 /* Transmits a character (1 byte) over SPI and returns the received character.
  *    -- send: the character to send over SPI
- *    -- return: the character received over SPI */
+ *    -- return: the character received over SPI
+ * Note: In slave mode, master controls the clock. We write to DR and wait for RXNE. */
 char spiSendReceive(char send) {
-    while(!(SPI1->SR & SPI_SR_TXE)); // Wait until the transmit buffer is empty
-    *(volatile char *) (&SPI1->DR) = send; // Transmit the character over SPI
-    while(!(SPI1->SR & SPI_SR_RXNE)); // Wait until data has been received
+    // Wait until transmit buffer is empty
+    while(!(SPI1->SR & SPI_SR_TXE));
+    
+    // Write data to transmit (slave mode - master will clock it out)
+    *(volatile char *) (&SPI1->DR) = send;
+    
+    // Wait until data has been received (master clocks in data)
+    while(!(SPI1->SR & SPI_SR_RXNE));
+    
     char rec = (volatile char) SPI1->DR;
     
     // Debug: log SPI transaction (can be verbose - comment out if too slow)
@@ -153,32 +195,48 @@ void parseSensorDataPacket15(const uint8_t *packet,
     *gyro_z = (int16_t)(packet[13] | (packet[14] << 8));
 }
 
-/* Read 16-byte sensor data packet from FPGA via SPI - CS-based protocol
+/* Read 16-byte sensor data packet from Arduino/ESP32 via SPI (SLAVE mode)
  * Packet format: [Header(0xAA)][Sensor1_Quat][Sensor1_Gyro][Sensor1_Flags]
  * All 16-bit values are MSB,LSB format (MSB first, LSB second)
  * Single sensor only - sensor 2 data is not included in packet
- * Uses CS (chip select) control: CS low → read bytes → CS high
+ * 
+ * In SLAVE mode: Master (Arduino) controls CS and clock
+ * - Wait for CS to go LOW (master starts transaction)
+ * - Read 16 bytes as master clocks them in
+ * - Wait for CS to go HIGH (transaction complete)
  */
 void readSensorDataPacket(uint8_t *packet) {
     int i;
+    uint32_t timeout;
     
     // Debug: Start of packet read
-    debug_print("[SPI] Starting packet read - CS low\r\n");
+    debug_print("[SPI] Waiting for CS low (master starting transaction)...\r\n");
     
-    // CS-based protocol: Pull CS low to start transaction
-    // CRITICAL: CS must stay low for the ENTIRE 16-byte transaction
-    // If CS toggles between bytes, the FPGA resets and reloads the first byte
-    digitalWrite(PA11, 0);  // CS low
+    // Wait for CS to go LOW (master pulls CS low to start transaction)
+    // CS pin is PA11, configured as INPUT
+    timeout = 1000000;  // Timeout counter (~12.5ms at 80MHz)
+    while(digitalRead(PA11) == 1) {  // Wait for CS to go LOW
+        timeout--;
+        if(timeout == 0) {
+            debug_print("[SPI] TIMEOUT: CS did not go low - no transaction from master\r\n");
+            // Fill packet with zeros on timeout
+            for(i = 0; i < 16; i++) {
+                packet[i] = 0x00;
+            }
+            return;
+        }
+    }
     
-    // Small delay to allow FPGA to prepare data and synchronize
-    // This ensures the FPGA shift register is ready before we start clocking
-    volatile int setup_delay = 100;  // ~1.25us at 80MHz (adjust if needed)
+    debug_print("[SPI] CS low detected - reading 16 bytes from master\r\n");
+    
+    // Small delay to allow synchronization after CS goes low
+    volatile int setup_delay = 50;  // ~0.625us at 80MHz
     while(setup_delay-- > 0) __asm("nop");
     
-    // Read 16 bytes using dummy bytes (0x00) to generate SCK
-    // CS stays low for all 16 bytes - this is critical!
+    // Read 16 bytes - master will clock them in
+    // In slave mode, we write dummy bytes to DR and read received data
     for(i = 0; i < 16; i++) {
-        packet[i] = spiSendReceive(0x00);
+        packet[i] = spiReceive();  // Receive byte (master clocks it in)
         // Debug: log each byte received
         debug_printf("[SPI] Byte[%d] = 0x%x\r\n", i, packet[i]);
     }
@@ -186,15 +244,17 @@ void readSensorDataPacket(uint8_t *packet) {
     // Wait for SPI transaction to complete
     while(SPI1->SR & SPI_SR_BSY);  // Wait until SPI is not busy
     
-    // Pull CS high to end transaction (only after all 16 bytes are read)
-    digitalWrite(PA11, 1);  // CS high
+    // Wait for CS to go HIGH (master ends transaction)
+    timeout = 1000000;
+    while(digitalRead(PA11) == 0) {  // Wait for CS to go HIGH
+        timeout--;
+        if(timeout == 0) {
+            debug_print("[SPI] WARNING: CS did not go high after transaction\r\n");
+            break;
+        }
+    }
     
-    // Small delay to allow FPGA to reset its state
-    volatile int hold_delay = 100;  // ~1.25us at 80MHz (adjust if needed)
-    while(hold_delay-- > 0) __asm("nop");
-    
-    // Debug: Complete packet dump
-    debug_print("[SPI] Packet complete - CS high. Full packet: ");
+    debug_print("[SPI] CS high - transaction complete. Full packet: ");
     debug_print_bytes(packet, 16);
     debug_newline();
     
@@ -206,9 +266,9 @@ void readSensorDataPacket(uint8_t *packet) {
     }
     
     if(all_ff) {
-        debug_print("[SPI] WARNING: All bytes are 0xFF - MISO pin may be floating!\r\n");
+        debug_print("[SPI] WARNING: All bytes are 0xFF - check MISO connection!\r\n");
     } else if(all_00) {
-        debug_print("[SPI] WARNING: All bytes are 0x00 - MISO pin may be floating or pulled low!\r\n");
+        debug_print("[SPI] WARNING: All bytes are 0x00 - check MISO connection!\r\n");
     }
 }
 

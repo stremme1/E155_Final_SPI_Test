@@ -30,6 +30,10 @@
  * Refer to the datasheet for more low-level details. */ 
 void initSPI(int br, int cpol, int cpha);
 
+/* Receives a character (1 byte) over SPI in slave mode.
+ *    -- return: the character received over SPI */
+char spiReceive(void);
+
 /* Transmits a character (1 byte) over SPI and returns the received character.
  *    -- send: the character to send over SPI
  *    -- return: the character received over SPI */

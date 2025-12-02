@@ -247,18 +247,17 @@ int main(void) {
     debug_print("[INIT] Enabling GPIO clocks...\r\n");
     RCC->AHB2ENR |= (RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN | RCC_AHB2ENR_GPIOCEN);
     
-    // Initialize SPI as MASTER for FPGA communication
-    // CRITICAL: FPGA runs at 3MHz, so SPI must be slow enough for FPGA to detect edges
-    // FPGA needs ~1us (2-3 cycles) to detect SCK falling edges
-    // br=6 (divide by 128 = 80MHz/128 = 625kHz) gives 1.6us per bit = ~5 FPGA clock cycles
-    // This ensures FPGA can reliably detect and respond to SCK edges
-    debug_print("[INIT] Initializing SPI (Mode 0, 625kHz for 3MHz FPGA)...\r\n");
-    initSPI(6, 0, 0);
+    // Initialize SPI as SLAVE for Arduino/ESP32 communication
+    // Arduino/ESP32 acts as master and sends data at 625kHz
+    // MCU follows master's clock (no baud rate setting needed in slave mode)
+    // Mode 0: CPOL=0, CPHA=0 (matches Arduino configuration)
+    debug_print("[INIT] Initializing SPI as SLAVE (Mode 0, follows master clock)...\r\n");
+    initSPI(0, 0, 0);  // br parameter ignored in slave mode, CPOL=0, CPHA=0
     
     // CS pin (chip select, active low) - PA11
-    // Note: CS pin is already configured in initSPI() as SPI_CE, but we ensure it's high initially
-    digitalWrite(PA11, 1);  // CS high initially (idle state)
-    debug_print("[INIT] SPI CS pin (PA11) set high (idle)\r\n");
+    // Note: CS pin is configured as INPUT in initSPI() since master controls it
+    // Master (Arduino) will pull CS low to start transaction, high to end
+    debug_print("[INIT] SPI CS pin (PA11) configured as INPUT (master controlled)\r\n");
     
     // Initialize buttons (pulled up, go LOW when pressed)
     debug_print("[INIT] Initializing buttons (PA8=Calibrate, PA10=Kick)...\r\n");
@@ -325,7 +324,7 @@ int main(void) {
         ms_delay(500);  // Longer pause before repeating
     }
     debug_print("[TEST] DAC test mode complete\r\n");
-    debug_print("[MAIN] Entering main loop - reading sensor data from FPGA\r\n");
+    debug_print("[MAIN] Entering main loop - reading sensor data from Arduino/ESP32\r\n");
     
     // Main loop: read sensor data, decode, detect triggers, play sounds
     while(1) {
@@ -333,8 +332,8 @@ int main(void) {
         check_calibration_button();
         check_kick_button();
         
-        // Read raw sensor data from FPGA via SPI (CS-based protocol)
-        // Note: This is non-blocking (just reads 16 bytes immediately)
+        // Read raw sensor data from Arduino/ESP32 via SPI (slave mode)
+        // Note: This waits for master to pull CS low and send data
         read_sensor_data(&sensor_data);
         
         // Process sensor data and detect drum triggers
