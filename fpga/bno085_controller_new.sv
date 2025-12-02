@@ -658,7 +658,6 @@ module bno085_controller_new (
                                     end
                                 end
                             endcase
-                            endcase
                             
                             byte_cnt <= byte_cnt + 1;
                             
