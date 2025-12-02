@@ -588,9 +588,6 @@ module bno085_controller_new (
                             // Start transaction (or retry/hold start)
                             spi_tx_valid <= 1'b1;
                             spi_start <= 1'b1;
-                            end
-                        end
-                    end
                         end
                     end else begin
                         // Done sending all bytes - CRITICAL: Add CS hold time (tcssh)
@@ -599,15 +596,16 @@ module bno085_controller_new (
                             cs_hold_delay <= cs_hold_delay + 1;
                         end else begin
                             // CS hold time complete, release CS and wait for response
-                        cs_n <= 1'b1;
+                            cs_n <= 1'b1;
                             cs_hold_delay <= 3'd0;
-                        byte_cnt <= 8'd0;
+                            byte_cnt <= 8'd0;
                             response_received <= 1'b0;
                             response_timeout_counter <= 19'd0;
                             waiting_for_response <= 1'b1;
                             state <= INIT_WAIT_RESPONSE;
                         end
                     end
+                    end  // Close else block for int_deassert_delay
                 end
                 
                 // Wait for command response after sending command
