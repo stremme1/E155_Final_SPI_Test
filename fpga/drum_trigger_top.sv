@@ -208,4 +208,3 @@ module drum_trigger_top (
     );
     
 endmodule
-
