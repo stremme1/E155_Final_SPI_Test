@@ -324,6 +324,7 @@ module bno085_controller_new (
                 // Wait for advertisement packets after reset
                 // Per SHTP protocol: After reset, sensor automatically sends advertisements on Channel 0
                 // These must be processed before sending any commands
+                // The sensor may send multiple advertisement packets - we need to read all of them
                 INIT_WAIT_ADVERT: begin
                     cs_n <= 1'b1;
                     ps0_wake <= 1'b1;
@@ -334,27 +335,31 @@ module bno085_controller_new (
                         // Read and process it (we'll process in READ_HEADER/READ_PAYLOAD states)
                         byte_cnt <= 8'd0;
                         state <= READ_HEADER_START;
-                    end else if (advert_timeout_counter >= 19'd300_000) begin
-                        // Timeout: 300000 cycles @ 3MHz = 100ms
-                        // If no advertisement after 100ms, assume sensor is ready anyway
-                        // This handles cases where advertisements were already processed or not sent
-                        advert_done <= 1'b1;
-                        waiting_for_advert <= 1'b0;
-                        delay_counter <= 19'd0;
-                        cmd_select <= 2'd0; // Start with ProdID
-                        // Check if INT is already asserted - if so, sensor is ready, skip wake
-                        if (!int_n_sync) begin
-                            // INT already asserted - sensor is ready, proceed to first command
-                            waiting_for_response <= 1'b0;
-                            response_received <= 1'b0;
-                            response_timeout_counter <= 19'd0;
-                            state <= INIT_CS_SETUP;
-                        end else begin
-                            // INT not asserted - need to wake sensor first
-                            state <= INIT_WAKE;
-                        end
                     end else begin
-                        advert_timeout_counter <= advert_timeout_counter + 1;
+                        // INT not asserted - no more advertisement packets
+                        // Check if we've read at least one advertisement or timed out
+                        if (advert_done || advert_timeout_counter >= 19'd300_000) begin
+                            // Advertisements processed or timeout - proceed to initialization commands
+                            advert_done <= 1'b1;
+                            waiting_for_advert <= 1'b0;
+                            delay_counter <= 19'd0;
+                            cmd_select <= 2'd0; // Start with ProdID
+                            // Wait for INT before sending first command (sensor must be ready)
+                            // Check if INT is already asserted - if so, sensor is ready, skip wake
+                            if (!int_n_sync) begin
+                                // INT already asserted - sensor is ready, proceed to first command
+                                waiting_for_response <= 1'b0;
+                                response_received <= 1'b0;
+                                response_timeout_counter <= 19'd0;
+                                state <= INIT_CS_SETUP;
+                            end else begin
+                                // INT not asserted - need to wake sensor first
+                                state <= INIT_WAKE;
+                            end
+                        end else begin
+                            // Still waiting for first advertisement - increment timeout
+                            advert_timeout_counter <= advert_timeout_counter + 1;
+                        end
                     end
                 end
                 
@@ -572,15 +577,22 @@ module bno085_controller_new (
                             // For simplicity, we just mark it as processed when we finish reading
                             // The actual TLV parsing is complex, so we'll just consume the packet
                             // and mark advertisements as done
+                            // Check if this is the last byte of the payload
+                            // byte_cnt is the number of payload bytes read so far (0-indexed)
+                            // packet_length includes header (4 bytes), so payload = packet_length - 4
+                            // We need to read (packet_length - 4) bytes total
                             if ((byte_cnt + 1) >= (packet_length - 4)) begin
-                                // Advertisement packet complete
+                                // Advertisement packet complete (read all payload bytes)
+                                // Mark that we've read at least one advertisement
                                 advert_done <= 1'b1;
-                                waiting_for_advert <= 1'b0;
+                                // Check if INT is still asserted - might be another advertisement packet
                                 cs_n <= 1'b1;
                                 byte_cnt <= 8'd0;
                                 delay_counter <= 19'd0;
-                                cmd_select <= 2'd0; // Start with ProdID
-                                state <= INIT_WAKE; // Proceed to first command
+                                // Wait a cycle for CS to settle, then check INT
+                                // If INT is still asserted, we'll read another packet
+                                // If INT is not asserted, we'll proceed to commands
+                                state <= INIT_WAIT_ADVERT;
                             end else begin
                                 byte_cnt <= byte_cnt + 1;
                                 // Continue reading
