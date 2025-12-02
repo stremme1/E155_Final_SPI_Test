@@ -262,12 +262,18 @@ module bno085_controller_new (
                     end else begin
                         delay_counter <= 19'd0;
                         cmd_select <= 2'd0; // Start with ProdID
+                        // Always wait for advertisements first, regardless of INT state
+                        // After reset, BNO085 automatically sends advertisement packets
+                        // We must process these before sending any commands
+                        advert_done <= 1'b0;
+                        advert_timeout_counter <= 19'd0;
+                        waiting_for_advert <= 1'b1;
                         // Check if INT is already asserted (automatic assertion after reset)
                         if (!int_n_sync) begin
-                            // INT already low - skip wake signal, go directly to CS setup
-                            state <= INIT_CS_SETUP;
+                            // INT already low - advertisement may be ready, go to wait state
+                            state <= INIT_WAIT_ADVERT;
                         end else begin
-                            // INT still high - need to use wake signal
+                            // INT still high - need to use wake signal first
                             state <= INIT_WAKE;
                         end
                     end
@@ -336,7 +342,17 @@ module bno085_controller_new (
                         waiting_for_advert <= 1'b0;
                         delay_counter <= 19'd0;
                         cmd_select <= 2'd0; // Start with ProdID
-                        state <= INIT_WAKE; // Go to wake state for first command
+                        // Check if INT is already asserted - if so, sensor is ready, skip wake
+                        if (!int_n_sync) begin
+                            // INT already asserted - sensor is ready, proceed to first command
+                            waiting_for_response <= 1'b0;
+                            response_received <= 1'b0;
+                            response_timeout_counter <= 19'd0;
+                            state <= INIT_CS_SETUP;
+                        end else begin
+                            // INT not asserted - need to wake sensor first
+                            state <= INIT_WAKE;
+                        end
                     end else begin
                         advert_timeout_counter <= advert_timeout_counter + 1;
                     end
