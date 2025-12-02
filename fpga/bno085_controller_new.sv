@@ -240,7 +240,8 @@ module bno085_controller_new (
             gyro_z <= 16'd0;
             
         end else begin
-            // Default assignments
+            // Default assignments - CRITICAL: Clear spi_start every cycle unless explicitly set
+            // This prevents SPI clock from running continuously
             spi_start <= 1'b0;  
             spi_tx_valid <= 1'b0;
             quat_valid <= 1'b0;
@@ -485,18 +486,23 @@ module bno085_controller_new (
                     // Per datasheet 6.5.4: When CS goes low, INT deasserts
                     // So we should start reading immediately after CS goes low
                     cs_n <= 1'b0;
-                    // Start first SPI transaction to read header immediately
-                    spi_tx_data <= 8'h00;
-                    spi_tx_valid <= 1'b1;
-                    spi_start <= 1'b1;
-                    byte_cnt <= 8'd0;
+                    // Wait one cycle for CS to settle before starting SPI transaction
+                    // This ensures proper setup time
+                    delay_counter <= 19'd0;
                     state <= READ_HEADER;
+                    byte_cnt <= 8'd0;
                 end
                 
                 READ_HEADER: begin
                     cs_n <= 1'b0;
+                    // Start first byte if not already started
+                    if (byte_cnt == 0 && !spi_busy && !spi_start) begin
+                        spi_tx_data <= 8'h00;
+                        spi_tx_valid <= 1'b1;
+                        spi_start <= 1'b1;
+                    end
                     // FIX 3: Use registered rx_valid for reliable detection (extends one-cycle pulse)
-                    if ((spi_rx_valid || spi_rx_valid_reg) && !spi_busy) begin
+                    else if ((spi_rx_valid || spi_rx_valid_reg) && !spi_busy) begin
                         // Consume rx_valid
                         spi_rx_valid_reg <= 1'b0;
                         
@@ -556,11 +562,6 @@ module bno085_controller_new (
                                 end
                             end
                         endcase
-                    end else if (!spi_busy && byte_cnt < 4) begin
-                        // Continue reading header - Hold/Assert start
-                        spi_tx_data <= 8'h00; 
-                        spi_tx_valid <= 1'b1; 
-                        spi_start <= 1'b1;
                     end
                 end
                 
