@@ -13,7 +13,7 @@
 
 module bno085_controller_new (
     input  logic        clk,
-    input  logic        rst_n,
+    input  logic        fpga_rst_n,  // FPGA reset (active low)
 
     // SPI interface
     output logic        spi_start,
@@ -28,6 +28,9 @@ module bno085_controller_new (
 
     // INT pin (REQUIRED for stable SPI operation per Adafruit documentation)
     input  logic        int_n,  // Active LOW interrupt - goes LOW when data ready
+
+    // BNO085 Reset output (controlled by this module)
+    output logic        bno085_rst_n,  // Reset for BNO085 sensor (active low)
 
     // Sensor data outputs
     output logic        quat_valid,
@@ -62,6 +65,15 @@ module bno085_controller_new (
     localparam [7:0] REPORT_ID_PROD_ID_RESP = 8'hF8;  // Product ID Response
     localparam [7:0] REPORT_ID_GET_FEATURE_RESP = 8'hFC;  // Get Feature Response
     localparam [7:0] REPORT_ID_COMMAND_RESP = 8'hF1;  // Command Response
+    
+    // Reset timing parameters
+    // Per datasheet 6.5.3: After NRST release, BNO085 needs ~94ms for initialization
+    localparam [22:0] DELAY_100MS = 23'd300_000;  // 100ms @ 3MHz = 300,000 cycles
+    localparam [22:0] DELAY_1MS = 23'd3_000;  // 1ms @ 3MHz = 3,000 cycles
+    
+    // Internal reset control
+    logic rst_n;  // Internal reset (controller ready)
+    logic [22:0] rst_delay_counter;  // Reset delay counter
     
     typedef enum logic [4:0] {
         IDLE,
@@ -191,6 +203,44 @@ module bno085_controller_new (
             default: get_cmd_len = 8'd0;
         endcase
     endfunction
+
+    // ========================================================================
+    // BNO085 Reset Control
+    // ========================================================================
+    // Per datasheet 6.5.3: BNO085 needs ~94ms after NRST release before ready
+    // Sequence: FPGA reset releases -> pulse BNO085 reset low -> wait 100ms -> release BNO085 reset
+    // CRITICAL: Reset signal is ACTIVE LOW: 0 = reset active, 1 = reset released
+    always_ff @(posedge clk or negedge fpga_rst_n) begin
+        if (!fpga_rst_n) begin
+            // FPGA reset active: keep BNO085 in reset and reset counter
+            rst_delay_counter <= 23'd0;
+            bno085_rst_n <= 1'b0;  // Active low reset - keep sensor in reset (LOW = reset active)
+            rst_n <= 1'b0;  // Keep controller in reset too
+        end else begin
+            // FPGA reset released: count up to delay
+            if (rst_delay_counter < DELAY_100MS) begin
+                rst_delay_counter <= rst_delay_counter + 1;
+            end
+            
+            // Reset pulse sequence
+            // 1. Keep reset LOW (active) for first 1ms to ensure proper reset pulse
+            // 2. Keep reset LOW until 100ms total (allows BNO085 to initialize per datasheet)
+            // 3. Release reset (set to HIGH) after 100ms
+            if (rst_delay_counter < DELAY_1MS) begin
+                // First 1ms: Keep reset LOW (active low = 0) to ensure proper reset pulse
+                bno085_rst_n <= 1'b0;
+                rst_n <= 1'b0;  // Controller still in reset
+            end else if (rst_delay_counter >= DELAY_100MS) begin
+                // After 100ms: Release BNO085 reset (set to HIGH = 1 means reset released)
+                bno085_rst_n <= 1'b1;
+                rst_n <= 1'b1;  // Release controller reset - ready to start
+            end else begin
+                // Between 1ms and 100ms: Keep reset LOW (still in reset, active)
+                bno085_rst_n <= 1'b0;
+                rst_n <= 1'b0;  // Controller still in reset
+            end
+        end
+    end
 
     // INT pin synchronization
     always_ff @(posedge clk or negedge rst_n) begin
