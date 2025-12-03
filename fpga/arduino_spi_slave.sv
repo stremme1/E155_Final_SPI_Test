@@ -227,4 +227,3 @@ module arduino_spi_slave(
     end
     
 endmodule
-
