@@ -359,6 +359,13 @@ module spi_slave_mcu(
     logic [3:0] byte_count;  // 0-15 (4 bits for 16 bytes)
     logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
     
+    // Initialize shift_out to HEADER_BYTE at power-on
+    initial begin
+        shift_out = HEADER_BYTE;
+        byte_count = 0;
+        bit_count = 0;
+    end
+    
     // CS state tracking for edge detection
     logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
     logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
@@ -441,9 +448,11 @@ module spi_slave_mcu(
         end
     end
     
-    // MISO output (tri-state when CS high)
+    // MISO output - always drive (no tri-state for simpler synthesis)
     // Read-only mode: FPGA ignores MOSI, only shifts out on MISO
     // Output the MSB of the shift register
-    assign sdo = cs_n ? 1'bz : shift_out[7];
+    // When CS is high, drive 0 (safe value, MCU won't read anyway)
+    // When CS is low, drive shift_out[7] (the data bit)
+    assign sdo = cs_n ? 1'b0 : shift_out[7];
     
 endmodule
