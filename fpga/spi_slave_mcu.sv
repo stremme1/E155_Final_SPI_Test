@@ -363,6 +363,16 @@ module spi_slave_mcu(
     logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
     logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
     logic seen_first_rising = 1'b0;  // Track if we've seen first SCK rising edge after CS low
+    logic cs_n_prev_clk = 1'b1;  // Previous CS state in clk domain (for immediate detection)
+    
+    // Track CS in clk domain for immediate detection
+    always_ff @(posedge clk) begin
+        cs_n_prev_clk <= cs_n;
+    end
+    
+    // Detect CS falling edge in clk domain (for immediate first byte load)
+    logic cs_fell_clk;
+    assign cs_fell_clk = cs_n_prev_clk && !cs_n;
     
     // Synchronize CS to SCK domain (2-stage synchronizer on SCK falling edge)
     always_ff @(negedge sck) begin
@@ -385,6 +395,27 @@ module spi_slave_mcu(
     logic cs_falling_edge_sck;
     assign cs_falling_edge_sck = cs_n_prev_sck && !cs_n_sync_sck;
     
+    // Flag to track if first byte has been loaded (set in clk domain, checked in SCK domain)
+    logic first_byte_loaded = 1'b0;
+    
+    // Load first byte immediately when CS goes low (in clk domain)
+    always_ff @(posedge clk) begin
+        if (cs_n) begin
+            // CS high - clear flag
+            first_byte_loaded <= 1'b0;
+        end else if (cs_fell_clk) begin
+            // CS just went low - set flag to indicate first byte should be loaded
+            first_byte_loaded <= 1'b1;
+        end
+    end
+    
+    // Synchronize flag to SCK domain (for checking in SCK block)
+    logic first_byte_loaded_sync1, first_byte_loaded_sync2;
+    always_ff @(negedge sck) begin
+        first_byte_loaded_sync1 <= first_byte_loaded;
+        first_byte_loaded_sync2 <= first_byte_loaded_sync1;
+    end
+    
     // ----------------------------
     // Main SPI slave logic - single always_ff block clocked on SCK falling edge
     // ----------------------------
@@ -395,51 +426,51 @@ module spi_slave_mcu(
     // - We only shift AFTER the first bit has been sampled (after first rising edge)
     
     // Main shift logic - clocked on SCK falling edge, with async reset on CS high
-    // Also loads first byte when CS goes low (before first SCK edge) using async check
-    always_ff @(negedge sck or posedge cs_n or negedge cs_n) begin
+    always_ff @(negedge sck or posedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
             shift_out  <= HEADER_BYTE;
-        end else if (!cs_n && byte_count == 0 && bit_count == 0 && !seen_first_rising) begin
-            // CS just went low (async detection) AND we haven't started shifting yet
-            // Load first byte immediately so it's ready before first SCK rising edge
-            // This happens asynchronously when CS goes low, before any SCK edges
-            shift_out <= HEADER_BYTE;
-            byte_count <= 0;
-            bit_count <= 0;
-        end else if (seen_first_rising) begin
-            // SCK falling edge AND CS is low AND first bit already sampled
-            // Only shift if we've seen the first rising edge (first bit has been sampled)
-            if (bit_count == 3'd7) begin
-                // Byte complete: Load next byte
-                // byte_count is the byte we just finished sending (0-15)
-                // In non-blocking assignment, RHS uses OLD value, so:
-                // - byte_count+1 is the NEXT byte index we want to load
-                // - packet_buffer[i] is at tx_packet[127 - i*8 -: 8]
-                if (byte_count < 15) begin
-                    // Increment to next byte index
-                    byte_count <= byte_count + 1;
-                    bit_count  <= 0;
-                    // Use (byte_count+1) because RHS uses OLD byte_count value
-                    // When byte_count=0 (just sent header), load packet_buffer[1] at tx_packet[119:112]
-                    shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
+        end else begin
+            // Check if we need to load first byte (CS is low and flag is set)
+            if (first_byte_loaded_sync2 && byte_count == 0 && bit_count == 0 && !seen_first_rising) begin
+                // First byte load flag is set - load the first byte
+                shift_out <= HEADER_BYTE;
+                byte_count <= 0;
+                bit_count <= 0;
+            end else if (seen_first_rising) begin
+                // SCK falling edge AND CS is low AND first bit already sampled
+                // Only shift if we've seen the first rising edge (first bit has been sampled)
+                if (bit_count == 3'd7) begin
+                    // Byte complete: Load next byte
+                    // byte_count is the byte we just finished sending (0-15)
+                    // In non-blocking assignment, RHS uses OLD value, so:
+                    // - byte_count+1 is the NEXT byte index we want to load
+                    // - packet_buffer[i] is at tx_packet[127 - i*8 -: 8]
+                    if (byte_count < 15) begin
+                        // Increment to next byte index
+                        byte_count <= byte_count + 1;
+                        bit_count  <= 0;
+                        // Use (byte_count+1) because RHS uses OLD byte_count value
+                        // When byte_count=0 (just sent header), load packet_buffer[1] at tx_packet[119:112]
+                        shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
+                    end else begin
+                        // Last byte (15) done, send zeros
+                        byte_count <= byte_count + 1;
+                        bit_count  <= 0;
+                        shift_out <= 8'h00;
+                    end
                 end else begin
-                    // Last byte (15) done, send zeros
-                    byte_count <= byte_count + 1;
-                    bit_count  <= 0;
-                    shift_out <= 8'h00;
+                    // Shift LEFT (MSB first) - move next bit into MSB position
+                    // After sending MSB, we want the next bit (bit 6) in MSB position
+                    // Left shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
+                    shift_out <= {shift_out[6:0], 1'b0};
+                    bit_count <= bit_count + 1;
                 end
-            end else begin
-                // Shift LEFT (MSB first) - move next bit into MSB position
-                // After sending MSB, we want the next bit (bit 6) in MSB position
-                // Left shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
-                shift_out <= {shift_out[6:0], 1'b0};
-                bit_count <= bit_count + 1;
             end
+            // If seen_first_rising is false, don't shift - ensures first byte stays stable
         end
-        // If seen_first_rising is false, don't shift - ensures first byte stays stable
     end
     
     // MISO output (tri-state when CS high)
