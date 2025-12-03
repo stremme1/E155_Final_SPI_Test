@@ -168,10 +168,11 @@ module arduino_spi_slave(
     // Register parsed values when packet is captured for stability
     // Read directly from packet_buffer (same source as packet_snapshot) to avoid timing issues
     logic new_packet_available;  // Flag to indicate when new parsed data is ready
-    logic cs_rising_edge_clk_delayed;  // Delayed version for flag timing
+    logic cs_rising_edge_clk_delayed1, cs_rising_edge_clk_delayed2;  // Two-stage delay for flag timing
     always_ff @(posedge clk) begin
-        // Delay cs_rising_edge_clk by one cycle for flag timing
-        cs_rising_edge_clk_delayed <= cs_rising_edge_clk;
+        // Two-stage delay: ensures header is stable when we check it
+        cs_rising_edge_clk_delayed1 <= cs_rising_edge_clk;
+        cs_rising_edge_clk_delayed2 <= cs_rising_edge_clk_delayed1;
         
         if (cs_rising_edge_clk) begin
             // Capture parsed values directly from packet_buffer when CS rises
@@ -187,9 +188,10 @@ module arduino_spi_slave(
         end
         // Values persist until next packet
         
-        // Set flag on cycle after cs_rising_edge_clk, clear after one cycle
-        if (cs_rising_edge_clk_delayed) begin
-            // One cycle after CS rising edge - registered values are now stable
+        // Set flag two cycles after cs_rising_edge_clk, clear after one cycle
+        // This ensures registered values (especially header) are stable when checked
+        if (cs_rising_edge_clk_delayed2) begin
+            // Two cycles after CS rising edge - registered values are definitely stable
             new_packet_available <= 1'b1;
         end else begin
             // Clear flag after one cycle to ensure we only update once per packet
