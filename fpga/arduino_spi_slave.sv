@@ -116,11 +116,44 @@ module arduino_spi_slave(
     assign cs_rising_edge_clk = !cs_n_prev_clk && cs_n_sync_clk2;
     
     // Capture packet snapshot on CS rising edge (transaction complete)
-    // Sample packet_buffer from SCK domain when CS goes high (safe because CS high means transaction is done)
+    // CRITICAL CDC FIX: packet_buffer is in SCK domain, must be synchronized to clk domain
+    // Strategy: When CS goes high, SCK is idle (SPI Mode 0: CPOL=0, idle low)
+    //           packet_buffer is stable, but we still need proper CDC handling
+    //           Use 2-stage synchronizer for CS edge, then sample stable packet_buffer
+    //           Add delay to ensure packet_buffer is fully written before reading
     logic packet_valid_raw;
+    logic cs_high_stable;  // CS has been high for at least 2 clk cycles (ensures SCK domain is idle)
+    logic [1:0] cs_high_counter;  // Count cycles since CS went high
+    
+    // Wait for CS to be high and stable before reading packet_buffer
+    // This ensures SCK domain is idle (CS high = transaction complete, SCK idle in Mode 0)
     always_ff @(posedge clk) begin
         if (cs_rising_edge_clk) begin
-            // Transaction complete - capture packet
+            // CS just went high - start counting
+            cs_high_counter <= 2'd1;  // Start at 1 (first cycle after rising edge)
+            cs_high_stable <= 1'b0;
+        end else if (!cs_n_sync_clk2) begin  // CS is high (synchronized)
+            // CS is high - count cycles
+            if (cs_high_counter < 2'd3) begin
+                cs_high_counter <= cs_high_counter + 1;
+                cs_high_stable <= 1'b0;
+            end else begin
+                cs_high_stable <= 1'b1;  // CS has been high for 3+ cycles, safe to read
+            end
+        end else begin
+            // CS is low - reset
+            cs_high_stable <= 1'b0;
+            cs_high_counter <= 2'd0;
+        end
+    end
+    
+    // Capture packet snapshot when CS is high and stable (safe CDC read)
+    // This ensures packet_buffer (SCK domain) is fully written and SCK is idle
+    always_ff @(posedge clk) begin
+        if (cs_high_stable && !packet_valid_raw) begin
+            // CS has been high for 3+ cycles - packet_buffer is stable, safe to read
+            // This is still technically CDC, but packet_buffer is guaranteed stable
+            // because CS high means SCK is idle (SPI Mode 0: CPOL=0)
             packet_snapshot[0] <= packet_buffer[0];
             packet_snapshot[1] <= packet_buffer[1];
             packet_snapshot[2] <= packet_buffer[2];
@@ -138,9 +171,10 @@ module arduino_spi_slave(
             packet_snapshot[14] <= packet_buffer[14];
             packet_snapshot[15] <= packet_buffer[15];
             packet_valid_raw <= 1'b1;
-        end else begin
+        end else if (!cs_high_stable) begin
             packet_valid_raw <= 1'b0;
         end
+        // Keep packet_snapshot stable when cs_high_stable is false
     end
     
     // Delay packet_valid by one cycle so registered parsed values are ready
@@ -175,35 +209,35 @@ module arduino_spi_slave(
     logic [7:0] flags;
     
     // Register parsed values when packet is captured for stability
-    // Read directly from packet_buffer (same source as packet_snapshot) to avoid timing issues
+    // CRITICAL: Read from packet_snapshot (safely synchronized from SCK domain), not packet_buffer directly
     logic new_packet_available;  // Flag to indicate when new parsed data is ready
-    logic cs_rising_edge_clk_delayed1, cs_rising_edge_clk_delayed2;  // Two-stage delay for flag timing
+    logic packet_valid_delayed;  // Delay packet_valid by one cycle for stable parsing
     always_ff @(posedge clk) begin
-        // Two-stage delay: ensures header is stable when we check it
-        cs_rising_edge_clk_delayed1 <= cs_rising_edge_clk;
-        cs_rising_edge_clk_delayed2 <= cs_rising_edge_clk_delayed1;
+        // Delay packet_valid by one cycle to ensure packet_snapshot is fully written
+        packet_valid_delayed <= packet_valid;
         
-        if (cs_rising_edge_clk) begin
-            // Capture parsed values directly from packet_buffer when CS rises
-            // This ensures we get the latest data, not stale packet_snapshot values
-            header <= packet_buffer[0];
-            roll <= {packet_buffer[1], packet_buffer[2]};
-            pitch <= {packet_buffer[3], packet_buffer[4]};
-            yaw <= {packet_buffer[5], packet_buffer[6]};
-            gyro_x <= {packet_buffer[7], packet_buffer[8]};
-            gyro_y <= {packet_buffer[9], packet_buffer[10]};
-            gyro_z <= {packet_buffer[11], packet_buffer[12]};
-            flags <= packet_buffer[13];
+        // Read from packet_snapshot (safely synchronized from SCK domain to clk domain)
+        // packet_snapshot is captured when CS is high and stable (3+ cycles)
+        if (packet_valid) begin
+            // Read from packet_snapshot which is safely synchronized to clk domain
+            header <= packet_snapshot[0];
+            roll <= {packet_snapshot[1], packet_snapshot[2]};
+            pitch <= {packet_snapshot[3], packet_snapshot[4]};
+            yaw <= {packet_snapshot[5], packet_snapshot[6]};
+            gyro_x <= {packet_snapshot[7], packet_snapshot[8]};
+            gyro_y <= {packet_snapshot[9], packet_snapshot[10]};
+            gyro_z <= {packet_snapshot[11], packet_snapshot[12]};
+            flags <= packet_snapshot[13];
         end
         // Values persist until next packet
         
-        // Set flag two cycles after cs_rising_edge_clk, clear after one cycle
-        // This ensures registered values (especially header) are stable when checked
-        if (cs_rising_edge_clk_delayed2) begin
-            // Two cycles after CS rising edge - registered values are definitely stable
+        // Set flag one cycle after packet_valid (when parsed values are registered)
+        // This ensures header and all parsed values are stable when checked
+        if (packet_valid_delayed) begin
+            // One cycle after packet_valid - parsed values are definitely stable
             new_packet_available <= 1'b1;
         end else begin
-            // Clear flag after one cycle to ensure we only update once per packet
+            // Clear flag when no valid packet
             new_packet_available <= 1'b0;
         end
     end
