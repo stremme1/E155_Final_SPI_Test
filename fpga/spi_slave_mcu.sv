@@ -231,14 +231,6 @@ module spi_slave_mcu(
         packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
     };
     
-    // Registered first byte - updated in clk domain so it's ready when CS goes low
-    // This ensures the first bit is stable before the first SCK edge
-    // Use HEADER_BYTE directly since it's a constant
-    logic [7:0] first_byte_reg = HEADER_BYTE;
-    always_ff @(posedge clk) begin
-        first_byte_reg <= HEADER_BYTE;  // Always 0xAA (constant)
-    end
-    
     // ----------------------------
     // Shift registers and counters - clocked on SCK for reliable timing
     // ----------------------------
