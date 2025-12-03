@@ -114,6 +114,7 @@ module arduino_spi_slave(
     
     // Capture packet snapshot on CS rising edge (transaction complete)
     // Sample packet_buffer from SCK domain when CS goes high (safe because CS high means transaction is done)
+    logic packet_valid_raw;
     always_ff @(posedge clk) begin
         if (cs_rising_edge_clk) begin
             // Transaction complete - capture packet
@@ -133,10 +134,15 @@ module arduino_spi_slave(
             packet_snapshot[13] <= packet_buffer[13];
             packet_snapshot[14] <= packet_buffer[14];
             packet_snapshot[15] <= packet_buffer[15];
-            packet_valid <= 1'b1;
+            packet_valid_raw <= 1'b1;
         end else begin
-            packet_valid <= 1'b0;
+            packet_valid_raw <= 1'b0;
         end
+    end
+    
+    // Delay packet_valid by one cycle so registered parsed values are ready
+    always_ff @(posedge clk) begin
+        packet_valid <= packet_valid_raw;
     end
     
     // ========================================================================
@@ -153,20 +159,29 @@ module arduino_spi_slave(
     // Byte 13: Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
     // Bytes 14-15: Reserved (0x00)
     
-    // Parse packet fields
+    // Parse packet fields - register them for stability
     logic [7:0] header;
     logic signed [15:0] roll, pitch, yaw;
     logic signed [15:0] gyro_x, gyro_y, gyro_z;
     logic [7:0] flags;
     
-    assign header = packet_snapshot[0];
-    assign roll = {packet_snapshot[1], packet_snapshot[2]};
-    assign pitch = {packet_snapshot[3], packet_snapshot[4]};
-    assign yaw = {packet_snapshot[5], packet_snapshot[6]};
-    assign gyro_x = {packet_snapshot[7], packet_snapshot[8]};
-    assign gyro_y = {packet_snapshot[9], packet_snapshot[10]};
-    assign gyro_z = {packet_snapshot[11], packet_snapshot[12]};
-    assign flags = packet_snapshot[13];
+    // Register parsed values when packet is captured for stability
+    // Read directly from packet_buffer (same source as packet_snapshot) to avoid timing issues
+    always_ff @(posedge clk) begin
+        if (cs_rising_edge_clk) begin
+            // Capture parsed values directly from packet_buffer when CS rises
+            // This ensures we get the latest data, not stale packet_snapshot values
+            header <= packet_buffer[0];
+            roll <= {packet_buffer[1], packet_buffer[2]};
+            pitch <= {packet_buffer[3], packet_buffer[4]};
+            yaw <= {packet_buffer[5], packet_buffer[6]};
+            gyro_x <= {packet_buffer[7], packet_buffer[8]};
+            gyro_y <= {packet_buffer[9], packet_buffer[10]};
+            gyro_z <= {packet_buffer[11], packet_buffer[12]};
+            flags <= packet_buffer[13];
+        end
+        // Values persist until next packet
+    end
     
     // Validate header and set status
     // Initialize to 0 (not initialized, no error) on startup
