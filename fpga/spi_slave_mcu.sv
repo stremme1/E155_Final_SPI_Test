@@ -265,8 +265,11 @@ module spi_slave_mcu(
             bit_count  <= 0;
             shift_out  <= HEADER_BYTE;
         end else begin
-            if (cs_falling_edge_sck) begin
-                // CS falling edge detected in SCK domain - Load first byte immediately
+            // CS is low - check if we need to load first byte
+            // This handles the case where CS goes low before any SCK edges
+            if (cs_falling_edge_sck || (!seen_first_rising && byte_count == 0 && bit_count == 0)) begin
+                // CS falling edge detected OR first SCK edge and shift_out not loaded yet
+                // Load first byte immediately
                 shift_out  <= HEADER_BYTE;
                 byte_count <= 0;
                 bit_count  <= 0;
