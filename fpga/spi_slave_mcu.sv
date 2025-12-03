@@ -410,37 +410,36 @@ module spi_slave_mcu(
             byte_count <= 0;
             bit_count <= 0;
         end else if (seen_first_rising) begin
-                // SCK falling edge AND CS is low AND first bit already sampled
-                // Only shift if we've seen the first rising edge (first bit has been sampled)
-                if (bit_count == 3'd7) begin
-                    // Byte complete: Load next byte
-                    // byte_count is the byte we just finished sending (0-15)
-                    // In non-blocking assignment, RHS uses OLD value, so:
-                    // - byte_count+1 is the NEXT byte index we want to load
-                    // - packet_buffer[i] is at tx_packet[127 - i*8 -: 8]
-                    if (byte_count < 15) begin
-                        // Increment to next byte index
-                        byte_count <= byte_count + 1;
-                        bit_count  <= 0;
-                        // Use (byte_count+1) because RHS uses OLD byte_count value
-                        // When byte_count=0 (just sent header), load packet_buffer[1] at tx_packet[119:112]
-                        shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
-                    end else begin
-                        // Last byte (15) done, send zeros
-                        byte_count <= byte_count + 1;
-                        bit_count  <= 0;
-                        shift_out <= 8'h00;
-                    end
+            // SCK falling edge AND CS is low AND first bit already sampled
+            // Only shift if we've seen the first rising edge (first bit has been sampled)
+            if (bit_count == 3'd7) begin
+                // Byte complete: Load next byte
+                // byte_count is the byte we just finished sending (0-15)
+                // In non-blocking assignment, RHS uses OLD value, so:
+                // - byte_count+1 is the NEXT byte index we want to load
+                // - packet_buffer[i] is at tx_packet[127 - i*8 -: 8]
+                if (byte_count < 15) begin
+                    // Increment to next byte index
+                    byte_count <= byte_count + 1;
+                    bit_count  <= 0;
+                    // Use (byte_count+1) because RHS uses OLD byte_count value
+                    // When byte_count=0 (just sent header), load packet_buffer[1] at tx_packet[119:112]
+                    shift_out <= tx_packet[127 - (byte_count+1)*8 -: 8];
                 end else begin
-                    // Shift LEFT (MSB first) - move next bit into MSB position
-                    // After sending MSB, we want the next bit (bit 6) in MSB position
-                    // Left shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
-                    shift_out <= {shift_out[6:0], 1'b0};
-                    bit_count <= bit_count + 1;
+                    // Last byte (15) done, send zeros
+                    byte_count <= byte_count + 1;
+                    bit_count  <= 0;
+                    shift_out <= 8'h00;
                 end
+            end else begin
+                // Shift LEFT (MSB first) - move next bit into MSB position
+                // After sending MSB, we want the next bit (bit 6) in MSB position
+                // Left shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
+                shift_out <= {shift_out[6:0], 1'b0};
+                bit_count <= bit_count + 1;
             end
-            // If seen_first_rising is false, don't shift - ensures first byte stays stable
         end
+        // If seen_first_rising is false, don't shift - ensures first byte stays stable
     end
     
     // MISO output (tri-state when CS high)
