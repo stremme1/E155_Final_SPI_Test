@@ -44,12 +44,20 @@ void initSPI(int br, int cpol, int cpha) {
     
     // Enable software slave management (SSM) - ignore hardware NSS pin
     // Set SSI (internal slave select) high so we're always selected
+    // Note: When SSM=1, the NSS pin (PA11) is free for GPIO use (we use it to detect CS)
+    // The SPI peripheral will always think it's selected (SSI=1), which is correct
+    // for our application where master controls CS via GPIO
     SPI1->CR1 |= (SPI_CR1_SSM | SPI_CR1_SSI);
     
-    // Configure data size (8 bits)
+    // Configure data size (8 bits) - DS[3:0] = 0b0111 for 8-bit frames
+    // Per datasheet: "The data frame size is chosen by using the DS bits. It can be set
+    // from 4-bit up to 16-bit length and the setting applies for both transmission and reception."
     SPI1->CR2 |= _VAL2FLD(SPI_CR2_DS, 0b0111);
     
-    // Enable RX threshold (RXNE when 1 byte in FIFO)
+    // Enable RX threshold (FRXTH=1 means RXNE when 1 byte in FIFO)
+    // Per datasheet Section 40.4.9: "If FRXTH is set, RXNE goes high and stays high until
+    // the RXFIFO level is greater or equal to 1/4 (8-bit)."
+    // This is correct for 8-bit data frames
     SPI1->CR2 |= (SPI_CR2_FRXTH);
     
     // Don't set SSOE (slave select output enable) - we're slave, not master
@@ -77,18 +85,27 @@ void initSPI(int br, int cpol, int cpha) {
 /* Receives a character (1 byte) over SPI in slave mode.
  *    -- return: the character received over SPI
  * Note: In slave mode, we receive data when master clocks it in.
- * We can send dummy data (0x00) while receiving. */
+ * According to datasheet Section 40.4.8: "The data register of the slave must already
+ * contain data to be sent before starting communication with the master (either on the
+ * first edge of the communication clock, or before the end of the ongoing communication
+ * if the clock signal is continuous)."
+ * 
+ * For full-duplex mode: We pre-load dummy data (0x00) into TXFIFO before master clocks.
+ * The master will clock in our dummy data while we receive the actual data from master. */
 char spiReceive(void) {
+    // CRITICAL: Pre-load dummy byte into TXFIFO BEFORE master starts clocking
     // Wait until transmit buffer is empty (can write)
     while(!(SPI1->SR & SPI_SR_TXE));
     
-    // Write dummy byte to trigger clock (master needs to clock to receive)
-    // In slave mode, writing to DR triggers the transaction if master is clocking
-    *(volatile char *) (&SPI1->DR) = 0x00; // Dummy byte
+    // Write dummy byte to TXFIFO (will be sent when master clocks)
+    // This must be done BEFORE master starts clocking (per datasheet 40.4.8)
+    *(volatile char *) (&SPI1->DR) = 0x00; // Dummy byte to send
     
-    // Wait until data has been received
+    // Wait until data has been received from master
+    // RXNE is set when RXFIFO threshold is reached (FRXTH=1 means 1 byte)
     while(!(SPI1->SR & SPI_SR_RXNE));
     
+    // Read received data from master
     char rec = (volatile char) SPI1->DR;
     
     // Debug: log SPI transaction (can be verbose - comment out if too slow)
@@ -229,12 +246,19 @@ void readSensorDataPacket(uint8_t *packet) {
     
     debug_print("[SPI] CS low detected - reading 16 bytes from master\r\n");
     
-    // Small delay to allow synchronization after CS goes low
-    volatile int setup_delay = 50;  // ~0.625us at 80MHz
+    // CRITICAL: Per datasheet Section 40.4.8, slave must have data ready BEFORE master clocks
+    // Pre-load first dummy byte into TXFIFO immediately after CS goes low
+    // This ensures data is ready when master starts clocking
+    while(!(SPI1->SR & SPI_SR_TXE));  // Wait for TXFIFO space
+    *(volatile char *) (&SPI1->DR) = 0x00;  // Pre-load first dummy byte
+    
+    // Small delay to allow TXFIFO to be ready (master may start clocking soon)
+    volatile int setup_delay = 10;  // ~0.125us at 80MHz - minimal delay
     while(setup_delay-- > 0) __asm("nop");
     
     // Read 16 bytes - master will clock them in
-    // In slave mode, we write dummy bytes to DR and read received data
+    // Note: spiReceive() will pre-load the NEXT byte while reading the current one
+    // This ensures continuous data flow per datasheet requirements
     for(i = 0; i < 16; i++) {
         packet[i] = spiReceive();  // Receive byte (master clocks it in)
         // Debug: log each byte received
