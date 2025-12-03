@@ -41,7 +41,7 @@ module spi_slave_mcu(
     
     // Test mode: When enabled, output known test pattern instead of sensor data
     // This helps verify SPI shift logic works independently of data capture
-    localparam TEST_MODE = 1'b0;  // Set to 1 to enable test mode
+    localparam TEST_MODE = 1'b1;  // Set to 1 to enable test mode
     
     // Test pattern - known values for debugging
     logic [7:0] test_pattern [0:15];
@@ -118,6 +118,7 @@ module spi_slave_mcu(
     // Capture snapshot on CS falling edge (start of transaction)
     // Also initialize on first posedge clk when CS is high (for testbench to read packet_buffer before transaction)
     logic cs_n_sync1, cs_n_sync2;  // Synchronize CS to clk domain for edge detection
+    logic snapshot_initialized = 1'b0;  // Track if snapshot has been initialized
     
     // Synchronize CS to clk domain (2-stage synchronizer)
     always_ff @(posedge clk) begin
@@ -130,8 +131,8 @@ module spi_slave_mcu(
     assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
-    // Update snapshot when CS is high, freeze when CS is low (during transaction)
-    // This ensures data consistency during the entire SPI transaction
+    // Update snapshot continuously when CS is high, freeze when CS is low (during transaction)
+    // Also initialize snapshot on first clock to ensure it has data even before first CS transaction
     always_ff @(posedge clk) begin
         if (cs_n) begin
             // CS high: Update snapshot continuously with latest data
@@ -150,6 +151,21 @@ module spi_slave_mcu(
         end
         // When CS is low (during transaction), snapshot does NOT update - it remains stable
         // This ensures data consistency during the entire SPI transaction
+        // Note: Snapshot is initialized on first clock cycle when CS is high
+    end
+    
+    // Initialize snapshot on first clock (before any CS transaction)
+    // This ensures snapshot has valid data even if CS goes low immediately
+    initial begin
+        quat1_w_snap = 16'h0000;
+        quat1_x_snap = 16'h0000;
+        quat1_y_snap = 16'h0000;
+        quat1_z_snap = 16'h0000;
+        gyro1_x_snap = 16'h0000;
+        gyro1_y_snap = 16'h0000;
+        gyro1_z_snap = 16'h0000;
+        quat1_valid_snap = 1'b0;
+        gyro1_valid_snap = 1'b0;
     end
     
     // Packet buffer - assembled from SNAPSHOT data (stable during transaction)
@@ -215,24 +231,20 @@ module spi_slave_mcu(
         packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
     };
     
+    // Registered first byte - updated in clk domain so it's ready when CS goes low
+    // This ensures the first bit is stable before the first SCK edge
+    // Use HEADER_BYTE directly since it's a constant
+    logic [7:0] first_byte_reg = HEADER_BYTE;
+    always_ff @(posedge clk) begin
+        first_byte_reg <= HEADER_BYTE;  // Always 0xAA (constant)
+    end
+    
     // ----------------------------
     // Shift registers and counters - clocked on SCK for reliable timing
     // ----------------------------
     logic [7:0] shift_out;  // Current byte being shifted out
     logic [3:0] byte_count;  // 0-15 (4 bits for 16 bytes)
     logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
-    
-    // CRITICAL: shift_out must be set to HEADER_BYTE BEFORE CS goes low
-    // We use a separate register in clk domain to prepare the value
-    // Then use it to initialize shift_out when CS goes low
-    logic [7:0] shift_out_prep = HEADER_BYTE;  // Prepared value in clk domain
-    always_ff @(posedge clk) begin
-        if (cs_n) begin
-            // When CS is high, prepare shift_out for next transaction
-            // This ensures shift_out_prep is HEADER_BYTE before CS goes low
-            shift_out_prep <= HEADER_BYTE;
-        end
-    end
     
     // CS state tracking for edge detection
     logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
@@ -275,13 +287,11 @@ module spi_slave_mcu(
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
-            // Use prepared value from clk domain (should be HEADER_BYTE)
-            shift_out <= shift_out_prep;
+            shift_out  <= HEADER_BYTE;
         end else begin
             if (cs_falling_edge_sck) begin
                 // CS falling edge detected in SCK domain - Load first byte immediately
-                // Use prepared value from clk domain (should be HEADER_BYTE)
-                shift_out  <= shift_out_prep;
+                shift_out  <= HEADER_BYTE;
                 byte_count <= 0;
                 bit_count  <= 0;
             end else if (seen_first_rising) begin
