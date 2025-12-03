@@ -9,8 +9,10 @@
 // - Arduino sends 16-byte packets via SPI.transfer()
 // - FPGA receives data on MOSI (sdi) and shifts it in on SCK rising edge
 // - CS (chip select) controls when transaction is active (active low)
-// - Packet format: [Header(0xAA)][quat_w][quat_x][quat_y][quat_z][gyro_x][gyro_y][gyro_z][Flags]
+// - Packet format: [Header(0xAA)][Roll][Pitch][Yaw][Gyro X][Gyro Y][Gyro Z][Flags][Reserved]
 //   All 16-bit values are MSB-first (MSB byte, then LSB byte)
+//   Roll/Pitch/Yaw are Euler angles (int16_t scaled by 100, 0.01 degree resolution)
+//   Gyro values are int16_t scaled by 2000
 
 module arduino_spi_slave(
     input  logic        clk,           // FPGA system clock
@@ -142,30 +144,29 @@ module arduino_spi_slave(
     // ========================================================================
     // Arduino packet format:
     // Byte 0: Header (0xAA)
-    // Bytes 1-2: quat_w (int16_t, MSB first)
-    // Bytes 3-4: quat_x (int16_t, MSB first)
-    // Bytes 5-6: quat_y (int16_t, MSB first)
-    // Bytes 7-8: quat_z (int16_t, MSB first)
-    // Bytes 9-10: gyro_x (int16_t, MSB first)
-    // Bytes 11-12: gyro_y (int16_t, MSB first)
-    // Bytes 13-14: gyro_z (int16_t, MSB first)
-    // Byte 15: Flags (bit 0 = quat_valid, bit 1 = gyro_valid)
+    // Bytes 1-2: Roll (int16_t, MSB first) - Euler angle scaled by 100
+    // Bytes 3-4: Pitch (int16_t, MSB first) - Euler angle scaled by 100
+    // Bytes 5-6: Yaw (int16_t, MSB first) - Euler angle scaled by 100
+    // Bytes 7-8: Gyro X (int16_t, MSB first) - scaled by 2000
+    // Bytes 9-10: Gyro Y (int16_t, MSB first) - scaled by 2000
+    // Bytes 11-12: Gyro Z (int16_t, MSB first) - scaled by 2000
+    // Byte 13: Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
+    // Bytes 14-15: Reserved (0x00)
     
     // Parse packet fields
     logic [7:0] header;
-    logic signed [15:0] quat_w, quat_x, quat_y, quat_z;
+    logic signed [15:0] roll, pitch, yaw;
     logic signed [15:0] gyro_x, gyro_y, gyro_z;
     logic [7:0] flags;
     
     assign header = packet_snapshot[0];
-    assign quat_w = {packet_snapshot[1], packet_snapshot[2]};
-    assign quat_x = {packet_snapshot[3], packet_snapshot[4]};
-    assign quat_y = {packet_snapshot[5], packet_snapshot[6]};
-    assign quat_z = {packet_snapshot[7], packet_snapshot[8]};
-    assign gyro_x = {packet_snapshot[9], packet_snapshot[10]};
-    assign gyro_y = {packet_snapshot[11], packet_snapshot[12]};
-    assign gyro_z = {packet_snapshot[13], packet_snapshot[14]};
-    assign flags = packet_snapshot[15];
+    assign roll = {packet_snapshot[1], packet_snapshot[2]};
+    assign pitch = {packet_snapshot[3], packet_snapshot[4]};
+    assign yaw = {packet_snapshot[5], packet_snapshot[6]};
+    assign gyro_x = {packet_snapshot[7], packet_snapshot[8]};
+    assign gyro_y = {packet_snapshot[9], packet_snapshot[10]};
+    assign gyro_z = {packet_snapshot[11], packet_snapshot[12]};
+    assign flags = packet_snapshot[13];
     
     // Validate header and set status
     // Initialize to 0 (not initialized, no error) on startup
@@ -199,22 +200,24 @@ module arduino_spi_slave(
     end
     
     // Map Arduino packet fields to spi_slave_mcu interface
-    // Direct pass-through: Arduino sends quaternion format, map directly to outputs
+    // Arduino sends Euler angles (Roll, Pitch, Yaw), map to quaternion fields
+    // Roll → quat_x, Pitch → quat_y, Yaw → quat_z, set quat_w = 16384 (Q14 format = 1.0)
     always_ff @(posedge clk) begin
         if (packet_valid && (header == HEADER_BYTE)) begin
-            // Pass through quaternion data directly
-            quat1_w <= quat_w;
-            quat1_x <= quat_x;
-            quat1_y <= quat_y;
-            quat1_z <= quat_z;
+            // Map Euler angles to quaternion fields
+            // Q14 format: 16384 = 1.0 (for quat_w when using Euler angles)
+            quat1_w <= 16'd16384;  // Q14 format representation of 1.0
+            quat1_x <= roll;        // Roll → quat_x
+            quat1_y <= pitch;       // Pitch → quat_y
+            quat1_z <= yaw;         // Yaw → quat_z
             
             // Pass through gyroscope data
             gyro1_x <= gyro_x;
             gyro1_y <= gyro_y;
             gyro1_z <= gyro_z;
             
-            // Map flags: bit 0 = quat_valid, bit 1 = gyro_valid
-            quat1_valid <= flags[0];  // Quat valid bit
+            // Map flags: bit 0 = Euler valid → quat_valid, bit 1 = Gyro valid → gyro_valid
+            quat1_valid <= flags[0];  // Euler valid bit
             gyro1_valid <= flags[1];  // Gyro valid bit
         end else begin
             // Keep previous values if no new packet
