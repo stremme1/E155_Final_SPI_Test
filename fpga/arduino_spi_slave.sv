@@ -64,7 +64,8 @@ module arduino_spi_slave(
     
     // Main SPI receive logic - clocked on SCK rising edge with async reset on CS
     // SPI Mode 0: Sample data on rising edge of SCK
-    // No need for separate receiving signal - CS low is sufficient to start receiving
+    // In SPI Mode 0, the first bit is set up by master before first SCK rising edge
+    // We sample on each rising edge, starting with the first one
     always_ff @(posedge sck or posedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
