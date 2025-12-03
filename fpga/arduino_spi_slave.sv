@@ -48,8 +48,8 @@ module arduino_spi_slave(
     // CS state tracking for edge detection
     logic cs_n_prev = 1'b1;  // Previous CS state (for direct edge detection)
     
-    // Track CS state directly (not synchronized) for first packet detection
-    always_ff @(posedge cs_n or negedge cs_n) begin
+    // Track CS state directly using clk domain (standard approach)
+    always_ff @(posedge clk) begin
         cs_n_prev <= cs_n;
     end
     
@@ -74,11 +74,10 @@ module arduino_spi_slave(
     // Track if we've started receiving (to avoid resetting multiple times)
     logic receiving = 1'b0;
     
-    // Reset logic - async reset when CS goes high, sync reset when CS goes low
-    // Only drive receiving here, not the counters/shift registers
-    always_ff @(posedge cs_n or negedge cs_n) begin
+    // Reset logic - use clk domain for receiving signal (standard approach)
+    always_ff @(posedge clk) begin
         if (cs_n) begin
-            // Async reset when CS goes high
+            // CS high - clear receiving
             receiving <= 1'b0;
         end else if (cs_fell_direct) begin
             // CS just went low - mark that we've started receiving
