@@ -257,19 +257,31 @@ module spi_slave_mcu(
     // - First bit must be stable when CS goes low (before first SCK edge)
     // - We only shift AFTER the first bit has been sampled (after first rising edge)
     
+    // CRITICAL: shift_out must be set to HEADER_BYTE BEFORE CS goes low
+    // We set it in clk domain to ensure it's ready when CS falls
+    // This is clocked on clk (FPGA system clock) which is faster than SCK
+    // When CS is high: clk domain drives shift_out
+    // When CS is low: SCK domain drives shift_out (clk domain stops updating)
+    always_ff @(posedge clk) begin
+        if (cs_n) begin
+            // When CS is high, prepare shift_out for next transaction
+            // This ensures shift_out is HEADER_BYTE before CS goes low
+            shift_out <= HEADER_BYTE;
+        end
+        // When CS is low, don't update shift_out (SCK domain controls it)
+    end
+    
     // Main shift logic - clocked on SCK falling edge, with async reset on CS high
     always_ff @(negedge sck or posedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
-            shift_out  <= HEADER_BYTE;
+            // Don't set shift_out here - it's set in clk domain above
         end else begin
-            // CS is low - check if we need to load first byte
-            // This handles the case where CS goes low before any SCK edges
-            if (cs_falling_edge_sck || (!seen_first_rising && byte_count == 0 && bit_count == 0)) begin
-                // CS falling edge detected OR first SCK edge and shift_out not loaded yet
-                // Load first byte immediately
+            if (cs_falling_edge_sck) begin
+                // CS falling edge detected in SCK domain - Load first byte immediately
+                // shift_out should already be HEADER_BYTE from clk domain, but set it here too for safety
                 shift_out  <= HEADER_BYTE;
                 byte_count <= 0;
                 bit_count  <= 0;
