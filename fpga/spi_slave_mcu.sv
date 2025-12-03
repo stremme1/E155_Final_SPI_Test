@@ -437,11 +437,10 @@ module spi_slave_mcu(
                         shift_out <= 8'h00;
                     end
                 end else begin
-                    // Shift RIGHT (MSB first) - move next bit into MSB position
-                    // For MSB-first: output MSB (bit 7), then shift right so bit 6 becomes bit 7
-                    // Right shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
-                    // This ensures we output bits in order: 7, 6, 5, 4, 3, 2, 1, 0
-                    shift_out <= {1'b0, shift_out[7:1]};
+                    // Shift LEFT (MSB first) - move next bit into MSB position
+                    // After sending MSB, we want the next bit (bit 6) in MSB position
+                    // Left shift: bit 6 -> bit 7, bit 5 -> bit 6, ..., bit 0 -> bit 1, insert 0 in bit 0
+                    shift_out <= {shift_out[6:0], 1'b0};
                     bit_count <= bit_count + 1;
                 end
             end
