@@ -39,8 +39,10 @@
 // BNO085 Reset pin (D2 = GPIO5 on Nano ESP32)
 #define BNO08X_RESET 2
 
-// MCU SPI Chip Select pin (D10 = GPIO21 on Nano ESP32 → STM32 PA11)
-#define MCU_SPI_CS 10
+// FPGA SPI Chip Select pin (D10 = GPIO21 on Nano ESP32 → FPGA arduino_cs_n)
+// Note: Arduino sends to FPGA first, FPGA then forwards to MCU
+// Architecture: Arduino (Master) → FPGA (Slave) → MCU (Master reads from FPGA)
+#define FPGA_SPI_CS 10
 
 sh2_SensorId_t reportType = SH2_ARVR_STABILIZED_RV;
 long reportIntervalUs = 5000;
@@ -83,11 +85,12 @@ void setup(void) {
   latest_sensor_data.gyro_valid = false;
   setReports();
   
-  // Initialize SPI for MCU communication using default Nano ESP32 SPI pins
+  // Initialize SPI for FPGA communication using default Nano ESP32 SPI pins
   // Default SPI pins: D11=COPI/MOSI (GPIO38), D12=CIPO/MISO (GPIO47), D13=SCK (GPIO48)
-  // CS pin: D10 (GPIO21) → STM32 PA11
-  pinMode(MCU_SPI_CS, OUTPUT);
-  digitalWrite(MCU_SPI_CS, HIGH);  // CS high = deselected
+  // CS pin: D10 (GPIO21) → FPGA arduino_cs_n input
+  // Architecture: Arduino (Master) → FPGA (Slave) → MCU (Master reads from FPGA)
+  pinMode(FPGA_SPI_CS, OUTPUT);
+  digitalWrite(FPGA_SPI_CS, HIGH);  // CS high = deselected
   SPI.begin();
 }
 
@@ -170,13 +173,20 @@ void sendSensorPacketToMCU(void) {
   packet[14] = 0x00;
   packet[15] = 0x00;
   
-  // Send packet via SPI to MCU using default SPI pins
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-  digitalWrite(MCU_SPI_CS, LOW);  // Select MCU (CS low)
+  // Send packet via SPI to FPGA using default SPI pins
+  // SPI Mode 0 (CPOL=0, CPHA=0): Clock idle LOW, sample on rising edge
+  // MSB First: Most significant bit sent first
+  // 100kHz clock rate (10us period per bit, 80us per byte, ~1.28ms per 16-byte packet)
+  SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
+  digitalWrite(FPGA_SPI_CS, LOW);  // Select FPGA (CS low)
+  
+  // Send all 16 bytes of the packet
+  // FPGA samples data on SCK rising edge (SPI Mode 0)
   for (int i = 0; i < 16; i++) {
     SPI.transfer(packet[i]);
   }
-  digitalWrite(MCU_SPI_CS, HIGH);  // Deselect MCU (CS high)
+  
+  digitalWrite(FPGA_SPI_CS, HIGH);  // Deselect FPGA (CS high) - transaction complete
   SPI.endTransaction();
 }
 
@@ -229,8 +239,10 @@ void loop() {
 //#define BNO08X_CS 10
 #define BNO08X_INT 9
 
-// MCU SPI Chip Select pin (D10 = GPIO21 on Nano ESP32 → STM32 PA11)
-#define MCU_SPI_CS 10
+// FPGA SPI Chip Select pin (D10 = GPIO21 on Nano ESP32 → FPGA arduino_cs_n)
+// Note: Arduino sends to FPGA first, FPGA then forwards to MCU
+// Architecture: Arduino (Master) → FPGA (Slave) → MCU (Master reads from FPGA)
+#define FPGA_SPI_CS 10
 
 
 // #define FAST_MODE
@@ -291,11 +303,12 @@ void setup(void) {
   Serial.println("Reading events");
   delay(100);
 
-  // Initialize SPI for MCU communication using default Nano ESP32 SPI pins
+  // Initialize SPI for FPGA communication using default Nano ESP32 SPI pins
   // Default SPI pins: D11=COPI/MOSI (GPIO38), D12=CIPO/MISO (GPIO47), D13=SCK (GPIO48)
-  // CS pin: D10 (GPIO21) → STM32 PA11
-  pinMode(MCU_SPI_CS, OUTPUT);
-  digitalWrite(MCU_SPI_CS, HIGH);  // CS high = deselected
+  // CS pin: D10 (GPIO21) → FPGA arduino_cs_n input
+  // Architecture: Arduino (Master) → FPGA (Slave) → MCU (Master reads from FPGA)
+  pinMode(FPGA_SPI_CS, OUTPUT);
+  digitalWrite(FPGA_SPI_CS, HIGH);  // CS high = deselected
   SPI.begin();
 }
 
@@ -437,14 +450,21 @@ void loop() {
     packet[14] = 0x00;
     packet[15] = 0x00;
     
-    // Send packet via SPI to MCU using default SPI pins
-    SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
-    digitalWrite(MCU_SPI_CS, LOW);  // Select MCU (CS low)
-    for (int i = 0; i < 16; i++) {
-      SPI.transfer(packet[i]);
-    }
-    digitalWrite(MCU_SPI_CS, HIGH);  // Deselect MCU (CS high)
-    SPI.endTransaction();
+  // Send packet via SPI to FPGA using default SPI pins
+  // SPI Mode 0 (CPOL=0, CPHA=0): Clock idle LOW, sample on rising edge
+  // MSB First: Most significant bit sent first
+  // 100kHz clock rate (10us period per bit, 80us per byte, ~1.28ms per 16-byte packet)
+  SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
+  digitalWrite(FPGA_SPI_CS, LOW);  // Select FPGA (CS low)
+  
+  // Send all 16 bytes of the packet
+  // FPGA samples data on SCK rising edge (SPI Mode 0)
+  for (int i = 0; i < 16; i++) {
+    SPI.transfer(packet[i]);
+  }
+  
+  digitalWrite(FPGA_SPI_CS, HIGH);  // Deselect FPGA (CS high) - transaction complete
+  SPI.endTransaction();
     
     last_packet_send = current_time;
   }
