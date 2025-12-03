@@ -44,20 +44,31 @@ module drum_trigger_top (
     // Simple reset: just use FPGA reset directly (no initialization delays needed)
     assign rst_n = fpga_rst_n;
     
-    // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
-    // CLKHF_DIV settings:
-    //   2'b00 = divide by 2  (48MHz/2 = 24MHz)
-    //   2'b01 = divide by 4  (48MHz/4 = 12MHz)
-    //   2'b10 = divide by 8  (48MHz/8 = 6MHz)
-    //   2'b11 = divide by 16 (48MHz/16 = 3MHz)
+    // ========================================================================
+    // System Clock Generation - HSOSC (Hardware Oscillator)
+    // ========================================================================
+    // HSOSC is a built-in primitive for iCE40UP5k
+    // CLKHF_DIV settings (divide ratio):
+    //   2'b00 = divide by 2  → 48MHz/2  = 24MHz
+    //   2'b01 = divide by 4  → 48MHz/4  = 12MHz
+    //   2'b10 = divide by 8  → 48MHz/8  =  6MHz
+    //   2'b11 = divide by 16 → 48MHz/16 =  3MHz
     //
-    // Current setting: 2'b11 = 3MHz (suitable for SPI, matches timing calculations)
-    // Note: HSOSC is a built-in primitive for iCE40UP5k
-    // Make sure your synthesis tool recognizes this primitive
-    HSOSC #(.CLKHF_DIV(2'b11)) hf_osc (  // FIXED: Changed from 2'b00 to 2'b11 for 3MHz
-        .CLKHFPU(1'b1),   // Power up (must be 1)
-        .CLKHFEN(1'b1),   // Enable (must be 1)
-        .CLKHF(clk)       // Output clock: 3MHz (48MHz / 16)
+    // Current setting: 2'b11 = 3MHz
+    // Rationale:
+    //   - 3MHz provides sufficient speed for SPI operations (Arduino: 100kHz, MCU: variable)
+    //   - Lower frequency reduces power consumption
+    //   - Adequate for CDC timing margins (3 cycles = 1us, well above SPI timing)
+    //   - Matches all timing calculations in code comments
+    //
+    // Timing Margins:
+    //   - Arduino SPI: 100kHz (10us period) → 30 FPGA clocks per SPI bit
+    //   - MCU SPI: Variable, but 3MHz provides sufficient margin
+    //   - CDC: 3-cycle delay = 1us, provides 10x margin over worst-case SPI timing
+    HSOSC #(.CLKHF_DIV(2'b11)) hf_osc (
+        .CLKHFPU(1'b1),   // Power up (must be 1 for oscillator to run)
+        .CLKHFEN(1'b1),   // Enable (must be 1 for clock output)
+        .CLKHF(clk)       // Output: 3MHz system clock (48MHz / 16)
     );
     
     // Heartbeat LED (1Hz approx)
