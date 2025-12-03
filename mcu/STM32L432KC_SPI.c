@@ -170,9 +170,11 @@ void readSensorDataPacket(uint8_t *packet) {
     // If CS toggles between bytes, the FPGA resets and reloads the first byte
     digitalWrite(PA11, 0);  // CS low
     
-    // Small delay to allow FPGA to prepare data and synchronize
-    // This ensures the FPGA shift register is ready before we start clocking
-    volatile int setup_delay = 100;  // ~1.25us at 80MHz (adjust if needed)
+    // Setup delay to allow FPGA to prepare data and synchronize
+    // FPGA pre-initializes shift_out when CS is high, so it should be ready immediately
+    // However, we need to ensure CS signal propagation and FPGA state stabilization
+    // Increased delay to ensure FPGA has time to detect CS low and stabilize shift_out
+    volatile int setup_delay = 200;  // ~2.5us at 80MHz (increased from 100 for better margin)
     while(setup_delay-- > 0) __asm("nop");
     
     // Read 16 bytes using dummy bytes (0x00) to generate SCK
@@ -189,8 +191,10 @@ void readSensorDataPacket(uint8_t *packet) {
     // Pull CS high to end transaction (only after all 16 bytes are read)
     digitalWrite(PA11, 1);  // CS high
     
-    // Small delay to allow FPGA to reset its state
-    volatile int hold_delay = 100;  // ~1.25us at 80MHz (adjust if needed)
+    // Hold delay to allow FPGA to reset its state and pre-initialize shift_out
+    // FPGA pre-initializes shift_out to first_byte_value when CS goes high
+    // This ensures shift_out is ready for the next transaction
+    volatile int hold_delay = 200;  // ~2.5us at 80MHz (increased from 100 for better margin)
     while(hold_delay-- > 0) __asm("nop");
     
     // Debug: Complete packet dump
