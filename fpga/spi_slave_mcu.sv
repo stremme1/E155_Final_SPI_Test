@@ -22,6 +22,8 @@ module spi_slave_mcu(
     
     // Sensor data inputs (RAW data from BNO085 controller)
     // Sensor 1 (Right Hand) - Single sensor only
+    input  logic        initialized,
+    input  logic        error,
     input  logic        quat1_valid,
     input  logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z,
     input  logic        gyro1_valid,
@@ -72,12 +74,15 @@ module spi_slave_mcu(
     
     // Stage 1: Capture sensor data in clk domain (registered to prevent glitches)
     logic quat1_valid_clk, gyro1_valid_clk;
+    logic initialized_clk, error_clk;
     logic signed [15:0] quat1_w_clk, quat1_x_clk, quat1_y_clk, quat1_z_clk;
     logic signed [15:0] gyro1_x_clk, gyro1_y_clk, gyro1_z_clk;
     
     always_ff @(posedge clk) begin
         quat1_valid_clk <= quat1_valid;
         gyro1_valid_clk <= gyro1_valid;
+        initialized_clk <= initialized;
+        error_clk <= error;
         quat1_w_clk <= quat1_w;
         quat1_x_clk <= quat1_x;
         quat1_y_clk <= quat1_y;
@@ -125,6 +130,9 @@ module spi_slave_mcu(
     assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
+    // Snapshot registers for status flags
+    logic initialized_snap, error_snap;
+    
     // Update snapshot when CS is high, freeze when CS is low (during transaction)
     // This ensures data consistency during the entire SPI transaction
     always_ff @(posedge clk) begin
@@ -140,6 +148,8 @@ module spi_slave_mcu(
             gyro1_z_snap <= gyro1_z_clk;
             quat1_valid_snap <= quat1_valid_sync2;
             gyro1_valid_snap <= gyro1_valid_sync2;
+            initialized_snap <= initialized_clk;
+            error_snap <= error_clk;
         end
         // When CS is low (during transaction), snapshot does NOT update - it remains stable
         // This ensures data consistency during the entire SPI transaction
@@ -193,7 +203,8 @@ module spi_slave_mcu(
             assign packet_buffer[14] = gyro1_z_snap[7:0];   // Z LSB
             
             // Sensor 1 Flags - from snapshot
-            assign packet_buffer[15] = {6'h0, gyro1_valid_snap, quat1_valid_snap};
+            // Bit 0 = quat_valid, bit 1 = gyro_valid, bit 2 = initialized, bit 3 = error
+            assign packet_buffer[15] = {4'h0, error_snap, initialized_snap, gyro1_valid_snap, quat1_valid_snap};
         end
     endgenerate
     
