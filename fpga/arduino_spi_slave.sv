@@ -78,9 +78,10 @@ module arduino_spi_slave(
                 byte_count <= 0;
                 bit_count  <= 0;
                 rx_shift   <= 8'd0;
-                // Capture first bit immediately - MSB goes into position 7
-                // Standard MSB-first: shift left and OR in new bit
-                rx_shift <= (8'd0 << 1) | sdi;  // First bit (MSB) goes into position 7
+                // Capture first bit immediately - MSB goes into position 0 initially
+                // Standard MSB-first with left shift: first bit in position 0, then shift left 7 times
+                // After 8 bits: rx_shift[7] = first bit (MSB), rx_shift[0] = last bit (LSB)
+                rx_shift <= {7'd0, sdi};  // First bit (MSB) goes into position 0 initially
                 bit_count <= 1;  // We've now received 1 bit
             end else begin
                 // Shift in data on rising edge of SCK (MSB first)
