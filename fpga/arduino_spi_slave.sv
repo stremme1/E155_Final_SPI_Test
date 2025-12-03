@@ -167,7 +167,12 @@ module arduino_spi_slave(
     
     // Register parsed values when packet is captured for stability
     // Read directly from packet_buffer (same source as packet_snapshot) to avoid timing issues
+    logic new_packet_available;  // Flag to indicate when new parsed data is ready
+    logic cs_rising_edge_clk_delayed;  // Delayed version for flag timing
     always_ff @(posedge clk) begin
+        // Delay cs_rising_edge_clk by one cycle for flag timing
+        cs_rising_edge_clk_delayed <= cs_rising_edge_clk;
+        
         if (cs_rising_edge_clk) begin
             // Capture parsed values directly from packet_buffer when CS rises
             // This ensures we get the latest data, not stale packet_snapshot values
@@ -181,12 +186,22 @@ module arduino_spi_slave(
             flags <= packet_buffer[13];
         end
         // Values persist until next packet
+        
+        // Set flag on cycle after cs_rising_edge_clk, clear after one cycle
+        if (cs_rising_edge_clk_delayed) begin
+            // One cycle after CS rising edge - registered values are now stable
+            new_packet_available <= 1'b1;
+        end else begin
+            // Clear flag after one cycle to ensure we only update once per packet
+            new_packet_available <= 1'b0;
+        end
     end
     
     // Validate header and set status
+    // Update status when new packet data is available, same timing as output updates
     // Initialize to 0 (not initialized, no error) on startup
     always_ff @(posedge clk) begin
-        if (packet_valid) begin
+        if (new_packet_available) begin
             if (header == HEADER_BYTE) begin
                 initialized <= 1'b1;
                 error <= 1'b0;
@@ -195,7 +210,7 @@ module arduino_spi_slave(
                 error <= 1'b1;
             end
         end
-        // Note: If packet_valid is false, keep previous state
+        // Note: If new_packet_available is false, keep previous state
         // This allows status to persist between packets
     end
     
@@ -217,8 +232,10 @@ module arduino_spi_slave(
     // Map Arduino packet fields to spi_slave_mcu interface
     // Arduino sends Euler angles (Roll, Pitch, Yaw), map to quaternion fields
     // Roll → quat_x, Pitch → quat_y, Yaw → quat_z, set quat_w = 16384 (Q14 format = 1.0)
+    // Update outputs when new valid packet data is available (new_packet_available && header == HEADER_BYTE)
+    // This ensures outputs are updated with fresh data and remain stable for spi_slave_mcu to capture
     always_ff @(posedge clk) begin
-        if (packet_valid && (header == HEADER_BYTE)) begin
+        if (new_packet_available && (header == HEADER_BYTE)) begin
             // Map Euler angles to quaternion fields
             // Q14 format: 16384 = 1.0 (for quat_w when using Euler angles)
             quat1_w <= 16'd16384;  // Q14 format representation of 1.0
@@ -234,18 +251,9 @@ module arduino_spi_slave(
             // Map flags: bit 0 = Euler valid → quat_valid, bit 1 = Gyro valid → gyro_valid
             quat1_valid <= flags[0];  // Euler valid bit
             gyro1_valid <= flags[1];  // Gyro valid bit
-        end else begin
-            // Keep previous values if no new packet
-            quat1_w <= quat1_w;
-            quat1_x <= quat1_x;
-            quat1_y <= quat1_y;
-            quat1_z <= quat1_z;
-            gyro1_x <= gyro1_x;
-            gyro1_y <= gyro1_y;
-            gyro1_z <= gyro1_z;
-            quat1_valid <= quat1_valid;
-            gyro1_valid <= gyro1_valid;
         end
+        // Note: When new_packet_available is false or header != HEADER_BYTE, outputs keep their previous values
+        // This ensures data persists between packets until a new valid packet arrives
     end
     
 endmodule
