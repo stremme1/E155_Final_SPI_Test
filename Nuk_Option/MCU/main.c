@@ -1,11 +1,10 @@
 // main.c
 // Integrated BNO085 Drum Trigger System
-// MCU receives raw sensor data from Arduino, decodes, detects drum triggers, and plays sounds
+// MCU receives raw sensor data from Arduino/ESP32, decodes, detects drum triggers, and plays sounds
 //
 // Description:
-// - MCU is SPI slave, Arduino is SPI master
-// - Receives raw sensor data (quaternion) from Arduino via SPI
-// - Decodes quaternion to Euler angles using Code_for_C_imp logic
+// - MCU receives data from Arduino/ESP32 via SPI (slave mode)
+// - Reads Euler angles (already converted from quaternion on Arduino) + gyro from Arduino via SPI
 // - Detects drum triggers using Code_for_C_imp zone detection
 // - Plays WAV drum samples using Lab4-Final_Project DAC code
 
@@ -26,7 +25,7 @@
 // Button pins
 // Buttons are pulled up (normally HIGH), go LOW when pressed
 #define BUTTON_CALIBRATE_PIN PA8   // Calibration button
-#define BUTTON_KICK_PIN      PA10  // Kick drum trigger button
+#define BUTTON_KICK_PIN      PA10  // Kick drum trigger button (PA10 is free since we're not using UART)
 
 // Sensor data packet structure
 typedef struct {
@@ -56,56 +55,66 @@ static uint8_t euler_valid = 0;
 
 // Read sensor data packet from Arduino via SPI (slave mode)
 void read_sensor_data(sensor_data_t *data) {
-    uint8_t packet[24];  // 24-byte packet from Arduino (Euler angles + gyroscope)
-    uint8_t sensor_id;
-    uint8_t valid;
-    float roll, pitch, yaw;
-    int16_t gyro_x, gyro_y, gyro_z;
+    uint8_t packet[16];  // 16-byte packet from Arduino (Euler angles + gyroscope)
     
-    // Receive 24-byte packet from Arduino
-    if (receiveSPIPacket(packet, 24) == 0) {
-        // Timeout or error - set all data to invalid
-        debug_print("[SENSOR] Failed to receive packet from Arduino\r\n");
+    // Receive 16-byte packet from Arduino via SPI
+    // Packet format (Roll, Pitch, Yaw order - matching Arduino print statement):
+    //   Byte 0:  Header (0xAA)
+    //   Bytes 1-2:  Roll (int16_t, MSB first, scaled by 100)
+    //   Bytes 3-4:  Pitch (int16_t, MSB first, scaled by 100)
+    //   Bytes 5-6:  Yaw (int16_t, MSB first, scaled by 100)
+    //   Bytes 7-8:  Gyro X (int16_t, MSB first, scaled by 2000)
+    //   Bytes 9-10: Gyro Y (int16_t, MSB first, scaled by 2000)
+    //   Bytes 11-12: Gyro Z (int16_t, MSB first, scaled by 2000)
+    //   Byte 13: Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
+    //   Bytes 14-15: Reserved (0x00)
+    // All 16-bit values are MSB-first (big-endian per value)
+    // Use hardware SPI (configured per datasheet) instead of software SPI
+    readSensorDataPacket(packet);
+    
+    // Verify header
+    if (packet[0] != 0xAA) {
+        debug_printf("[SENSOR] ERROR: Invalid header! Expected 0xAA, got 0x%x\r\n", packet[0]);
         data->quat1_w = data->quat1_x = data->quat1_y = data->quat1_z = 0;
         data->gyro1_x = data->gyro1_y = data->gyro1_z = 0;
         data->quat1_valid = data->gyro1_valid = 0;
         euler_valid = 0;
-        // Sensor 2 not used (set to invalid)
-        data->quat2_w = data->quat2_x = data->quat2_y = data->quat2_z = 0;
-        data->gyro2_x = data->gyro2_y = data->gyro2_z = 0;
-        data->quat2_valid = data->gyro2_valid = 0;
         return;
     }
     
-    // Parse Arduino packet format (Euler angles + gyroscope)
-    parseArduinoPacket(packet, &roll, &pitch, &yaw, &gyro_x, &gyro_y, &gyro_z, &sensor_id, &valid);
+    // Extract Euler angles in order: Roll, Pitch, Yaw (matching Arduino packet order)
+    // Values are int16_t scaled by 100, so divide by 100.0 to get degrees
+    int16_t roll_scaled = (int16_t)((packet[1] << 8) | packet[2]);   // Bytes 1-2: Roll
+    int16_t pitch_scaled = (int16_t)((packet[3] << 8) | packet[4]); // Bytes 3-4: Pitch
+    int16_t yaw_scaled = (int16_t)((packet[5] << 8) | packet[6]);   // Bytes 5-6: Yaw
     
-    // Store Euler angles globally for use in process_sensor_data
-    if (valid) {
-        euler_from_arduino.roll = roll;
-        euler_from_arduino.pitch = pitch;
-        euler_from_arduino.yaw = yaw;
-        euler_valid = 1;
-        
-        // Store gyroscope data (matching Code_for_C_imp format)
-        data->gyro1_x = gyro_x;
-        data->gyro1_y = gyro_y;
-        data->gyro1_z = gyro_z;
-        data->gyro1_valid = 1;  // Gyro data is now included
-        
-        // Set quaternion to identity (not used, but maintains structure compatibility)
-        data->quat1_w = 16384;  // 1.0 in Q14
-        data->quat1_x = 0;
-        data->quat1_y = 0;
-        data->quat1_z = 0;
-        data->quat1_valid = 1;  // Mark as valid so process_sensor_data runs
-    } else {
-        euler_valid = 0;
-        data->quat1_w = data->quat1_x = data->quat1_y = data->quat1_z = 0;
-        data->quat1_valid = 0;
-        data->gyro1_x = data->gyro1_y = data->gyro1_z = 0;
-        data->gyro1_valid = 0;
-    }
+    // Convert scaled integers to float degrees
+    euler_from_arduino.roll = (float)roll_scaled / 100.0f;
+    euler_from_arduino.pitch = (float)pitch_scaled / 100.0f;
+    euler_from_arduino.yaw = (float)yaw_scaled / 100.0f;
+    
+    // Extract gyroscope (int16_t, MSB-first format, scaled by 2000)
+    data->gyro1_x = (int16_t)((packet[7] << 8) | packet[8]);
+    data->gyro1_y = (int16_t)((packet[9] << 8) | packet[10]);
+    data->gyro1_z = (int16_t)((packet[11] << 8) | packet[12]);
+    
+    // Extract flags byte
+    uint8_t flags = packet[13];
+    euler_valid = (flags & 0x01) ? 1 : 0;  // Euler valid flag
+    data->gyro1_valid = (flags & 0x02) ? 1 : 0;
+    
+    // Set quat valid flag based on Euler valid (for compatibility with existing code)
+    data->quat1_valid = euler_valid;
+    
+    // Quaternion not used anymore (set to identity for compatibility)
+    data->quat1_w = 16384;  // 1.0 in Q14 format
+    data->quat1_x = 0;
+    data->quat1_y = 0;
+    data->quat1_z = 0;
+    
+    debug_printf("[SENSOR] Parsed SPI packet: Euler=[%.2f,%.2f,%.2f] Gyro=[%d,%d,%d] Flags=0x%02X\r\n",
+                 euler_from_arduino.roll, euler_from_arduino.pitch, euler_from_arduino.yaw,
+                 data->gyro1_x, data->gyro1_y, data->gyro1_z, flags);
     
     // Sensor 2 not used (set to invalid)
     data->quat2_w = data->quat2_x = data->quat2_y = data->quat2_z = 0;
@@ -256,6 +265,7 @@ int main(void) {
     while(init_delay-- > 0) __asm("nop");
     
     debug_print("\r\n\r\n=== MCU Drum Trigger System Starting ===\r\n");
+    debug_print("*** SPI VERSION - NOT UART ***\r\n");
     debug_print("[INIT] Flash and clock configured (80MHz)\r\n");
     
     // Initialize DAC for audio output (using channel 1 on PA4) - EXACTLY like Lab4
@@ -288,20 +298,28 @@ int main(void) {
     DAC->DHR12R1 = 4095;
     ms_delay(2000);  // Hold for 2 seconds
     
-    // NOW initialize other peripherals (SPI and buttons) AFTER DAC is set up
-    // Enable GPIO clocks (needed for SPI and buttons)
+    // NOW initialize other peripherals (UART and buttons) AFTER DAC is set up
+    // Enable GPIO clocks (needed for UART and buttons)
     debug_print("[INIT] Enabling GPIO clocks...\r\n");
     RCC->AHB2ENR |= (RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN | RCC_AHB2ENR_GPIOCEN);
     
-    // Initialize SPI as SLAVE for Arduino communication
-    // Arduino runs SPI at 1-2 MHz, Mode 0 (CPOL=0, CPHA=0)
-    // br parameter is not used in slave mode (clock comes from master), but kept for compatibility
-    debug_print("[INIT] Initializing SPI Slave (Mode 0, waiting for Arduino master)...\r\n");
-    initSPISlave(2, 0, 0);  // br=2 (not used), CPOL=0, CPHA=0
+    // Initialize SPI as SLAVE for Arduino/ESP32 communication
+    // Arduino/ESP32 acts as master and sends data
+    // MCU follows master's clock (no baud rate setting needed in slave mode)
+    // Mode 0: CPOL=0, CPHA=0 (matches Arduino configuration)
+    debug_print("[INIT] ========================================\r\n");
+    debug_print("[INIT] Initializing SPI as SLAVE (Mode 0, follows master clock)...\r\n");
+    debug_print("[INIT] Pins: PA11=CS, PB3=SCK, PB5=MOSI, PB4=MISO\r\n");
+    debug_print("[INIT] Connection: Arduino SPI → MCU SPI slave\r\n");
     
-    // NSS pin (chip select, active low) - PA11
-    // Note: NSS pin is configured as input in initSPISlave() for hardware slave select
-    debug_print("[INIT] SPI NSS pin (PA11) configured as input (hardware slave select)\r\n");
+    initSPI(0, 0, 0);  // br parameter ignored in slave mode, CPOL=0, CPHA=0
+    
+    // CS pin (chip select, active low) - PA11
+    // Note: CS pin is configured as INPUT in initSPI() since master controls it
+    // Master (Arduino) will pull CS low to start transaction, high to end
+    debug_print("[INIT] SPI CS pin (PA11) configured as INPUT (master controlled)\r\n");
+    debug_print("[INIT] SPI SLAVE initialization complete - READY FOR SPI COMMUNICATION\r\n");
+    debug_print("[INIT] ========================================\r\n");
     
     // Initialize buttons (pulled up, go LOW when pressed)
     debug_print("[INIT] Initializing buttons (PA8=Calibrate, PA10=Kick)...\r\n");
@@ -368,7 +386,7 @@ int main(void) {
         ms_delay(500);  // Longer pause before repeating
     }
     debug_print("[TEST] DAC test mode complete\r\n");
-    debug_print("[MAIN] Entering main loop - receiving sensor data from Arduino via SPI\r\n");
+    debug_print("[MAIN] Entering main loop - reading sensor data from Arduino/ESP32 via SPI\r\n");
     
     // Main loop: read sensor data, decode, detect triggers, play sounds
     while(1) {
@@ -376,23 +394,16 @@ int main(void) {
         check_calibration_button();
         check_kick_button();
         
-        // Read raw sensor data from FPGA via SPI (CS-based protocol)
-        // Note: This is non-blocking (just reads 16 bytes immediately)
+        // Read raw sensor data from Arduino/ESP32 via SPI (slave mode)
+        // Note: This waits for master to pull CS low and send data
         read_sensor_data(&sensor_data);
         
         // Process sensor data and detect drum triggers
         process_sensor_data(&sensor_data);
         
-        // Check buttons again after processing (in case button was pressed during SPI read)
+        // Check buttons again after processing
         check_calibration_button();
         check_kick_button();
-        
-        // Small delay to allow button state to stabilize and prevent too-fast polling
-        // This also gives the audio system time to process
-        volatile int delay = 100;
-        while (delay-- > 0) {
-            __asm("nop");
-        }
     }
     
     return 0;

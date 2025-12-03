@@ -35,11 +35,18 @@ USART_TypeDef * initUSART(int USART_ID, int baud_rate) {
             RCC->APB2ENR |= RCC_APB2ENR_USART1EN; // Set USART1EN
             RCC->CCIPR |= (0b10 << RCC_CCIPR_USART1SEL_Pos); // Set HSI16 (16 MHz) as USART clock source
 
-            GPIOA->AFR[1] |= (0b111 << GPIO_AFRH_AFSEL9_Pos) | (0b111 << GPIO_AFRH_AFSEL10_Pos);
-
             // Configure pin modes as ALT function
             pinMode(PA9, GPIO_ALT); // TX
             pinMode(PA10, GPIO_ALT); // RX
+
+            // Configure correct alternate functions for USART1
+            // CRITICAL: Clear AFR bits BEFORE setting to avoid conflicts
+            // PA9: USART1_TX (AF7 = 0b111) - bits 7:4 in AFR[1]
+            // PA10: USART1_RX (AF7 = 0b111) - bits 11:8 in AFR[1]
+            GPIOA->AFR[1] &= ~(0b1111 << GPIO_AFRH_AFSEL9_Pos);   // Clear bits 7:4 for PA9
+            GPIOA->AFR[1] |= (0b111 << GPIO_AFRH_AFSEL9_Pos);      // Set PA9 to AF7 (USART1_TX)
+            GPIOA->AFR[1] &= ~(0b1111 << GPIO_AFRH_AFSEL10_Pos);  // Clear bits 11:8 for PA10
+            GPIOA->AFR[1] |= (0b111 << GPIO_AFRH_AFSEL10_Pos);     // Set PA10 to AF7 (USART1_RX)
 
             break;
         case USART2_ID :
@@ -48,11 +55,16 @@ USART_TypeDef * initUSART(int USART_ID, int baud_rate) {
 
             // Configure pin modes as ALT function
             pinMode(PA2, GPIO_ALT); // TX
-            pinMode(PA15, GPIO_ALT); // RX
+            pinMode(PA3, GPIO_ALT); // RX
 
-            // Configure correct alternate functions
-            GPIOA->AFR[0] |= (0b111 << GPIO_AFRL_AFSEL2_Pos);   //AF7
-            GPIOA->AFR[1] |= (0b011 << GPIO_AFRH_AFSEL15_Pos);  //AF3
+            // Configure correct alternate functions (both pins use AF7 for USART2)
+            // CRITICAL: Clear AFR bits BEFORE setting to avoid conflicts with previous configuration
+            // PA2: USART2_TX (AF7 = 0b111) - bits 11:8 in AFR[0]
+            // PA3: USART2_RX (AF7 = 0b111) - bits 15:12 in AFR[0]
+            GPIOA->AFR[0] &= ~(0b1111 << GPIO_AFRL_AFSEL2_Pos);  // Clear bits 11:8 for PA2
+            GPIOA->AFR[0] |= (0b111 << GPIO_AFRL_AFSEL2_Pos);     // Set PA2 to AF7 (USART2_TX)
+            GPIOA->AFR[0] &= ~(0b1111 << GPIO_AFRL_AFSEL3_Pos);  // Clear bits 15:12 for PA3
+            GPIOA->AFR[0] |= (0b111 << GPIO_AFRL_AFSEL3_Pos);     // Set PA3 to AF7 (USART2_RX)
             break;
     }
 
@@ -61,11 +73,23 @@ USART_TypeDef * initUSART(int USART_ID, int baud_rate) {
     USART->CR1 &= ~USART_CR1_OVER8; // Set to 16 times sampling freq
     USART->CR2 &= ~USART_CR2_STOP;  // 0b00 corresponds to 1 stop bit
 
-    // Set baud rate to 115200 (see RM 38.5.4 for details)
-    // Tx/Rx baud = f_CK/USARTDIV (since oversampling by 16)
+    // Set baud rate (see RM 38.5.4 for details)
+    // Tx/Rx baud = f_CK / (16 * USARTDIV) for 16x oversampling
     // f_CK = 16 MHz (HSI)
-
-    USART->BRR = (uint16_t) (HSI_FREQ / baud_rate);
+    // BRR format: Bits 15:4 = DIV_Mantissa, Bits 3:0 = DIV_Fraction
+    // USARTDIV = DIV_Mantissa + (DIV_Fraction / 16)
+    // CRITICAL FIX: Formula is f_CK / (16 * baud_rate), NOT (f_CK * 16) / baud_rate
+    // For 115200 baud: USARTDIV = 16000000 / (16 * 115200) = 8.680555...
+    // Mantissa = 8, Fraction = 0.680555 * 16 = 10.888... ≈ 11 (0xB)
+    // BRR = (8 << 4) | 11 = 0x008B
+    // Calculate with integer math: USARTDIV = f_CK / (16 * baud_rate)
+    // The correct formula: USARTDIV = f_CK / (16 * baud_rate)
+    // For integer calculation with rounding: compute (f_CK * 16 + 8*baud_rate) / (16 * baud_rate)
+    // This gives us USARTDIV * 256 (scaled by 16*16) with rounding
+    uint32_t usartdiv_scaled_256 = ((HSI_FREQ << 4) + (baud_rate << 3)) / baud_rate;  // USARTDIV * 256, rounded
+    uint16_t div_mantissa = usartdiv_scaled_256 >> 8;            // Upper bits = mantissa
+    uint16_t div_fraction = (usartdiv_scaled_256 >> 4) & 0x0F;   // Next 4 bits = fraction
+    USART->BRR = (div_mantissa << 4) | div_fraction;
 
     USART->CR1 |= USART_CR1_UE;     // Enable USART
     USART->CR1 |= USART_CR1_TE | USART_CR1_RE; // Enable transmission and reception
@@ -90,7 +114,14 @@ void sendString(USART_TypeDef * USART, char * charArray){
 }
 
 char readChar(USART_TypeDef * USART) {
-        char data = USART->RDR;
+        // CRITICAL: Caller must check RXNE flag before calling this function
+        // Reading RDR when RXNE=0 returns undefined data
+        // This function assumes RXNE is already set (data ready)
+        if (!(USART->ISR & USART_ISR_RXNE)) {
+            // RXNE not set - return 0 as safe default (caller should have checked)
+            return 0;
+        }
+        char data = USART->RDR;  // Reading RDR automatically clears RXNE
         return data;
 }
 

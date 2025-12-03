@@ -18,24 +18,32 @@
 // Function prototypes
 ///////////////////////////////////////////////////////////////////////////////
 
-/* Initialize SPI as SLAVE for receiving data from Arduino
- *    -- br: (0b000 - 0b111). Not used in slave mode (clock comes from master), but kept for compatibility
- *    -- cpol: clock polarity (0: inactive state is logical 0, 1: inactive state is logical 1)
+/* Enables the SPI peripheral as SLAVE and initializes polarity and phase.
+ *    -- br: Not used in slave mode (slave follows master's clock)
+ *    -- cpol: clock polarity (0: inactive state is logical 0, 1: inactive state is logical 1).
  *    -- cpha: clock phase (0: data captured on leading edge of clk and changed on next edge, 
  *          1: data changed on leading edge of clk and captured on next edge)
  * Refer to the datasheet for more low-level details. */ 
-void initSPISlave(int br, int cpol, int cpha);
+void initSPI(int br, int cpol, int cpha);
 
-/* Receive a byte over SPI (slave mode)
+/* Receives a character (1 byte) over SPI in slave mode.
  *    -- return: the character received over SPI */
-char spiReceiveByte(void);
+char spiReceive(void);
 
-/* Receive a packet from Arduino via SPI (slave mode)
- *    -- packet: buffer to store received data
- *    -- length: number of bytes to receive
- *    -- return: 1 if successful, 0 if timeout or error
+/* Read 16-byte sensor data packet from Arduino/ESP32 via SPI (SLAVE mode)
+ * Packet format (Roll, Pitch, Yaw order):
+ *   Byte 0:  Header (0xAA)
+ *   Bytes 1-2:  Roll (int16_t, MSB first, scaled by 100)
+ *   Bytes 3-4:  Pitch (int16_t, MSB first, scaled by 100)
+ *   Bytes 5-6:  Yaw (int16_t, MSB first, scaled by 100)
+ *   Bytes 7-8:  Gyro X (int16_t, MSB first, scaled by 2000)
+ *   Bytes 9-10: Gyro Y (int16_t, MSB first, scaled by 2000)
+ *   Bytes 11-12: Gyro Z (int16_t, MSB first, scaled by 2000)
+ *   Byte 13: Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
+ *   Bytes 14-15: Reserved (0x00)
+ * All 16-bit values are MSB-first (big-endian per value)
  */
-uint8_t receiveSPIPacket(uint8_t *packet, uint16_t length);
+void readSensorDataPacket(uint8_t *packet);
 
 /* Parse Arduino packet format (24 bytes) into Euler angles and gyroscope data
  * Packet format: [Sync(0xAA)][SensorID][Timestamp(4)][Roll(4)][Pitch(4)][Yaw(4)][GyroX(2)][GyroY(2)][GyroZ(2)]
@@ -51,5 +59,34 @@ void parseArduinoPacket(const uint8_t *packet,
                        float *roll, float *pitch, float *yaw,
                        int16_t *gyro_x, int16_t *gyro_y, int16_t *gyro_z,
                        uint8_t *sensor_id, uint8_t *valid);
+
+/* Receive a packet from Arduino via UART (USART1)
+ * Packet format: [Header(0xAA)][Quat][Gyro][Flags] - 16 bytes total
+ *    -- packet: buffer to store received data
+ *    -- length: number of bytes to receive (should be 16)
+ *    -- return: 1 if successful, 0 if timeout or error
+ */
+uint8_t receiveUARTPacket(uint8_t *packet, uint16_t length);
+
+///////////////////////////////////////////////////////////////////////////////
+// Software SPI (Bit-banged) Functions
+///////////////////////////////////////////////////////////////////////////////
+
+/* Initialize pins for software SPI (GPIO mode)
+ * Configures CS, SCK, and MOSI as inputs with pull-up resistors
+ */
+void initSoftwareSPI(void);
+
+/* Receive one byte via software SPI
+ * Reads 8 bits on rising clock edges (MSB first)
+ * Returns the received byte, or 0xFF on error/timeout
+ */
+uint8_t softwareSPIReceiveByte(void);
+
+/* Read 16-byte packet via software SPI
+ * Waits for CS to go LOW, reads 16 bytes, waits for CS to go HIGH
+ * Packet format matches hardware SPI version
+ */
+void softwareSPIReadPacket(uint8_t *packet);
 
 #endif
