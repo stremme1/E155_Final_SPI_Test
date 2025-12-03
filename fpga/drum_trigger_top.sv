@@ -8,7 +8,7 @@
  * - MCU SPI slave for sending raw sensor data to MCU
  * 
  * This module connects Arduino sensor data to the MCU via SPI.
- * FPGA acts as bridge: Arduino (SPI master) → FPGA (SPI slave) → MCU (SPI master reads from FPGA slave).
+ * FPGA acts as bridge: Arduino (SPI master) â†’ FPGA (SPI slave) â†’ MCU (SPI master reads from FPGA slave).
  */
 
 module drum_trigger_top (
@@ -56,7 +56,7 @@ module drum_trigger_top (
     // HARDWARE CLOCK - HSOSC (ACTIVE FOR HARDWARE)
     // Note: HSOSC is a built-in primitive for iCE40UP5k
     // Make sure your synthesis tool recognizes this primitive
-    HSOSC #(.CLKHF_DIV(2'b11)) hf_osc (
+    HSOSC #(.CLKHF_DIV(2'b00)) hf_osc (
         .CLKHFPU(1'b1),   // Power up (must be 1)
         .CLKHFEN(1'b1),   // Enable (must be 1)
         .CLKHF(clk)       // Output clock (3MHz from 48MHz / 16)
