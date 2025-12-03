@@ -402,25 +402,15 @@ module spi_slave_mcu(
     // - We only shift AFTER the first bit has been sampled (after first rising edge)
     
     // Main shift logic - clocked on SCK falling edge, with async reset on CS high
-    // CRITICAL: shift_out must be set to HEADER_BYTE BEFORE CS goes low
-    // We set it in clk domain to ensure it's ready when CS falls
-    always_ff @(posedge clk) begin
-        if (cs_n) begin
-            // When CS is high, prepare shift_out for next transaction
-            shift_out <= HEADER_BYTE;
-        end
-    end
-    
     always_ff @(negedge sck or posedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
-            // Don't set shift_out here - it's set in clk domain
+            shift_out  <= HEADER_BYTE;
         end else begin
             if (cs_falling_edge_sck) begin
                 // CS falling edge detected in SCK domain - Load first byte immediately
-                // shift_out should already be HEADER_BYTE from clk domain, but set it here too for safety
                 shift_out  <= HEADER_BYTE;
                 byte_count <= 0;
                 bit_count  <= 0;
