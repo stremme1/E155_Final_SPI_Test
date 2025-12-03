@@ -66,6 +66,7 @@ module arduino_spi_slave(
     
     // Main SPI receive logic - clocked on SCK rising edge
     // SPI Mode 0: Sample data on rising edge of SCK
+    // In Mode 0, data is set up before first clock edge, so first bit is available on first SCK rising edge
     always_ff @(posedge sck or posedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
@@ -74,18 +75,17 @@ module arduino_spi_slave(
             rx_shift   <= 8'd0;
             seen_first_bit <= 1'b0;
         end else begin
-            // Check for CS falling edge (detected on this rising edge)
-            if (cs_falling_edge_sck || (!seen_first_bit && !cs_n)) begin
-                // CS falling edge OR first bit after CS goes low
-                // Capture first bit immediately
+            // Check if this is the first bit after CS goes low
+            if (!seen_first_bit) begin
+                // First bit - capture it and initialize
                 byte_count <= 0;
-                bit_count  <= 0;
-                rx_shift   <= {7'd0, sdi};  // First bit (MSB) goes into position 7 via left shift
+                bit_count  <= 1;  // We've received 1 bit
+                rx_shift   <= {7'd0, sdi};  // First bit (MSB) goes into position 0, will shift left
                 seen_first_bit <= 1'b1;
-            end else if (seen_first_bit) begin
+            end else begin
                 // Shift in data on rising edge of SCK (MSB first)
                 // For MSB first: first bit received is MSB (bit 7), last is LSB (bit 0)
-                // Standard approach: shift left, new bit goes into LSB
+                // Standard approach: shift LEFT, new bit goes into LSB
                 // After 8 bits: rx_shift[7] = first bit (MSB), rx_shift[0] = last bit (LSB)
                 
                 // Always shift left and append new bit
@@ -99,7 +99,7 @@ module arduino_spi_slave(
                     byte_count <= byte_count + 1;
                     bit_count  <= 0;
                     rx_shift   <= 8'd0;  // Clear for next byte
-                    seen_first_bit <= 1'b0;  // Reset for next byte
+                    seen_first_bit <= 1'b0;  // Reset for next byte (will capture first bit of next byte)
                 end else begin
                     bit_count <= bit_count + 1;
                 end
