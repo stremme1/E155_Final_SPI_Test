@@ -64,6 +64,11 @@ module tb_arduino_spi_slave;
     wire [7:0] packet_buffer_2 = dut.packet_buffer[2];
     wire [3:0] byte_count = dut.byte_count;
     wire [2:0] bit_count = dut.bit_count;
+    wire [7:0] rx_shift = dut.rx_shift;
+    wire [7:0] header = dut.header;
+    wire signed [15:0] roll = dut.roll;
+    wire signed [15:0] pitch = dut.pitch;
+    wire signed [15:0] yaw = dut.yaw;
     
     // Test tracking
     integer test_count = 0;
@@ -89,27 +94,31 @@ module tb_arduino_spi_slave;
     
     // Task to send a byte via SPI (MSB first, Mode 0)
     // Assumes CS is already low
+    // For MSB-first: send bit 7 first, then bit 6, ..., then bit 0
     task send_spi_byte(input [7:0] data);
         integer i;
+        $display("    [SPI] Sending byte: 0x%02X (binary: %b)", data, data);
         for (i = 7; i >= 0; i = i - 1) begin
             // Set data before rising edge (setup time)
             sdi = data[i];
             #(SCK_PERIOD/4);  // Setup time
-            sck = 1;  // Rising edge - FPGA samples here
-            #(SCK_PERIOD/2);  // Hold time
+            sck = 1;  // Rising edge - FPGA samples sdi here
+            #(SCK_PERIOD/4);  // Hold time
+            // $display("      Bit %0d: sdi=%b (from data[%0d]=%b)", 7-i, sdi, i, data[i]);
+            #(SCK_PERIOD/2);
             sck = 0;  // Falling edge
-            #(SCK_PERIOD/4);  // Recovery time
         end
+        $display("    [SPI] Byte sent: 0x%02X", data);
     endtask
     
     // Task to send a complete 16-byte packet (inline version to avoid unpacked array issues)
     task send_packet_inline;
         input [7:0] b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15;
-        // CS falling edge
+        // CS falling edge - ensure CS is high first, then go low
         cs_n = 1;
-        #(SCK_PERIOD * 2);
+        #(SCK_PERIOD * 3);  // Wait longer to ensure CS is stable high
         cs_n = 0;
-        #(SCK_PERIOD);
+        #(SCK_PERIOD * 2);  // Wait for CS to stabilize low before first SCK edge
         
         // Send all 16 bytes
         send_spi_byte(b0);
@@ -132,7 +141,7 @@ module tb_arduino_spi_slave;
         // CS rising edge (transaction complete)
         #(SCK_PERIOD);
         cs_n = 1;
-        #(SCK_PERIOD * 2);
+        #(SCK_PERIOD * 3);  // Wait longer for CS to stabilize high
     endtask
     
     // Main test sequence
@@ -153,12 +162,71 @@ module tb_arduino_spi_slave;
         #(10 * CLK_PERIOD);
         
         // ========================================
+        // TEST 0: Bit Shifting Verification
+        // ========================================
+        $display("=== Test 0: Bit Shifting Verification ===");
+        
+        // Test 0.1: Send 0xAA to verify MSB-first bit order
+        begin
+            $display("Test 0.1: Sending 0xAA to verify bit shifting");
+            cs_n = 1;
+            #(SCK_PERIOD * 3);
+            cs_n = 0;
+            #(SCK_PERIOD * 2);
+            
+            send_spi_byte(8'hAA);  // 0xAA = 0b10101010
+            
+            // CS rising edge
+            #(SCK_PERIOD);
+            cs_n = 1;
+            #(SCK_PERIOD * 3);
+            
+            // Wait for CDC
+            wait(cs_n == 1'b1);
+            repeat(20) @(posedge clk);
+            
+            // Check if byte was received correctly
+            $display("    packet_buffer[0] = 0x%02X (expected 0xAA)", packet_buffer_0);
+            check_test("Test 0.1: Byte 0xAA received correctly", packet_buffer_0 == 8'hAA);
+            $display("    Expected: First bit=1 (MSB), Last bit=0 (LSB)");
+            $display("    Pattern: 1-0-1-0-1-0-1-0");
+        end
+        
+        // Test 0.2: Send 0x55 to verify opposite pattern
+        begin
+            $display("Test 0.2: Sending 0x55 to verify bit shifting");
+            cs_n = 1;
+            #(SCK_PERIOD * 3);
+            cs_n = 0;
+            #(SCK_PERIOD * 2);
+            
+            send_spi_byte(8'h55);  // 0x55 = 0b01010101
+            
+            // CS rising edge
+            #(SCK_PERIOD);
+            cs_n = 1;
+            #(SCK_PERIOD * 3);
+            
+            // Wait for CDC
+            wait(cs_n == 1'b1);
+            repeat(20) @(posedge clk);
+            
+            $display("    packet_buffer[0] = 0x%02X (expected 0x55)", packet_buffer_0);
+            check_test("Test 0.2: Byte 0x55 received correctly", packet_buffer_0 == 8'h55);
+            $display("    Expected: First bit=0 (MSB), Last bit=1 (LSB)");
+            $display("    Pattern: 0-1-0-1-0-1-0-1");
+        end
+        
+        $display("");
+        
+        // ========================================
         // TEST 1: Valid Packet Reception
         // ========================================
         $display("=== Test 1: Valid Packet Reception ===");
         
         // Test 1.1: Valid packet with header 0xAA
         begin
+            $display("Test 1.1: Sending valid packet with header 0xAA");
             // Header = 0xAA
             // Roll = 1000 (0.01° resolution = 10.00°)
             // Pitch = -500 (-5.00°)
@@ -179,7 +247,24 @@ module tb_arduino_spi_slave;
             // Wait for CS rising edge to be detected and packet to be processed
             // Wait for CS to go high, then wait for synchronization and processing
             wait(cs_n == 1'b1);  // Wait for CS to go high
-            repeat(15) @(posedge clk);  // Wait for CDC synchronization (need more cycles for first packet)
+            repeat(25) @(posedge clk);  // Wait for CDC synchronization (increased for stability)
+            
+            // Debug output - check internal signals
+            $display("    Internal signals after packet reception:");
+            $display("      packet_buffer[0] = 0x%02X (header, expected 0xAA)", packet_buffer_0);
+            $display("      packet_buffer[1] = 0x%02X (Roll MSB, expected 0x03)", packet_buffer_1);
+            $display("      packet_buffer[2] = 0x%02X (Roll LSB, expected 0xE8)", packet_buffer_2);
+            $display("      header = 0x%02X, roll = 0x%04X (%0d)", header, roll, roll);
+            $display("      pitch = 0x%04X (%0d), yaw = 0x%04X (%0d)", pitch, pitch, yaw, yaw);
+            
+            // Debug output - check outputs
+            $display("    Output signals after packet reception:");
+            $display("      initialized = %b, error = %b", initialized, error);
+            $display("      quat1_w = 0x%04X (%0d), quat1_x = 0x%04X (%0d)", quat1_w, quat1_w, quat1_x, quat1_x);
+            $display("      quat1_y = 0x%04X (%0d), quat1_z = 0x%04X (%0d)", quat1_y, quat1_y, quat1_z, quat1_z);
+            $display("      gyro1_x = 0x%04X (%0d), gyro1_y = 0x%04X (%0d), gyro1_z = 0x%04X (%0d)", 
+                     gyro1_x, gyro1_x, gyro1_y, gyro1_y, gyro1_z, gyro1_z);
+            $display("      quat1_valid = %b, gyro1_valid = %b", quat1_valid, gyro1_valid);
             
             // Check outputs
             check_test("Test 1.1a: Header valid → initialized = 1", initialized == 1'b1);
