@@ -178,10 +178,12 @@ void loop() {
   // Send full packet via SPI to FPGA (throttled to ~20Hz)
   // Data Pipeline: Arduino (this code) → FPGA → MCU
   // FPGA receives Euler angles and converts to quaternion format for MCU
+  // See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
+  // Packet format (16 bytes): [Header][Roll][Pitch][Yaw][Gyro X][Gyro Y][Gyro Z][Flags][Reserved]
   unsigned long current_time = millis();
   if (euler_valid && (current_time - last_packet_send >= 50)) {
     uint8_t packet[16];
-    packet[0] = 0xAA;  // Header
+    packet[0] = 0xAA;  // Header (Byte 0)
     
     // Pack Euler angles in order: Roll, Pitch, Yaw (matching print statement order)
     // int16_t scaled by 100, so 1 = 0.01 degrees

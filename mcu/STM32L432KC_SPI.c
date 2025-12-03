@@ -206,6 +206,8 @@ void readSensorDataPacket(uint8_t *packet) {
 }
 
 /* Parse 16-byte sensor data packet into structured format
+ * See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
+ * 
  * Data Pipeline: Arduino → FPGA → MCU (this code)
  * 
  * Packet format: [Header(0xAA)][Sensor1_Quat][Sensor1_Gyro][Sensor1_Flags]

@@ -139,7 +139,7 @@ Byte 15:   Flags (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=e
 
 ## Potential Issues to Check
 
-1. **TEST_MODE in spi_slave_mcu.sv**: Currently set to `1'b1` (line 44) - this sends test pattern instead of real data!
+1. **TEST_MODE in spi_slave_mcu.sv**: Currently set to `1'b0` (line 52) - DISABLED, using real sensor data ✓
 2. **Flag byte differences**: Arduino sends flags at byte 13, FPGA sends flags at byte 15 (this is correct - different packet formats)
 3. **Byte ordering**: All stages use MSB-first (correct)
 

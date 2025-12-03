@@ -30,6 +30,8 @@ module spi_slave_mcu(
     input  logic signed [15:0] gyro1_x, gyro1_y, gyro1_z
 );
 
+    // See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
+    //
     // Packet format: 16 bytes total (single sensor only)
     // Byte 0:    Header (0xAA)
     // Byte 1-2:  Sensor 1 Quaternion W (MSB,LSB) - Q14 format (16384 = 1.0)

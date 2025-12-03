@@ -151,6 +151,8 @@ module arduino_spi_slave(
     // ========================================================================
     // Parse Packet and Map to spi_slave_mcu Interface
     // ========================================================================
+    // See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
+    //
     // Arduino packet format (16 bytes total):
     // Byte 0:    Header (0xAA)
     // Bytes 1-2: Roll (int16_t, MSB first) - Euler angle scaled by 100
