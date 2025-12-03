@@ -143,4 +143,3 @@ module spi_master #(
     assign busy = (state != IDLE);
     
 endmodule
-
