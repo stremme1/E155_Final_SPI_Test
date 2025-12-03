@@ -74,27 +74,27 @@ module arduino_spi_slave(
     // Track if we've started receiving (to avoid resetting multiple times)
     logic receiving = 1'b0;
     
-    // Reset logic - async reset when CS goes high or low
+    // Reset logic - async reset when CS goes high, sync reset when CS goes low
+    // Only drive receiving here, not the counters/shift registers
     always_ff @(posedge cs_n or negedge cs_n) begin
+        if (cs_n) begin
+            // Async reset when CS goes high
+            receiving <= 1'b0;
+        end else if (cs_fell_direct) begin
+            // CS just went low - mark that we've started receiving
+            receiving <= 1'b1;
+        end
+    end
+    
+    // Main SPI receive logic - clocked on SCK rising edge with async reset on CS
+    // SPI Mode 0: Sample data on rising edge of SCK
+    always_ff @(posedge sck or posedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
             rx_shift   <= 8'd0;
-            receiving  <= 1'b0;
-        end else if (cs_fell_direct) begin
-            // CS just went low - reset for new packet (async)
-            byte_count <= 0;
-            bit_count  <= 0;
-            rx_shift   <= 8'd0;
-            receiving  <= 1'b1;  // Mark that we've started receiving
-        end
-    end
-    
-    // Main SPI receive logic - clocked on SCK rising edge
-    // SPI Mode 0: Sample data on rising edge of SCK
-    always_ff @(posedge sck) begin
-        if (!cs_n && receiving) begin
+        end else if (!cs_n && receiving) begin
             // Shift in data on rising edge of SCK (MSB first)
             if (bit_count == 3'd7) begin
                 // Byte complete - store in packet buffer
