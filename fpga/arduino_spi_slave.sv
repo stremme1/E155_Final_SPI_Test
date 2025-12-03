@@ -74,16 +74,18 @@ module arduino_spi_slave(
         end else begin
             // CS is low - receive data on rising edge of SCK (MSB first)
             // SPI Mode 0 MSB-first: First bit received is MSB (bit 7), last is LSB (bit 0)
-            // Shift right: new bit (sdi) goes into MSB, previous bits shift right
+            // For MSB-first: we receive bits in order bit7, bit6, ..., bit0
+            // We build the byte by shifting left and inserting new bit in LSB position
+            // This way: first bit ends up in bit 7 after 7 shifts, last bit in bit 0
             if (bit_count == 3'd7) begin
-                // Byte complete - shift in 8th bit and store
-                packet_buffer[byte_count] <= {sdi, rx_shift[7:1]};
+                // 8th bit (LSB) - shift it in and store complete byte
+                packet_buffer[byte_count] <= {rx_shift[6:0], sdi};
                 byte_count <= byte_count + 1;
                 bit_count  <= 0;
                 rx_shift   <= 8'd0;  // Clear for next byte
             end else begin
-                // Shift in current bit (MSB first)
-                rx_shift <= {sdi, rx_shift[7:1]};
+                // Shift in current bit (bits 1-7)
+                rx_shift <= {rx_shift[6:0], sdi};
                 bit_count <= bit_count + 1;
             end
         end
