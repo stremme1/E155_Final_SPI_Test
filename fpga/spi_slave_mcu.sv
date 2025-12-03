@@ -34,7 +34,7 @@ module spi_slave_mcu(
     // Byte 0:    Header (0xAA)
     // Byte 1-8:  Sensor 1 Quaternion (w, x, y, z - MSB,LSB each)
     // Byte 9-14: Sensor 1 Gyroscope (x, y, z - MSB,LSB each)
-    // Byte 15:   Sensor 1 Flags (bit 0=quat_valid, bit 1=gyro_valid)
+    // Byte 15:   Sensor 1 Flags (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=error)
     
     localparam PACKET_SIZE = 16;
     localparam HEADER_BYTE = 8'hAA;
@@ -111,13 +111,13 @@ module spi_slave_mcu(
     // Capture on CS falling edge from registered clk-domain data
     // Safe because: data is registered (stable), CS provides setup time before first SCK
     logic quat1_valid_snap, gyro1_valid_snap;
+    logic initialized_snap, error_snap;
     logic signed [15:0] quat1_w_snap, quat1_x_snap, quat1_y_snap, quat1_z_snap;
     logic signed [15:0] gyro1_x_snap, gyro1_y_snap, gyro1_z_snap;
     
     // Capture snapshot on CS falling edge (start of transaction)
     // Also initialize on first posedge clk when CS is high (for testbench to read packet_buffer before transaction)
     logic cs_n_sync1, cs_n_sync2;  // Synchronize CS to clk domain for edge detection
-    logic snapshot_initialized = 1'b0;  // Track if snapshot has been initialized
     
     // Synchronize CS to clk domain (2-stage synchronizer)
     always_ff @(posedge clk) begin
@@ -130,9 +130,6 @@ module spi_slave_mcu(
     assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
     
     // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
-    // Snapshot registers for status flags
-    logic initialized_snap, error_snap;
-    
     // Update snapshot when CS is high, freeze when CS is low (during transaction)
     // This ensures data consistency during the entire SPI transaction
     always_ff @(posedge clk) begin
@@ -202,8 +199,7 @@ module spi_slave_mcu(
             assign packet_buffer[13] = gyro1_z_snap[15:8];  // Z MSB
             assign packet_buffer[14] = gyro1_z_snap[7:0];   // Z LSB
             
-            // Sensor 1 Flags - from snapshot
-            // Bit 0 = quat_valid, bit 1 = gyro_valid, bit 2 = initialized, bit 3 = error
+            // Sensor 1 Flags - from snapshot (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=error)
             assign packet_buffer[15] = {4'h0, error_snap, initialized_snap, gyro1_valid_snap, quat1_valid_snap};
         end
     endgenerate
@@ -218,14 +214,6 @@ module spi_slave_mcu(
                 packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
         packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
     };
-    
-    // Registered first byte - updated in clk domain so it's ready when CS goes low
-    // This ensures the first bit is stable before the first SCK edge
-    // Use HEADER_BYTE directly since it's a constant
-    logic [7:0] first_byte_reg = HEADER_BYTE;
-    always_ff @(posedge clk) begin
-        first_byte_reg <= HEADER_BYTE;  // Always 0xAA (constant)
-    end
     
     // ----------------------------
     // Shift registers and counters - clocked on SCK for reliable timing
