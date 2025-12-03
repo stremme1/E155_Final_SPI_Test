@@ -395,19 +395,21 @@ module spi_slave_mcu(
     // - We only shift AFTER the first bit has been sampled (after first rising edge)
     
     // Main shift logic - clocked on SCK falling edge, with async reset on CS high
-    always_ff @(negedge sck or posedge cs_n) begin
+    // Also loads first byte when CS goes low (before first SCK edge) using async check
+    always_ff @(negedge sck or posedge cs_n or negedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
             shift_out  <= HEADER_BYTE;
-        end else begin
-            if (cs_falling_edge_sck) begin
-                // CS falling edge detected in SCK domain - Load first byte immediately
-                shift_out  <= HEADER_BYTE;
-                byte_count <= 0;
-                bit_count  <= 0;
-            end else if (seen_first_rising) begin
+        end else if (!cs_n && byte_count == 0 && bit_count == 0 && !seen_first_rising) begin
+            // CS just went low (async detection) AND we haven't started shifting yet
+            // Load first byte immediately so it's ready before first SCK rising edge
+            // This happens asynchronously when CS goes low, before any SCK edges
+            shift_out <= HEADER_BYTE;
+            byte_count <= 0;
+            bit_count <= 0;
+        end else if (seen_first_rising) begin
                 // SCK falling edge AND CS is low AND first bit already sampled
                 // Only shift if we've seen the first rising edge (first bit has been sampled)
                 if (bit_count == 3'd7) begin
