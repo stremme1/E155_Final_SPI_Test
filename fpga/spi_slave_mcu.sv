@@ -41,7 +41,7 @@ module spi_slave_mcu(
     
     // Test mode: When enabled, output known test pattern instead of sensor data
     // This helps verify SPI shift logic works independently of data capture
-    localparam TEST_MODE = 1'b0;  // Set to 1 to enable test mode
+    localparam TEST_MODE = 1'b1;  // Set to 1 to enable test mode (enabled for debugging)
     
     // Test pattern - known values for debugging
     logic [7:0] test_pattern [0:15];
@@ -273,17 +273,27 @@ module spi_slave_mcu(
     // - First bit must be stable when CS goes low (before first SCK edge)
     // - We only shift AFTER the first bit has been sampled (after first rising edge)
     
-    // Main shift logic - clocked on SCK falling edge, with async reset on CS high
-    always_ff @(negedge sck or posedge cs_n) begin
+    // Main shift logic - clocked on SCK falling edge, with async reset/set on CS
+    // CRITICAL: Add negedge cs_n to immediately load first byte when CS goes low
+    // This ensures shift_out is ready BEFORE the first SCK rising edge
+    // Use test_pattern[0] in test mode, HEADER_BYTE otherwise
+    logic [7:0] first_byte_value;
+    assign first_byte_value = (TEST_MODE) ? test_pattern[0] : HEADER_BYTE;
+    
+    always_ff @(negedge sck or posedge cs_n or negedge cs_n) begin
         if (cs_n) begin
-            // Async reset when CS goes high
+            // Async reset when CS goes high - prepare for next transaction
             byte_count <= 0;
             bit_count  <= 0;
-            shift_out  <= HEADER_BYTE;
+            shift_out  <= first_byte_value;  // Pre-initialize so it's ready when CS goes low
         end else begin
-            if (cs_falling_edge_sck) begin
-                // CS falling edge detected in SCK domain - Load first byte immediately
-                shift_out  <= HEADER_BYTE;
+            // CS is low - ensure first byte is loaded immediately when CS goes low
+            // negedge cs_n triggers this block immediately when CS goes low, before any SCK edges
+            if (cs_falling_edge_sck || !seen_first_rising) begin
+                // CS falling edge detected OR first SCK rising edge not yet seen
+                // Load first byte immediately to ensure it's ready before first SCK rising edge
+                // This handles both: CS going low (negedge cs_n) and CS falling edge in SCK domain
+                shift_out  <= first_byte_value;
                 byte_count <= 0;
                 bit_count  <= 0;
             end else if (seen_first_rising) begin
