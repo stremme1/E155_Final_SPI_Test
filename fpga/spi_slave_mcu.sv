@@ -41,7 +41,7 @@ module spi_slave_mcu(
     
     // Test mode: When enabled, output known test pattern instead of sensor data
     // This helps verify SPI shift logic works independently of data capture
-    localparam TEST_MODE = 1'b1;  // Set to 1 to enable test mode
+    localparam TEST_MODE = 1'b0;  // Set to 1 to enable test mode
     
     // Test pattern - known values for debugging
     logic [7:0] test_pattern [0:15];
