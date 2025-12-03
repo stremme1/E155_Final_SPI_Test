@@ -78,26 +78,28 @@ module arduino_spi_slave(
                 byte_count <= 0;
                 bit_count  <= 0;
                 rx_shift   <= 8'd0;
-                // Capture first bit immediately
-                rx_shift <= {7'd0, sdi};  // First bit (MSB) goes into position 7
+                // Capture first bit immediately - MSB goes into position 7
+                // Standard MSB-first: shift left and OR in new bit
+                rx_shift <= (8'd0 << 1) | sdi;  // First bit (MSB) goes into position 7
                 bit_count <= 1;  // We've now received 1 bit
             end else begin
                 // Shift in data on rising edge of SCK (MSB first)
                 // For MSB first: first bit received is MSB (bit 7), last is LSB (bit 0)
-                // We shift left and append new bit to LSB position
+                // Standard approach: shift LEFT and OR in new bit
                 // After 8 bits: rx_shift[7] = first bit (MSB), rx_shift[0] = last bit (LSB)
                 
                 // Check if this is the 8th bit
                 if (bit_count == 3'd7) begin
-                    // We've received 7 bits, this is the 8th bit
+                    // We've received 7 bits, this is the 8th bit (LSB)
                     // Shift in the 8th bit and store the complete byte
-                    packet_buffer[byte_count] <= {rx_shift[6:0], sdi};  // Complete 8-bit byte
+                    rx_shift <= (rx_shift << 1) | sdi;  // Complete 8-bit byte
+                    packet_buffer[byte_count] <= (rx_shift << 1) | sdi;
                     byte_count <= byte_count + 1;
                     bit_count  <= 0;
                     rx_shift   <= 8'd0;  // Clear for next byte
                 end else begin
-                    // Shift left and append new bit: {existing_bits, new_bit}
-                    rx_shift <= {rx_shift[6:0], sdi};
+                    // Shift LEFT and OR in new bit
+                    rx_shift <= (rx_shift << 1) | sdi;
                     bit_count <= bit_count + 1;
                 end
             end
