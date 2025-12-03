@@ -151,16 +151,20 @@ module arduino_spi_slave(
     // ========================================================================
     // Parse Packet and Map to spi_slave_mcu Interface
     // ========================================================================
-    // Arduino packet format:
-    // Byte 0: Header (0xAA)
+    // Arduino packet format (16 bytes total):
+    // Byte 0:    Header (0xAA)
     // Bytes 1-2: Roll (int16_t, MSB first) - Euler angle scaled by 100
     // Bytes 3-4: Pitch (int16_t, MSB first) - Euler angle scaled by 100
     // Bytes 5-6: Yaw (int16_t, MSB first) - Euler angle scaled by 100
     // Bytes 7-8: Gyro X (int16_t, MSB first) - scaled by 2000
     // Bytes 9-10: Gyro Y (int16_t, MSB first) - scaled by 2000
     // Bytes 11-12: Gyro Z (int16_t, MSB first) - scaled by 2000
-    // Byte 13: Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
+    // Byte 13:   Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
     // Bytes 14-15: Reserved (0x00)
+    //
+    // Data Pipeline: Arduino → FPGA (this module) → MCU
+    // This module receives Euler angles from Arduino and maps them to quaternion format
+    // for the MCU interface: Roll→quat_x, Pitch→quat_y, Yaw→quat_z, quat_w=16384 (Q14=1.0)
     
     // Parse packet fields - register them for stability
     logic [7:0] header;

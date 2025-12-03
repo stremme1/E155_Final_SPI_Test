@@ -32,16 +32,24 @@ module spi_slave_mcu(
 
     // Packet format: 16 bytes total (single sensor only)
     // Byte 0:    Header (0xAA)
-    // Byte 1-8:  Sensor 1 Quaternion (w, x, y, z - MSB,LSB each)
-    // Byte 9-14: Sensor 1 Gyroscope (x, y, z - MSB,LSB each)
+    // Byte 1-2:  Sensor 1 Quaternion W (MSB,LSB) - Q14 format (16384 = 1.0)
+    // Byte 3-4:  Sensor 1 Quaternion X (MSB,LSB) - Roll from Arduino
+    // Byte 5-6:  Sensor 1 Quaternion Y (MSB,LSB) - Pitch from Arduino
+    // Byte 7-8:  Sensor 1 Quaternion Z (MSB,LSB) - Yaw from Arduino
+    // Byte 9-10: Sensor 1 Gyroscope X (MSB,LSB) - from Arduino
+    // Byte 11-12: Sensor 1 Gyroscope Y (MSB,LSB) - from Arduino
+    // Byte 13-14: Sensor 1 Gyroscope Z (MSB,LSB) - from Arduino
     // Byte 15:   Sensor 1 Flags (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=error)
+    //
+    // Data Pipeline: Arduino → arduino_spi_slave → this module → MCU
+    // This module receives quaternion data from arduino_spi_slave and sends it to MCU
     
     localparam PACKET_SIZE = 16;
     localparam HEADER_BYTE = 8'hAA;
     
     // Test mode: When enabled, output known test pattern instead of sensor data
     // This helps verify SPI shift logic works independently of data capture
-    localparam TEST_MODE = 1'b1;  // Set to 1 to enable test mode (enabled for debugging)
+    localparam TEST_MODE = 1'b0;  // Set to 1 to enable test mode (DISABLED - use real sensor data)
     
     // Test pattern - known values for debugging
     logic [7:0] test_pattern [0:15];

@@ -252,7 +252,7 @@ int main(void) {
     // MCU follows master's clock (no baud rate setting needed in slave mode)
     // Mode 0: CPOL=0, CPHA=0 (matches Arduino configuration)
     debug_print("[INIT] Initializing SPI as SLAVE (Mode 0, follows master clock)...\r\n");
-    initSPI(0, 0, 0);  // br parameter ignored in slave mode, CPOL=0, CPHA=0
+    initSPI(2, 0, 0);  // br parameter ignored in slave mode, CPOL=0, CPHA=0
     
     // CS pin (chip select, active low) - PA11
     // Note: CS pin is configured as INPUT in initSPI() since master controls it

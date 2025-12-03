@@ -170,15 +170,10 @@ void readSensorDataPacket(uint8_t *packet) {
     // If CS toggles between bytes, the FPGA resets and reloads the first byte
     digitalWrite(PA11, 0);  // CS low
     
-    // Setup delay to allow FPGA to prepare data and synchronize
-    // FPGA pre-initializes shift_out when CS is high, so it should be ready immediately
-    // However, we need to ensure CS signal propagation and FPGA state stabilization
-    // Increased delay to ensure FPGA has time to detect CS low and stabilize shift_out
-    volatile int setup_delay = 200;  // ~2.5us at 80MHz (increased from 100 for better margin)
-    while(setup_delay-- > 0) __asm("nop");
-    
     // Read 16 bytes using dummy bytes (0x00) to generate SCK
     // CS stays low for all 16 bytes - this is critical!
+    // No delay needed - FPGA pre-initializes shift_out when CS is high
+    // First bit should be ready immediately when CS goes low
     for(i = 0; i < 16; i++) {
         packet[i] = spiSendReceive(0x00);
         // Debug: log each byte received
@@ -190,12 +185,6 @@ void readSensorDataPacket(uint8_t *packet) {
     
     // Pull CS high to end transaction (only after all 16 bytes are read)
     digitalWrite(PA11, 1);  // CS high
-    
-    // Hold delay to allow FPGA to reset its state and pre-initialize shift_out
-    // FPGA pre-initializes shift_out to first_byte_value when CS goes high
-    // This ensures shift_out is ready for the next transaction
-    volatile int hold_delay = 200;  // ~2.5us at 80MHz (increased from 100 for better margin)
-    while(hold_delay-- > 0) __asm("nop");
     
     // Debug: Complete packet dump
     debug_print("[SPI] Packet complete - CS high. Full packet: ");
@@ -217,7 +206,19 @@ void readSensorDataPacket(uint8_t *packet) {
 }
 
 /* Parse 16-byte sensor data packet into structured format
+ * Data Pipeline: Arduino → FPGA → MCU (this code)
+ * 
  * Packet format: [Header(0xAA)][Sensor1_Quat][Sensor1_Gyro][Sensor1_Flags]
+ * Byte 0:    Header (0xAA)
+ * Byte 1-2:  quat_w (MSB,LSB) - Q14 format (16384 = 1.0)
+ * Byte 3-4:  quat_x (MSB,LSB) - Roll from Arduino (via FPGA)
+ * Byte 5-6:  quat_y (MSB,LSB) - Pitch from Arduino (via FPGA)
+ * Byte 7-8:  quat_z (MSB,LSB) - Yaw from Arduino (via FPGA)
+ * Byte 9-10: gyro_x (MSB,LSB) - from Arduino (via FPGA)
+ * Byte 11-12: gyro_y (MSB,LSB) - from Arduino (via FPGA)
+ * Byte 13-14: gyro_z (MSB,LSB) - from Arduino (via FPGA)
+ * Byte 15:   Flags (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=error)
+ * 
  * All 16-bit values are MSB,LSB format (MSB first, LSB second)
  * Single sensor only - sensor 2 outputs are set to 0/invalid for future compatibility
  */
