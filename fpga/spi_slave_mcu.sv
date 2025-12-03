@@ -222,6 +222,18 @@ module spi_slave_mcu(
     logic [3:0] byte_count;  // 0-15 (4 bits for 16 bytes)
     logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
     
+    // CRITICAL: shift_out must be set to HEADER_BYTE BEFORE CS goes low
+    // We use a separate register in clk domain to prepare the value
+    // Then use it to initialize shift_out when CS goes low
+    logic [7:0] shift_out_prep = HEADER_BYTE;  // Prepared value in clk domain
+    always_ff @(posedge clk) begin
+        if (cs_n) begin
+            // When CS is high, prepare shift_out for next transaction
+            // This ensures shift_out_prep is HEADER_BYTE before CS goes low
+            shift_out_prep <= HEADER_BYTE;
+        end
+    end
+    
     // CS state tracking for edge detection
     logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
     logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
@@ -257,32 +269,19 @@ module spi_slave_mcu(
     // - First bit must be stable when CS goes low (before first SCK edge)
     // - We only shift AFTER the first bit has been sampled (after first rising edge)
     
-    // CRITICAL: shift_out must be set to HEADER_BYTE BEFORE CS goes low
-    // We set it in clk domain to ensure it's ready when CS falls
-    // This is clocked on clk (FPGA system clock) which is faster than SCK
-    // When CS is high: clk domain drives shift_out
-    // When CS is low: SCK domain drives shift_out (clk domain stops updating)
-    always_ff @(posedge clk) begin
-        if (cs_n) begin
-            // When CS is high, prepare shift_out for next transaction
-            // This ensures shift_out is HEADER_BYTE before CS goes low
-            shift_out <= HEADER_BYTE;
-        end
-        // When CS is low, don't update shift_out (SCK domain controls it)
-    end
-    
     // Main shift logic - clocked on SCK falling edge, with async reset on CS high
     always_ff @(negedge sck or posedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
-            // Don't set shift_out here - it's set in clk domain above
+            // Use prepared value from clk domain (should be HEADER_BYTE)
+            shift_out <= shift_out_prep;
         end else begin
             if (cs_falling_edge_sck) begin
                 // CS falling edge detected in SCK domain - Load first byte immediately
-                // shift_out should already be HEADER_BYTE from clk domain, but set it here too for safety
-                shift_out  <= HEADER_BYTE;
+                // Use prepared value from clk domain (should be HEADER_BYTE)
+                shift_out  <= shift_out_prep;
                 byte_count <= 0;
                 bit_count  <= 0;
             end else if (seen_first_rising) begin
