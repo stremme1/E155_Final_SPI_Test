@@ -33,8 +33,8 @@ Byte 14-15: Reserved (0x00)
 
 **Receives:** Same 16-byte packet format as Arduino sends
 
-**Parses:**
-- Header from byte 0
+**Parses (Internal Variables):**
+- Header from byte 0 → stored as `header`
 - Roll from bytes 1-2 → stored as `roll` (signed int16)
 - Pitch from bytes 3-4 → stored as `pitch` (signed int16)
 - Yaw from bytes 5-6 → stored as `yaw` (signed int16)
@@ -43,18 +43,18 @@ Byte 14-15: Reserved (0x00)
 - Gyro Z from bytes 11-12 → stored as `gyro_z` (signed int16)
 - Flags from byte 13 → stored as `flags` (bit 0 = Euler valid, bit 1 = Gyro valid)
 
-**Maps to spi_slave_mcu Interface:**
-- `quat1_w` = 16384 (Q14 format = 1.0, hardcoded for Euler angles)
-- `quat1_x` = `roll` (Roll → quat_x)
-- `quat1_y` = `pitch` (Pitch → quat_y)
-- `quat1_z` = `yaw` (Yaw → quat_z)
-- `gyro1_x` = `gyro_x` (pass through)
-- `gyro1_y` = `gyro_y` (pass through)
-- `gyro1_z` = `gyro_z` (pass through)
-- `quat1_valid` = `flags[0]` (Euler valid bit)
-- `gyro1_valid` = `flags[1]` (Gyro valid bit)
-- `initialized` = 1 if header == 0xAA, else 0
-- `error` = 1 if header != 0xAA, else 0
+**Maps Internal Variables to spi_slave_mcu Interface Outputs:**
+- `quat1_w` (output) = 16384 (Q14 format = 1.0, hardcoded for Euler angles)
+- `quat1_x` (output) = `roll` (internal variable: Roll → quat_x)
+- `quat1_y` (output) = `pitch` (internal variable: Pitch → quat_y)
+- `quat1_z` (output) = `yaw` (internal variable: Yaw → quat_z)
+- `gyro1_x` (output) = `gyro_x` (internal variable: pass through)
+- `gyro1_y` (output) = `gyro_y` (internal variable: pass through)
+- `gyro1_z` (output) = `gyro_z` (internal variable: pass through)
+- `quat1_valid` (output) = `flags[0]` (internal variable: Euler valid bit)
+- `gyro1_valid` (output) = `flags[1]` (internal variable: Gyro valid bit)
+- `initialized` (output) = 1 if `header` == 0xAA, else 0
+- `error` (output) = 1 if `header` != 0xAA, else 0
 
 **Code Location:** `arduino_spi_slave.sv` lines 154-262
 
@@ -112,8 +112,8 @@ Byte 15:   Flags (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=e
 | Stage | Roll | Pitch | Yaw | Gyro X | Gyro Y | Gyro Z | Flags |
 |-------|------|-------|-----|--------|--------|--------|-------|
 | **Arduino** | Bytes 1-2 | Bytes 3-4 | Bytes 5-6 | Bytes 7-8 | Bytes 9-10 | Bytes 11-12 | Byte 13 (bits 0-1) |
-| **FPGA Receive** | `roll` | `pitch` | `yaw` | `gyro_x` | `gyro_y` | `gyro_z` | `flags` |
-| **FPGA Map** | `quat_x` | `quat_y` | `quat_z` | `gyro_x` | `gyro_y` | `gyro_z` | `quat_valid`, `gyro_valid` |
+| **FPGA Receive (Internal)** | `roll` | `pitch` | `yaw` | `gyro_x` | `gyro_y` | `gyro_z` | `flags` |
+| **FPGA Map (Output Interface)** | `quat1_x` = `roll` | `quat1_y` = `pitch` | `quat1_z` = `yaw` | `gyro1_x` = `gyro_x` | `gyro1_y` = `gyro_y` | `gyro1_z` = `gyro_z` | `quat1_valid`, `gyro1_valid` |
 | **FPGA Send** | Bytes 3-4 | Bytes 5-6 | Bytes 7-8 | Bytes 9-10 | Bytes 11-12 | Bytes 13-14 | Byte 15 (bits 0-1) |
 | **MCU Receive** | `quat_x` | `quat_y` | `quat_z` | `gyro_x` | `gyro_y` | `gyro_z` | `quat_valid`, `gyro_valid` |
 
