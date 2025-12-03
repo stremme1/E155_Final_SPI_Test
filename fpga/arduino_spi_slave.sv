@@ -46,63 +46,67 @@ module arduino_spi_slave(
     logic [7:0] packet_buffer [0:PACKET_SIZE-1];
     
     // CS state tracking for edge detection
-    logic cs_n_prev_rising = 1'b1;  // CS state on previous SCK rising edge
-    logic seen_first_bit = 1'b0;   // Track if we've seen the first bit after CS falling edge
+    logic cs_n_prev = 1'b1;  // Previous CS state (for direct edge detection)
     
-    // Track CS state on rising edge (for first bit detection and edge detection)
-    always_ff @(posedge sck or posedge cs_n) begin
-        if (cs_n) begin
-            cs_n_prev_rising <= 1'b1;
-            seen_first_bit <= 1'b0;
-        end else begin
-            cs_n_prev_rising <= cs_n;
-        end
+    // Track CS state directly (not synchronized) for first packet detection
+    always_ff @(posedge cs_n or negedge cs_n) begin
+        cs_n_prev <= cs_n;
     end
     
-    // Detect CS falling edge directly on rising edge (simpler and more reliable)
-    // This catches the first bit immediately
-    logic cs_falling_edge_sck;
-    assign cs_falling_edge_sck = cs_n_prev_rising && !cs_n;
+    // Detect CS falling edge directly (for first packet when no SCK yet)
+    logic cs_fell_direct;
+    assign cs_fell_direct = cs_n_prev && !cs_n;
     
-    // Main SPI receive logic - clocked on SCK rising edge
-    // SPI Mode 0: Sample data on rising edge of SCK
-    // In Mode 0, data is set up before first clock edge, so first bit is available on first SCK rising edge
-    always_ff @(posedge sck or posedge cs_n) begin
+    // CS state tracking for SCK domain (for subsequent packets)
+    logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
+    logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
+    
+    // Synchronize CS to SCK domain (2-stage synchronizer on SCK falling edge)
+    always_ff @(negedge sck) begin
+        cs_n_sync_sck <= cs_n;
+        cs_n_prev_sck <= cs_n_sync_sck;
+    end
+    
+    // Detect CS falling edge in SCK domain (combinational)
+    logic cs_falling_edge_sck;
+    assign cs_falling_edge_sck = cs_n_prev_sck && !cs_n_sync_sck;
+    
+    // Track if we've started receiving (to avoid resetting multiple times)
+    logic receiving = 1'b0;
+    
+    // Reset logic - async reset when CS goes high or low
+    always_ff @(posedge cs_n or negedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
             rx_shift   <= 8'd0;
-            seen_first_bit <= 1'b0;
-        end else begin
-            // Check if this is the first bit after CS goes low
-            if (!seen_first_bit) begin
-                // First bit - capture it and initialize
-                byte_count <= 0;
-                bit_count  <= 1;  // We've received 1 bit
-                rx_shift   <= {7'd0, sdi};  // First bit (MSB) goes into position 0, will shift left
-                seen_first_bit <= 1'b1;
+            receiving  <= 1'b0;
+        end else if (cs_fell_direct) begin
+            // CS just went low - reset for new packet (async)
+            byte_count <= 0;
+            bit_count  <= 0;
+            rx_shift   <= 8'd0;
+            receiving  <= 1'b1;  // Mark that we've started receiving
+        end
+    end
+    
+    // Main SPI receive logic - clocked on SCK rising edge
+    // SPI Mode 0: Sample data on rising edge of SCK
+    always_ff @(posedge sck) begin
+        if (!cs_n && receiving) begin
+            // Shift in data on rising edge of SCK (MSB first)
+            if (bit_count == 3'd7) begin
+                // Byte complete - store in packet buffer
+                // rx_shift has first 7 bits, sdi is the 8th bit
+                packet_buffer[byte_count] <= {rx_shift[6:0], sdi};
+                byte_count <= byte_count + 1;
+                bit_count  <= 0;
+                rx_shift   <= 8'd0;  // Clear for next byte
             end else begin
-                // Shift in data on rising edge of SCK (MSB first)
-                // For MSB first: first bit received is MSB (bit 7), last is LSB (bit 0)
-                // Standard approach: shift LEFT, new bit goes into LSB
-                // After 8 bits: rx_shift[7] = first bit (MSB), rx_shift[0] = last bit (LSB)
-                
-                // Always shift left and append new bit
+                // Shift in current bit
                 rx_shift <= {rx_shift[6:0], sdi};
-                
-                // Check if we've now received all 8 bits
-                if (bit_count == 3'd7) begin
-                    // We've received 8 bits total (bit_count was 7, just shifted in 8th bit)
-                    // rx_shift now contains the complete byte
-                    packet_buffer[byte_count] <= rx_shift;  // Store complete 8-bit byte
-                    byte_count <= byte_count + 1;
-                    bit_count  <= 0;
-                    rx_shift   <= 8'd0;  // Clear for next byte
-                    seen_first_bit <= 1'b0;  // Reset for next byte (will capture first bit of next byte)
-                end else begin
-                    bit_count <= bit_count + 1;
-                end
+                bit_count <= bit_count + 1;
             end
         end
     end
@@ -118,13 +122,6 @@ module arduino_spi_slave(
     logic cs_n_prev_clk;
     logic [7:0] packet_snapshot [0:PACKET_SIZE-1];
     logic packet_valid;
-    
-    // Initialize synchronization registers (CS starts high = deselected)
-    initial begin
-        cs_n_sync_clk1 = 1'b1;
-        cs_n_sync_clk2 = 1'b1;
-        cs_n_prev_clk = 1'b1;
-    end
     
     // Synchronize CS to clk domain (2-stage synchronizer)
     always_ff @(posedge clk) begin
