@@ -45,19 +45,7 @@ module arduino_spi_slave(
     // Packet buffer - stores received 16-byte packet
     logic [7:0] packet_buffer [0:PACKET_SIZE-1];
     
-    // CS state tracking for edge detection
-    logic cs_n_prev = 1'b1;  // Previous CS state (for direct edge detection)
-    
-    // Track CS state directly using clk domain (standard approach)
-    always_ff @(posedge clk) begin
-        cs_n_prev <= cs_n;
-    end
-    
-    // Detect CS falling edge directly (for first packet when no SCK yet)
-    logic cs_fell_direct;
-    assign cs_fell_direct = cs_n_prev && !cs_n;
-    
-    // CS state tracking for SCK domain (for subsequent packets)
+    // CS state tracking for SCK domain
     logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
     logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
     
@@ -71,29 +59,17 @@ module arduino_spi_slave(
     logic cs_falling_edge_sck;
     assign cs_falling_edge_sck = cs_n_prev_sck && !cs_n_sync_sck;
     
-    // Track if we've started receiving (to avoid resetting multiple times)
-    logic receiving = 1'b0;
-    
-    // Reset logic - use clk domain for receiving signal (standard approach)
-    always_ff @(posedge clk) begin
-        if (cs_n) begin
-            // CS high - clear receiving
-            receiving <= 1'b0;
-        end else if (cs_fell_direct) begin
-            // CS just went low - mark that we've started receiving
-            receiving <= 1'b1;
-        end
-    end
-    
     // Main SPI receive logic - clocked on SCK rising edge with async reset on CS
     // SPI Mode 0: Sample data on rising edge of SCK
+    // No need for separate receiving signal - CS low is sufficient to start receiving
     always_ff @(posedge sck or posedge cs_n) begin
         if (cs_n) begin
             // Async reset when CS goes high
             byte_count <= 0;
             bit_count  <= 0;
             rx_shift   <= 8'd0;
-        end else if (!cs_n && receiving) begin
+        end else begin
+            // CS is low - receive data on rising edge of SCK (MSB first)
             // Shift in data on rising edge of SCK (MSB first)
             if (bit_count == 3'd7) begin
                 // Byte complete - store in packet buffer
