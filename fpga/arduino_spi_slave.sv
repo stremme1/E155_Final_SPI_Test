@@ -224,7 +224,11 @@ module arduino_spi_slave(
             packet_snapshot[14] <= packet_buffer[14];
             packet_snapshot[15] <= packet_buffer[15];
             packet_valid_raw <= 1'b1;
-        end else if (cs_n_prev_sync && !cs_n_sync_clk2) begin
+        end
+        // CRITICAL FIX: Only clear packet_valid_raw when CS goes low AND we're ready for next packet
+        // Don't clear it immediately - keep it high until CS goes low to ensure data is captured
+        // This ensures packet_snapshot is stable and can be read by parsing logic
+        if (cs_n_prev_sync && !cs_n_sync_clk2) begin
             // CS just went low (falling edge detected) - clear valid flag to prepare for next packet
             // This ensures we capture the next packet when CS goes high again
             packet_valid_raw <= 1'b0;
@@ -285,18 +289,20 @@ module arduino_spi_slave(
         
         // Read from packet_snapshot (safely synchronized from SCK domain to clk domain)
         // packet_snapshot is captured when CS is high and stable (3+ cycles)
-        // CRITICAL FIX: Always read from packet_snapshot, even if packet_valid is false
-        // This ensures we capture data even if timing is slightly off
-        // The packet_snapshot is updated when CS goes high, so it should have valid data
-        header <= packet_snapshot[0];
-        roll <= {packet_snapshot[1], packet_snapshot[2]};
-        pitch <= {packet_snapshot[3], packet_snapshot[4]};
-        yaw <= {packet_snapshot[5], packet_snapshot[6]};
-        gyro_x <= {packet_snapshot[7], packet_snapshot[8]};
-        gyro_y <= {packet_snapshot[9], packet_snapshot[10]};
-        gyro_z <= {packet_snapshot[11], packet_snapshot[12]};
-        flags <= packet_snapshot[13];
-        // Values persist until next packet
+        // CRITICAL: Only read when packet_valid is true to ensure we have new data
+        // Reading when packet_valid is false would read stale/zero data
+        if (packet_valid) begin
+            // Read from packet_snapshot which is safely synchronized to clk domain
+            header <= packet_snapshot[0];
+            roll <= {packet_snapshot[1], packet_snapshot[2]};
+            pitch <= {packet_snapshot[3], packet_snapshot[4]};
+            yaw <= {packet_snapshot[5], packet_snapshot[6]};
+            gyro_x <= {packet_snapshot[7], packet_snapshot[8]};
+            gyro_y <= {packet_snapshot[9], packet_snapshot[10]};
+            gyro_z <= {packet_snapshot[11], packet_snapshot[12]};
+            flags <= packet_snapshot[13];
+        end
+        // Values persist until next packet (when packet_valid is false, keep previous values)
         
         // Set flag one cycle after packet_valid (when parsed values are registered)
         // This ensures header and all parsed values are stable when checked
@@ -315,33 +321,30 @@ module arduino_spi_slave(
     
     // Validate header and set status
     // Update status when new packet data is available, same timing as output updates
-    // CRITICAL FIX: Always check header when packet_snapshot is updated, not just when new_packet_available
-    // This ensures we detect valid packets even if timing is slightly off
+    // CRITICAL: Only update when new_packet_available is true (when we have new parsed data)
     logic packet_received;  // Track if we've ever received a packet
     always_ff @(posedge clk) begin
-        // Check header whenever packet_snapshot might have new data
-        // Use packet_valid_raw to detect when new data is captured
-        if (packet_valid_raw || new_packet_available) begin
-            // Mark that we've received at least one packet attempt
-            if (packet_snapshot[0] != 8'h00 || packet_snapshot[1] != 8'h00 || packet_snapshot[2] != 8'h00) begin
-                packet_received <= 1'b1;
-            end
+        if (new_packet_available) begin
+            // Mark that we've received at least one packet
+            packet_received <= 1'b1;
             
-            // We have packet data - validate header
+            // We have a new packet - validate header
             if (header == HEADER_BYTE) begin
                 initialized <= 1'b1;
                 error <= 1'b0;  // Clear error on valid header
             end else begin
-                // Invalid header - only set error if we've actually received data (not just zeros)
-                if (packet_received && (packet_snapshot[0] != 8'h00)) begin
+                // Invalid header - only set error if we've actually received a packet
+                // This prevents setting error on startup when packet_snapshot is all zeros
+                if (packet_received || (packet_snapshot[0] != 8'h00)) begin
                     // We've received data (not just zeros) - invalid header means error
                     initialized <= 1'b0;
                     error <= 1'b1;
                 end
-                // If packet_snapshot is all zeros, don't set error (Arduino might not be sending yet)
+                // If packet_snapshot is all zeros and we haven't received a packet yet,
+                // don't set error (wait for first real packet)
             end
         end
-        // Note: If no new packet, keep previous state
+        // Note: If new_packet_available is false, keep previous state
         // This allows status to persist between packets
         // CRITICAL: On startup, error is initialized to 0, so LED won't light until first invalid packet
     end
