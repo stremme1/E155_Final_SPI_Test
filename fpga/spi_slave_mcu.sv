@@ -34,7 +34,7 @@ module spi_slave_mcu(
     //
     // Packet format: 16 bytes total (single sensor only)
     // Byte 0:    Header (0xAA)
-    // Byte 1-2:  Sensor 1 Quaternion W (MSB,LSB) - Q14 format (16384 = 1.0)
+    // Byte 1-2:  Sensor 1 Quaternion W (MSB,LSB) - 0 (not available from Euler angles)
     // Byte 3-4:  Sensor 1 Quaternion X (MSB,LSB) - Roll from Arduino
     // Byte 5-6:  Sensor 1 Quaternion Y (MSB,LSB) - Pitch from Arduino
     // Byte 7-8:  Sensor 1 Quaternion Z (MSB,LSB) - Yaw from Arduino

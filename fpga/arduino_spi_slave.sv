@@ -256,7 +256,7 @@ module arduino_spi_slave(
     //
     // Data Pipeline: Arduino → FPGA (this module) → MCU
     // This module receives Euler angles from Arduino and maps them to quaternion format
-    // for the MCU interface: Roll→quat_x, Pitch→quat_y, Yaw→quat_z, quat_w=16384 (Q14=1.0)
+    // for the MCU interface: Roll→quat_x, Pitch→quat_y, Yaw→quat_z, quat_w=0 (not available from Euler)
     
     // Parse packet fields - register them for stability
     logic [7:0] header;
@@ -368,14 +368,15 @@ module arduino_spi_slave(
     
     // Map Arduino packet fields to spi_slave_mcu interface
     // Arduino sends Euler angles (Roll, Pitch, Yaw), map to quaternion fields
-    // Roll → quat_x, Pitch → quat_y, Yaw → quat_z, set quat_w = 16384 (Q14 format = 1.0)
+    // Roll → quat_x, Pitch → quat_y, Yaw → quat_z
+    // Note: quat_w is not available from Euler angles, set to 0
     // Update outputs when new valid packet data is available (new_packet_available && header == HEADER_BYTE)
     // This ensures outputs are updated with fresh data and remain stable for spi_slave_mcu to capture
     always_ff @(posedge clk) begin
         if (new_packet_available && (header == HEADER_BYTE)) begin
             // Map Euler angles to quaternion fields
-            // Q14 format: 16384 = 1.0 (for quat_w when using Euler angles)
-            quat1_w <= 16'd16384;  // Q14 format representation of 1.0
+            // quat_w is not available from Euler angles (would require conversion), set to 0
+            quat1_w <= 16'd0;       // Not available from Euler angles
             quat1_x <= roll;        // Roll → quat_x
             quat1_y <= pitch;       // Pitch → quat_y
             quat1_z <= yaw;         // Yaw → quat_z
