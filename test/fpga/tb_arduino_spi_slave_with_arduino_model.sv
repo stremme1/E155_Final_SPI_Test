@@ -98,17 +98,36 @@ module tb_arduino_spi_slave_with_arduino_model;
     // SPI parameters
     parameter SCK_PERIOD = 10000;  // 100kHz = 10us period
     
-    // Task to send a byte via SPI (MSB first, Mode 0) - same as original testbench
+    // Task to send a byte via SPI (MSB first, Mode 0) - EXACT Arduino SPI.transfer() behavior
+    // CRITICAL: First bit (MSB) must be set up BEFORE first SCK rising edge
+    // This matches Arduino SPI.transfer() exactly:
+    // - Arduino sets up first bit before first SCK edge
+    // - Each bit is sampled on SCK rising edge
+    // - Next bit is set up during SCK low time
     task send_spi_byte(input [7:0] data);
         integer i;
+        // CRITICAL: Set up first bit (MSB, bit 7) BEFORE first SCK rising edge
+        // Arduino SPI.transfer() does this - first bit is ready before first edge
+        sdi = data[7];
+        #(SCK_PERIOD / 2);  // Setup time - data stable before first edge
+        
+        // Send 8 bits: Each bit is sampled on rising edge, next bit set up during low time
         for (i = 7; i >= 0; i = i - 1) begin
-            // Set data before rising edge (setup time)
-            sdi = data[i];
-            #(SCK_PERIOD/4);  // Setup time
-            sck = 1;  // Rising edge - FPGA samples sdi here
-            #(SCK_PERIOD/4);  // Hold time
-            #(SCK_PERIOD/2);
-            sck = 0;  // Falling edge
+            // Rising edge - FPGA slave samples sdi here (SPI Mode 0)
+            sck = 1'b1;
+            #(SCK_PERIOD / 2);
+            
+            // Falling edge - prepare for next bit
+            sck = 1'b0;
+            
+            // Set up next bit (if not last bit) before next rising edge
+            if (i > 0) begin
+                sdi = data[i-1];  // Next bit (MSB first: 7,6,5,4,3,2,1,0)
+                #(SCK_PERIOD / 2);  // Setup time for next bit
+            end else begin
+                // Last bit sent - keep data stable
+                #(SCK_PERIOD / 2);
+            end
         end
     endtask
     
@@ -315,6 +334,62 @@ module tb_arduino_spi_slave_with_arduino_model;
             check_test("Test 3.2a: Min Roll", quat1_x == -16'd32768);
             check_test("Test 3.2b: Min Pitch", quat1_y == -16'd32768);
             check_test("Test 3.2c: Min Yaw", quat1_z == -16'd32768);
+        end
+        
+        // Test 3.3: Invalid header (should set error)
+        begin
+            $display("Test 3.3: Invalid header - should set error");
+            // Send packet with invalid header (0x55 instead of 0xAA)
+            cs_n = 1;
+            #(SCK_PERIOD * 3);
+            cs_n = 0;
+            #(SCK_PERIOD * 2);
+            
+            send_spi_byte(8'h55);  // Invalid header
+            send_spi_byte(8'h00);  // Rest zeros
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            send_spi_byte(8'h00);
+            
+            #(SCK_PERIOD);
+            cs_n = 1;
+            #(SCK_PERIOD * 3);
+            
+            wait_cdc();
+            
+            check_test("Test 3.3a: Invalid header → error = 1", error == 1'b1);
+            check_test("Test 3.3b: Invalid header → initialized = 0", initialized == 1'b0);
+        end
+        
+        // Test 3.4: Valid header after invalid (should clear error)
+        begin
+            $display("Test 3.4: Valid header after invalid - should clear error");
+            send_sensor_packet(
+                16'd100,    // Roll = 1.00°
+                16'd200,    // Pitch = 2.00°
+                16'd300,    // Yaw = 3.00°
+                16'd10,     // Gyro X
+                16'd20,     // Gyro Y
+                16'd30,     // Gyro Z
+                1'b1,       // Euler valid
+                1'b1        // Gyro valid
+            );
+            
+            wait_cdc();
+            
+            check_test("Test 3.4a: Valid header → error = 0", error == 1'b0);
+            check_test("Test 3.4b: Valid header → initialized = 1", initialized == 1'b1);
         end
         
         $display("");
