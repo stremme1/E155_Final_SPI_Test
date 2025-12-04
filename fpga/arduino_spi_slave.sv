@@ -55,16 +55,19 @@ module arduino_spi_slave(
         end
     end
     
-    // CS state tracking - use async reset for immediate response
-    // CS can go low before SCK starts, so we need to handle it asynchronously
-    logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain (for edge detection)
+    // CS state tracking for SCK domain
+    logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
     logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
     
-    // Synchronize CS to SCK domain (sample on both edges to catch CS changes quickly)
-    always_ff @(negedge sck or posedge sck) begin
+    // Synchronize CS to SCK domain (2-stage synchronizer on SCK falling edge)
+    always_ff @(negedge sck) begin
         cs_n_sync_sck <= cs_n;
         cs_n_prev_sck <= cs_n_sync_sck;
     end
+    
+    // Detect CS falling edge in SCK domain (combinational)
+    logic cs_falling_edge_sck;
+    assign cs_falling_edge_sck = cs_n_prev_sck && !cs_n_sync_sck;
     
     // Main SPI receive logic - clocked on SCK rising edge with async reset on CS
     // SPI Mode 0: Sample data on rising edge of SCK
