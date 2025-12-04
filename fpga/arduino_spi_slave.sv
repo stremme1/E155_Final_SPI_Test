@@ -13,6 +13,8 @@
 //   All 16-bit values are MSB-first (MSB byte, then LSB byte)
 //   Roll/Pitch/Yaw are Euler angles (int16_t scaled by 100, 0.01 degree resolution)
 //   Gyro values are int16_t scaled by 2000
+//
+// Simplified: Just receive and buffer raw packet, pass to MCU for parsing
 
 module arduino_spi_slave(
     input  logic        clk,           // FPGA system clock
@@ -20,13 +22,12 @@ module arduino_spi_slave(
     input  logic        sck,           // SPI clock from Arduino
     input  logic        sdi,           // SPI data in (MOSI from Arduino)
     
-    // Outputs mapped to spi_slave_mcu interface
+    // Output: Raw packet buffer (16 bytes) - passed directly to MCU
+    output logic [7:0]  packet_buffer [0:15],
+    
+    // Status outputs (from header check only)
     output logic        initialized,
-    output logic        error,
-    output logic        quat1_valid,
-    output logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z,
-    output logic        gyro1_valid,
-    output logic signed [15:0] gyro1_x, gyro1_y, gyro1_z
+    output logic        error
 );
 
     localparam PACKET_SIZE = 16;
@@ -116,20 +117,19 @@ module arduino_spi_slave(
     // Packet data is captured in SCK domain (asynchronous to FPGA clk)
     // Need to synchronize to clk domain for stable output
     
-    // Snapshot: Capture packet on CS rising edge (transaction complete)
-    logic cs_n_sync_clk1, cs_n_sync_clk2;
-    logic cs_n_prev_clk;
-    logic [7:0] packet_snapshot [0:PACKET_SIZE-1];
-    logic packet_valid;
+    // Synchronized packet buffer (output) - captured from SCK domain on CS rising edge
+    logic [7:0] packet_buffer_sync [0:PACKET_SIZE-1];
     
-    // Initialize packet_snapshot to avoid 'x' values that could cause false error
+    // Initialize synchronized buffer to avoid 'x' values
     initial begin
         for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
-            packet_snapshot[i] = 8'h00;
+            packet_buffer_sync[i] = 8'h00;
         end
     end
     
     // Synchronize CS to clk domain (2-stage synchronizer)
+    logic cs_n_sync_clk1, cs_n_sync_clk2;
+    logic cs_n_prev_clk;
     always_ff @(posedge clk) begin
         cs_n_sync_clk1 <= cs_n;
         cs_n_sync_clk2 <= cs_n_sync_clk1;
@@ -140,242 +140,67 @@ module arduino_spi_slave(
     logic cs_rising_edge_clk;
     assign cs_rising_edge_clk = !cs_n_prev_clk && cs_n_sync_clk2;
     
-    // Capture packet snapshot on CS rising edge (transaction complete)
-    // CRITICAL CDC FIX: packet_buffer is in SCK domain, must be synchronized to clk domain
-    // Strategy: When CS goes high, SCK is idle (SPI Mode 0: CPOL=0, idle low)
-    //           packet_buffer is stable, but we still need proper CDC handling
-    //           Use 2-stage synchronizer for CS edge, then sample stable packet_buffer
-    //           Add delay to ensure packet_buffer is fully written before reading
-    logic packet_valid_raw;
-    logic cs_high_stable;  // CS has been high for at least 2 clk cycles (ensures SCK domain is idle)
-    logic [1:0] cs_high_counter;  // Count cycles since CS went high
-    
-    // Wait for CS to be high and stable before reading packet_buffer
-    // This ensures SCK domain is idle (CS high = transaction complete, SCK idle in Mode 0)
-    // CS is active low: cs_n=1 means high (not selected), cs_n=0 means low (selected)
-    // Simplified: Start counting whenever CS is high, regardless of edge detection
+    // Capture packet buffer on CS rising edge (transaction complete)
+    // When CS goes high, SCK is idle (SPI Mode 0: CPOL=0, idle low)
+    // packet_buffer is stable, safe to read after CS rising edge
     always_ff @(posedge clk) begin
-        if (cs_n_sync_clk2) begin  // CS is high (synchronized) - cs_n=1 means high
-            // CS is high - count cycles
-            if (cs_high_counter < 2'd3) begin
-                cs_high_counter <= cs_high_counter + 1;
-                cs_high_stable <= 1'b0;
-            end else begin
-                cs_high_stable <= 1'b1;  // CS has been high for 3+ cycles, safe to read
-            end
-        end else begin
-            // CS is low - reset
-            cs_high_stable <= 1'b0;
-            cs_high_counter <= 2'd0;
-        end
-    end
-    
-    // Capture packet snapshot when CS is high and stable (safe CDC read)
-    // PRODUCTION-READY CDC: This approach is safe for SPI Mode 0 because:
-    // 1. CS high = transaction complete = SCK guaranteed idle (CPOL=0, idle low)
-    // 2. 3-cycle delay ensures any final SCK edges have fully settled
-    // 3. packet_buffer is written only on SCK rising edges, which are now idle
-    // 4. All 16 bytes are read in a single clock cycle (atomic read)
-    //
-    // Timing Analysis:
-    // - Worst case: Last SCK edge to CS high: < 1 SCK period (10us at 100kHz)
-    // - 3 clk cycles at 3MHz: 3 * 333ns = 1us (10x margin)
-    // - This ensures packet_buffer is fully stable before reading
-    //
-    // CRITICAL FIX: packet_valid_raw should only be cleared when CS goes low AND we're ready for a new packet
-    // Don't clear it when CS is low during a transaction - wait for CS to go high again
-    logic cs_n_prev_sync;  // Previous CS state (synchronized)
-    always_ff @(posedge clk) begin
-        cs_n_prev_sync <= cs_n_sync_clk2;
-    end
-    
-    always_ff @(posedge clk) begin
-        if (cs_high_stable && !packet_valid_raw) begin
-            // CS has been high for 3+ cycles - packet_buffer is stable, safe to read
+        if (cs_rising_edge_clk) begin
+            // CS rising edge - transaction complete, capture packet
             // Atomic read of all 16 bytes in one clock cycle
-            // This is safe because:
-            // - CS high guarantees SCK is idle (SPI Mode 0 protocol)
-            // - 3-cycle delay provides sufficient margin for any settling
-            // - All bytes read simultaneously prevents partial updates
-            packet_snapshot[0] <= packet_buffer[0];
-            packet_snapshot[1] <= packet_buffer[1];
-            packet_snapshot[2] <= packet_buffer[2];
-            packet_snapshot[3] <= packet_buffer[3];
-            packet_snapshot[4] <= packet_buffer[4];
-            packet_snapshot[5] <= packet_buffer[5];
-            packet_snapshot[6] <= packet_buffer[6];
-            packet_snapshot[7] <= packet_buffer[7];
-            packet_snapshot[8] <= packet_buffer[8];
-            packet_snapshot[9] <= packet_buffer[9];
-            packet_snapshot[10] <= packet_buffer[10];
-            packet_snapshot[11] <= packet_buffer[11];
-            packet_snapshot[12] <= packet_buffer[12];
-            packet_snapshot[13] <= packet_buffer[13];
-            packet_snapshot[14] <= packet_buffer[14];
-            packet_snapshot[15] <= packet_buffer[15];
-            packet_valid_raw <= 1'b1;
-        end else if (cs_n_prev_sync && !cs_n_sync_clk2) begin
-            // CS just went low (falling edge detected) - clear valid flag to prepare for next packet
-            // This ensures we capture the next packet when CS goes high again
-            packet_valid_raw <= 1'b0;
+            packet_buffer_sync[0] <= packet_buffer[0];
+            packet_buffer_sync[1] <= packet_buffer[1];
+            packet_buffer_sync[2] <= packet_buffer[2];
+            packet_buffer_sync[3] <= packet_buffer[3];
+            packet_buffer_sync[4] <= packet_buffer[4];
+            packet_buffer_sync[5] <= packet_buffer[5];
+            packet_buffer_sync[6] <= packet_buffer[6];
+            packet_buffer_sync[7] <= packet_buffer[7];
+            packet_buffer_sync[8] <= packet_buffer[8];
+            packet_buffer_sync[9] <= packet_buffer[9];
+            packet_buffer_sync[10] <= packet_buffer[10];
+            packet_buffer_sync[11] <= packet_buffer[11];
+            packet_buffer_sync[12] <= packet_buffer[12];
+            packet_buffer_sync[13] <= packet_buffer[13];
+            packet_buffer_sync[14] <= packet_buffer[14];
+            packet_buffer_sync[15] <= packet_buffer[15];
         end
-        // Keep packet_snapshot stable when cs_high_stable is false (data persists)
+        // Data persists until next CS rising edge
     end
     
-    // Delay packet_valid by one cycle so registered parsed values are ready
-    always_ff @(posedge clk) begin
-        packet_valid <= packet_valid_raw;
-    end
+    // Output synchronized packet buffer
+    assign packet_buffer = packet_buffer_sync;
     
     // ========================================================================
-    // Parse Packet and Map to spi_slave_mcu Interface
+    // Header Validation for Status Outputs
     // ========================================================================
-    // See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
-    //
-    // Arduino packet format (16 bytes total):
-    // Byte 0:    Header (0xAA)
-    // Bytes 1-2: Roll (int16_t, MSB first) - Euler angle scaled by 100
-    // Bytes 3-4: Pitch (int16_t, MSB first) - Euler angle scaled by 100
-    // Bytes 5-6: Yaw (int16_t, MSB first) - Euler angle scaled by 100
-    // Bytes 7-8: Gyro X (int16_t, MSB first) - scaled by 2000
-    // Bytes 9-10: Gyro Y (int16_t, MSB first) - scaled by 2000
-    // Bytes 11-12: Gyro Z (int16_t, MSB first) - scaled by 2000
-    // Byte 13:   Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
-    // Bytes 14-15: Reserved (0x00)
-    //
-    // Data Pipeline: Arduino → FPGA (this module) → MCU
-    // This module receives Euler angles from Arduino and maps them to quaternion format
-    // for the MCU interface: Roll→quat_x, Pitch→quat_y, Yaw→quat_z, quat_w=16384 (Q14=1.0)
-    
-    // Parse packet fields - register them for stability
-    logic [7:0] header;
-    logic signed [15:0] roll, pitch, yaw;
-    logic signed [15:0] gyro_x, gyro_y, gyro_z;
-    logic [7:0] flags;
-    
-    // Initialize parsed values to avoid 'x' values
-    initial begin
-        header = 8'h00;
-        roll = 16'd0;
-        pitch = 16'd0;
-        yaw = 16'd0;
-        gyro_x = 16'd0;
-        gyro_y = 16'd0;
-        gyro_z = 16'd0;
-        flags = 8'h00;
-    end
-    
-    // Register parsed values when packet is captured for stability
-    // CRITICAL: Read from packet_snapshot (safely synchronized from SCK domain), not packet_buffer directly
-    logic new_packet_available;  // Flag to indicate when new parsed data is ready
-    logic packet_valid_delayed;  // Delay packet_valid by one cycle for stable parsing
-    always_ff @(posedge clk) begin
-        // Delay packet_valid by one cycle to ensure packet_snapshot is fully written
-        packet_valid_delayed <= packet_valid;
-        
-        // Read from packet_snapshot (safely synchronized from SCK domain to clk domain)
-        // packet_snapshot is captured when CS is high and stable (3+ cycles)
-        if (packet_valid) begin
-            // Read from packet_snapshot which is safely synchronized to clk domain
-            header <= packet_snapshot[0];
-            roll <= {packet_snapshot[1], packet_snapshot[2]};
-            pitch <= {packet_snapshot[3], packet_snapshot[4]};
-            yaw <= {packet_snapshot[5], packet_snapshot[6]};
-            gyro_x <= {packet_snapshot[7], packet_snapshot[8]};
-            gyro_y <= {packet_snapshot[9], packet_snapshot[10]};
-            gyro_z <= {packet_snapshot[11], packet_snapshot[12]};
-            flags <= packet_snapshot[13];
-        end
-        // Values persist until next packet
-        
-        // Set flag one cycle after packet_valid (when parsed values are registered)
-        // This ensures header and all parsed values are stable when checked
-        if (packet_valid_delayed) begin
-            // One cycle after packet_valid - parsed values are definitely stable
-            new_packet_available <= 1'b1;
-        end else begin
-            // Clear flag when no valid packet
-            new_packet_available <= 1'b0;
-        end
-    end
-    
-    // Validate header and set status
-    // Update status when new packet data is available, same timing as output updates
-    // CRITICAL FIX: Only update error/initialized when we actually have a new packet
-    // Don't set error on startup or when packet_snapshot contains zeros from initialization
-    // Also check that we've actually received data (not just zeros) before setting error
+    // Simple header check for initialized/error outputs
+    // Check header on CS rising edge when packet is captured
     logic packet_received;  // Track if we've ever received a packet
+    
     always_ff @(posedge clk) begin
-        if (new_packet_available) begin
-            // Mark that we've received at least one packet
+        if (cs_rising_edge_clk) begin
+            // New packet captured - check header
             packet_received <= 1'b1;
             
-            // We have a new packet - validate header
-            if (header == HEADER_BYTE) begin
+            if (packet_buffer_sync[0] == HEADER_BYTE) begin
                 initialized <= 1'b1;
-                error <= 1'b0;  // Clear error on valid header
+                error <= 1'b0;
             end else begin
-                // Invalid header - only set error if we've actually received a packet
-                // This prevents setting error on startup when packet_snapshot is all zeros
-                if (packet_received || (packet_snapshot[0] != 8'h00)) begin
-                    // We've received data (not just zeros) - invalid header means error
+                // Invalid header - only set error if we've actually received data
+                if (packet_received || (packet_buffer_sync[0] != 8'h00)) begin
                     initialized <= 1'b0;
                     error <= 1'b1;
                 end
-                // If packet_snapshot is all zeros and we haven't received a packet yet,
-                // don't set error (wait for first real packet)
             end
         end
-        // Note: If new_packet_available is false, keep previous state
-        // This allows status to persist between packets
-        // CRITICAL: On startup, error is initialized to 0, so LED won't light until first invalid packet
+        // Status persists until next packet
     end
     
-    // Initialize packet_received
-    initial begin
-        packet_received = 1'b0;
-    end
-    
-    // Initialize outputs (SystemVerilog allows initialization)
+    // Initialize
     initial begin
         initialized = 1'b0;
         error = 1'b0;
-        quat1_valid = 1'b0;
-        gyro1_valid = 1'b0;
-        quat1_w = 16'd0;
-        quat1_x = 16'd0;
-        quat1_y = 16'd0;
-        quat1_z = 16'd0;
-        gyro1_x = 16'd0;
-        gyro1_y = 16'd0;
-        gyro1_z = 16'd0;
-    end
-    
-    // Map Arduino packet fields to spi_slave_mcu interface
-    // Arduino sends Euler angles (Roll, Pitch, Yaw), map to quaternion fields
-    // Roll → quat_x, Pitch → quat_y, Yaw → quat_z, set quat_w = 16384 (Q14 format = 1.0)
-    // Update outputs when new valid packet data is available (new_packet_available && header == HEADER_BYTE)
-    // This ensures outputs are updated with fresh data and remain stable for spi_slave_mcu to capture
-    always_ff @(posedge clk) begin
-        if (new_packet_available && (header == HEADER_BYTE)) begin
-            // Map Euler angles to quaternion fields
-            // Q14 format: 16384 = 1.0 (for quat_w when using Euler angles)
-            quat1_w <= 16'd16384;  // Q14 format representation of 1.0
-            quat1_x <= roll;        // Roll → quat_x
-            quat1_y <= pitch;       // Pitch → quat_y
-            quat1_z <= yaw;         // Yaw → quat_z
-            
-            // Pass through gyroscope data
-            gyro1_x <= gyro_x;
-            gyro1_y <= gyro_y;
-            gyro1_z <= gyro_z;
-            
-            // Map flags: bit 0 = Euler valid → quat_valid, bit 1 = Gyro valid → gyro_valid
-            quat1_valid <= flags[0];  // Euler valid bit
-            gyro1_valid <= flags[1];  // Gyro valid bit
-        end
-        // Note: When new_packet_available is false or header != HEADER_BYTE, outputs keep their previous values
-        // This ensures data persists between packets until a new valid packet arrives
+        packet_received = 1'b0;
     end
     
 endmodule

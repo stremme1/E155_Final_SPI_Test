@@ -36,9 +36,7 @@ module drum_trigger_top (
     logic rst_n;
     
     // Arduino SPI Slave outputs (connected to MCU SPI slave)
-    logic quat1_valid, gyro1_valid;
-    logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z;
-    logic signed [15:0] gyro1_x, gyro1_y, gyro1_z;
+    logic [7:0] packet_buffer [0:15];  // Raw packet buffer from Arduino
     logic initialized1, error1;
     
     // Simple reset: just use FPGA reset directly (no initialization delays needed)
@@ -84,24 +82,16 @@ module drum_trigger_top (
     // Arduino SPI Slave - Receive sensor data from Arduino
     // ============================================
     // Receives 16-byte packets from Arduino/ESP32 over SPI
-    // Maps Euler angles (Roll, Pitch, Yaw) to quaternion fields for MCU interface
+    // Outputs raw packet buffer for MCU to parse
     
     arduino_spi_slave arduino_spi_slave_inst (
         .clk(clk),
         .cs_n(arduino_cs_n),
         .sck(arduino_sck),
         .sdi(arduino_sdi),
+        .packet_buffer(packet_buffer),
         .initialized(initialized1),
-        .error(error1),
-        .quat1_valid(quat1_valid),
-        .quat1_w(quat1_w),
-        .quat1_x(quat1_x),
-        .quat1_y(quat1_y),
-        .quat1_z(quat1_z),
-        .gyro1_valid(gyro1_valid),
-        .gyro1_x(gyro1_x),
-        .gyro1_y(gyro1_y),
-        .gyro1_z(gyro1_z)
+        .error(error1)
     );
     
     // Status LEDs
@@ -111,9 +101,9 @@ module drum_trigger_top (
     // ============================================
     // MCU SPI Slave for sending raw sensor data
     // ============================================
-    // Single sensor only - sends 16-byte packet with sensor 1 data
+    // Sends raw 16-byte packet buffer directly to MCU
     // Uses CS-based protocol (chip select, active low)
-    // Receives sensor data directly from BNO085 controller (spi_slave_mcu handles snapshot internally)
+    // MCU will parse the Arduino packet format (Roll/Pitch/Yaw)
     
     spi_slave_mcu spi_slave_mcu_inst (
         .clk(clk),
@@ -121,19 +111,9 @@ module drum_trigger_top (
         .sck(mcu_sck),
         .sdi(mcu_sdi),
         .sdo(mcu_sdo),
-        // Sensor 1 (Right Hand) - single sensor only
+        .packet_buffer(packet_buffer),
         .initialized(initialized1),
-        .error(error1),
-        // Sensor data directly from BNO085 controller (spi_slave_mcu handles snapshot internally)
-        .quat1_valid(quat1_valid),
-        .quat1_w(quat1_w),
-        .quat1_x(quat1_x),
-        .quat1_y(quat1_y),
-        .quat1_z(quat1_z),
-        .gyro1_valid(gyro1_valid),
-        .gyro1_x(gyro1_x),
-        .gyro1_y(gyro1_y),
-        .gyro1_z(gyro1_z)
+        .error(error1)
     );
     
 endmodule

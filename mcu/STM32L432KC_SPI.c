@@ -210,16 +210,22 @@ void readSensorDataPacket(uint8_t *packet) {
  * 
  * Data Pipeline: Arduino → FPGA → MCU (this code)
  * 
- * Packet format: [Header(0xAA)][Sensor1_Quat][Sensor1_Gyro][Sensor1_Flags]
+ * Arduino packet format (16 bytes):
  * Byte 0:    Header (0xAA)
- * Byte 1-2:  quat_w (MSB,LSB) - Q14 format (16384 = 1.0)
- * Byte 3-4:  quat_x (MSB,LSB) - Roll from Arduino (via FPGA)
- * Byte 5-6:  quat_y (MSB,LSB) - Pitch from Arduino (via FPGA)
- * Byte 7-8:  quat_z (MSB,LSB) - Yaw from Arduino (via FPGA)
- * Byte 9-10: gyro_x (MSB,LSB) - from Arduino (via FPGA)
- * Byte 11-12: gyro_y (MSB,LSB) - from Arduino (via FPGA)
- * Byte 13-14: gyro_z (MSB,LSB) - from Arduino (via FPGA)
- * Byte 15:   Flags (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=error)
+ * Bytes 1-2: Roll (int16_t, MSB first) - Euler angle scaled by 100
+ * Bytes 3-4: Pitch (int16_t, MSB first) - Euler angle scaled by 100
+ * Bytes 5-6: Yaw (int16_t, MSB first) - Euler angle scaled by 100
+ * Bytes 7-8: Gyro X (int16_t, MSB first) - scaled by 2000
+ * Bytes 9-10: Gyro Y (int16_t, MSB first) - scaled by 2000
+ * Bytes 11-12: Gyro Z (int16_t, MSB first) - scaled by 2000
+ * Byte 13:   Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
+ * Bytes 14-15: Reserved (0x00)
+ * 
+ * Mapped to quaternion format:
+ * quat_w = 16384 (Q14 format = 1.0, hardcoded for Euler angles)
+ * quat_x = Roll
+ * quat_y = Pitch
+ * quat_z = Yaw
  * 
  * All 16-bit values are MSB,LSB format (MSB first, LSB second)
  * Single sensor only - sensor 2 outputs are set to 0/invalid for future compatibility
@@ -268,40 +274,43 @@ void parseSensorDataPacket(const uint8_t *packet,
     
     // Debug: Show raw sensor data bytes to help diagnose zero data issue
     // Use manual hex formatting to avoid printf format string issues
-    debug_print("[SENSOR] Raw data bytes: quat_w=");
+    debug_print("[SENSOR] Raw data bytes: Roll=");
     debug_print_hex_byte(packet[1]); debug_print_hex_byte(packet[2]);
-    debug_print(" quat_x=");
+    debug_print(" Pitch=");
     debug_print_hex_byte(packet[3]); debug_print_hex_byte(packet[4]);
-    debug_print(" quat_y=");
+    debug_print(" Yaw=");
     debug_print_hex_byte(packet[5]); debug_print_hex_byte(packet[6]);
-    debug_print(" quat_z=");
-    debug_print_hex_byte(packet[7]); debug_print_hex_byte(packet[8]);
     debug_newline();
     
     debug_print("[SENSOR] Raw gyro bytes: gyro_x=");
-    debug_print_hex_byte(packet[9]); debug_print_hex_byte(packet[10]);
+    debug_print_hex_byte(packet[7]); debug_print_hex_byte(packet[8]);
     debug_print(" gyro_y=");
-    debug_print_hex_byte(packet[11]); debug_print_hex_byte(packet[12]);
+    debug_print_hex_byte(packet[9]); debug_print_hex_byte(packet[10]);
     debug_print(" gyro_z=");
-    debug_print_hex_byte(packet[13]); debug_print_hex_byte(packet[14]);
+    debug_print_hex_byte(packet[11]); debug_print_hex_byte(packet[12]);
     debug_print(" flags=");
-    debug_print_hex_byte(packet[15]);
+    debug_print_hex_byte(packet[13]);
     debug_newline();
     
-    // Sensor 1 Quaternion (bytes 1-8, MSB,LSB format)
-    *quat1_w = (int16_t)((packet[1] << 8) | packet[2]);
-    *quat1_x = (int16_t)((packet[3] << 8) | packet[4]);
-    *quat1_y = (int16_t)((packet[5] << 8) | packet[6]);
-    *quat1_z = (int16_t)((packet[7] << 8) | packet[8]);
+    // Parse Arduino packet format (Roll/Pitch/Yaw)
+    int16_t roll = (int16_t)((packet[1] << 8) | packet[2]);
+    int16_t pitch = (int16_t)((packet[3] << 8) | packet[4]);
+    int16_t yaw = (int16_t)((packet[5] << 8) | packet[6]);
     
-    // Sensor 1 Gyroscope (bytes 9-14, MSB,LSB format)
-    *gyro1_x = (int16_t)((packet[9] << 8) | packet[10]);
-    *gyro1_y = (int16_t)((packet[11] << 8) | packet[12]);
-    *gyro1_z = (int16_t)((packet[13] << 8) | packet[14]);
+    // Map to quaternion format (Euler angles → quaternion)
+    *quat1_w = 16384;  // Q14 format = 1.0 (hardcoded for Euler angles)
+    *quat1_x = roll;   // Roll → quat_x
+    *quat1_y = pitch;  // Pitch → quat_y
+    *quat1_z = yaw;    // Yaw → quat_z
     
-    // Sensor 1 Flags (byte 15)
-    *quat1_valid = packet[15] & 0x01;
-    *gyro1_valid = (packet[15] >> 1) & 0x01;
+    // Sensor 1 Gyroscope (bytes 7-12, MSB,LSB format)
+    *gyro1_x = (int16_t)((packet[7] << 8) | packet[8]);
+    *gyro1_y = (int16_t)((packet[9] << 8) | packet[10]);
+    *gyro1_z = (int16_t)((packet[11] << 8) | packet[12]);
+    
+    // Sensor 1 Flags (byte 13: bit 0 = Euler valid, bit 1 = Gyro valid)
+    *quat1_valid = packet[13] & 0x01;  // Euler valid → quat_valid
+    *gyro1_valid = (packet[13] >> 1) & 0x01;  // Gyro valid
     
     // Debug: Print parsed values
     debug_printf("[SENSOR] Quat1: w=%d x=%d y=%d z=%d\r\n", *quat1_w, *quat1_x, *quat1_y, *quat1_z);

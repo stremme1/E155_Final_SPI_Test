@@ -20,34 +20,30 @@ module spi_slave_mcu(
     input  logic        sdi,            // SPI data in (MOSI from MCU - IGNORED in read-only mode)
     output logic        sdo,           // SPI data out (MISO to MCU - PB4)
     
-    // Sensor data inputs (RAW data from BNO085 controller)
-    // Sensor 1 (Right Hand) - Single sensor only
+    // Raw packet buffer from arduino_spi_slave (16 bytes)
+    input  logic [7:0]  packet_buffer [0:15],
+    
+    // Status inputs (from header check)
     input  logic        initialized,
-    input  logic        error,
-    input  logic        quat1_valid,
-    input  logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z,
-    input  logic        gyro1_valid,
-    input  logic signed [15:0] gyro1_x, gyro1_y, gyro1_z
+    input  logic        error
 );
 
-    // See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
-    //
-    // Packet format: 16 bytes total (single sensor only)
+    // Simplified: Pass raw packet buffer directly to MCU
+    // Packet format from Arduino (16 bytes):
     // Byte 0:    Header (0xAA)
-    // Byte 1-2:  Sensor 1 Quaternion W (MSB,LSB) - Q14 format (16384 = 1.0)
-    // Byte 3-4:  Sensor 1 Quaternion X (MSB,LSB) - Roll from Arduino
-    // Byte 5-6:  Sensor 1 Quaternion Y (MSB,LSB) - Pitch from Arduino
-    // Byte 7-8:  Sensor 1 Quaternion Z (MSB,LSB) - Yaw from Arduino
-    // Byte 9-10: Sensor 1 Gyroscope X (MSB,LSB) - from Arduino
-    // Byte 11-12: Sensor 1 Gyroscope Y (MSB,LSB) - from Arduino
-    // Byte 13-14: Sensor 1 Gyroscope Z (MSB,LSB) - from Arduino
-    // Byte 15:   Sensor 1 Flags (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=error)
+    // Bytes 1-2: Roll (int16_t, MSB first)
+    // Bytes 3-4: Pitch (int16_t, MSB first)
+    // Bytes 5-6: Yaw (int16_t, MSB first)
+    // Bytes 7-8: Gyro X (int16_t, MSB first)
+    // Bytes 9-10: Gyro Y (int16_t, MSB first)
+    // Bytes 11-12: Gyro Z (int16_t, MSB first)
+    // Byte 13:   Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
+    // Bytes 14-15: Reserved (0x00)
     //
     // Data Pipeline: Arduino → arduino_spi_slave → this module → MCU
-    // This module receives quaternion data from arduino_spi_slave and sends it to MCU
+    // This module receives raw packet buffer from arduino_spi_slave and sends it directly to MCU
     
     localparam PACKET_SIZE = 16;
-    localparam HEADER_BYTE = 8'hAA;
     
     // Test mode: When enabled, output known test pattern instead of sensor data
     // This helps verify SPI shift logic works independently of data capture
@@ -73,172 +69,61 @@ module spi_slave_mcu(
     assign test_pattern[15] = 8'hFF;
     
     // ========================================================================
-    // Clock Domain Crossing: Synchronize sensor data from clk domain to sck domain
+    // Clock Domain Crossing: Synchronize packet buffer from clk domain to sck domain
     // ========================================================================
-    // Sensor data comes from BNO085 controller (clocked on FPGA clk)
+    // Packet buffer comes from arduino_spi_slave (clocked on FPGA clk)
     // SPI slave logic is clocked on MCU sck (asynchronous)
-    // Strategy: 
-    // 1. Register data in clk domain to prevent glitches
-    // 2. Use 2-stage synchronizer for single-bit signals (valid flags)
-    // 3. Capture multi-bit data on CS falling edge (safe due to setup time)
-    
-    // Stage 1: Capture sensor data in clk domain (registered to prevent glitches)
-    logic quat1_valid_clk, gyro1_valid_clk;
-    logic initialized_clk, error_clk;
-    logic signed [15:0] quat1_w_clk, quat1_x_clk, quat1_y_clk, quat1_z_clk;
-    logic signed [15:0] gyro1_x_clk, gyro1_y_clk, gyro1_z_clk;
-    
-    always_ff @(posedge clk) begin
-        quat1_valid_clk <= quat1_valid;
-        gyro1_valid_clk <= gyro1_valid;
-        initialized_clk <= initialized;
-        error_clk <= error;
-        quat1_w_clk <= quat1_w;
-        quat1_x_clk <= quat1_x;
-        quat1_y_clk <= quat1_y;
-        quat1_z_clk <= quat1_z;
-        gyro1_x_clk <= gyro1_x;
-        gyro1_y_clk <= gyro1_y;
-        gyro1_z_clk <= gyro1_z;
-    end
-    
-    // Stage 2: 2-stage synchronizer for valid flags (single-bit CDC)
-    // Synchronize on clk to ensure stable capture
-    logic quat1_valid_sync1, quat1_valid_sync2;
-    logic gyro1_valid_sync1, gyro1_valid_sync2;
-    
-    always_ff @(posedge clk) begin
-        quat1_valid_sync1 <= quat1_valid_clk;
-        quat1_valid_sync2 <= quat1_valid_sync1;
-        gyro1_valid_sync1 <= gyro1_valid_clk;
-        gyro1_valid_sync2 <= gyro1_valid_sync1;
-    end
-    
-    // ========================================================================
-    // Data Snapshot: Capture stable data when CS goes low
-    // ========================================================================
-    // Snapshot ensures data doesn't change during the SPI transaction
-    // Capture on CS falling edge from registered clk-domain data
-    // Safe because: data is registered (stable), CS provides setup time before first SCK
-    logic quat1_valid_snap, gyro1_valid_snap;
-    logic initialized_snap, error_snap;
-    logic signed [15:0] quat1_w_snap, quat1_x_snap, quat1_y_snap, quat1_z_snap;
-    logic signed [15:0] gyro1_x_snap, gyro1_y_snap, gyro1_z_snap;
-    
-    // Capture snapshot on CS falling edge (start of transaction)
-    // Also initialize on first posedge clk when CS is high (for testbench to read packet_buffer before transaction)
-    logic cs_n_sync1, cs_n_sync2;  // Synchronize CS to clk domain for edge detection
-    logic snapshot_initialized = 1'b0;  // Track if snapshot has been initialized
+    // Strategy: Capture packet buffer on CS falling edge (safe due to setup time)
     
     // Synchronize CS to clk domain (2-stage synchronizer)
+    logic cs_n_sync1, cs_n_sync2;
     always_ff @(posedge clk) begin
         cs_n_sync1 <= cs_n;
         cs_n_sync2 <= cs_n_sync1;
     end
     
-    // Detect CS falling edge (combinational) - use current sync value, not delayed
-    logic cs_falling_edge;
-    assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
+    // Packet snapshot - captured when CS goes low (stable during transaction)
+    logic [7:0] packet_snapshot [0:PACKET_SIZE-1];
     
-    // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
+    // Initialize snapshot
+    initial begin
+        for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
+            packet_snapshot[i] = 8'h00;
+        end
+    end
+    
+    // Capture packet buffer on CS falling edge (start of transaction)
     // Update snapshot continuously when CS is high, freeze when CS is low (during transaction)
-    // Also initialize snapshot on first clock to ensure it has data even before first CS transaction
+    // In test mode, use test pattern; otherwise use packet_buffer
     always_ff @(posedge clk) begin
         if (cs_n) begin
             // CS high: Update snapshot continuously with latest data
             // This ensures we always have the latest data when CS goes low
-            quat1_w_snap <= quat1_w_clk;
-            quat1_x_snap <= quat1_x_clk;
-            quat1_y_snap <= quat1_y_clk;
-            quat1_z_snap <= quat1_z_clk;
-            gyro1_x_snap <= gyro1_x_clk;
-            gyro1_y_snap <= gyro1_y_clk;
-            gyro1_z_snap <= gyro1_z_clk;
-            quat1_valid_snap <= quat1_valid_sync2;
-            gyro1_valid_snap <= gyro1_valid_sync2;
-            initialized_snap <= initialized_clk;
-            error_snap <= error_clk;
+            if (TEST_MODE) begin
+                // Test mode: Use known test pattern
+                for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
+                    packet_snapshot[i] <= test_pattern[i];
+                end
+            end else begin
+                // Normal mode: Use packet buffer from arduino_spi_slave
+                for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
+                    packet_snapshot[i] <= packet_buffer[i];
+                end
+            end
         end
         // When CS is low (during transaction), snapshot does NOT update - it remains stable
         // This ensures data consistency during the entire SPI transaction
-        // Note: Snapshot is initialized on first clock cycle when CS is high
     end
-    
-    // Initialize snapshot on first clock (before any CS transaction)
-    // This ensures snapshot has valid data even if CS goes low immediately
-    initial begin
-        quat1_w_snap = 16'h0000;
-        quat1_x_snap = 16'h0000;
-        quat1_y_snap = 16'h0000;
-        quat1_z_snap = 16'h0000;
-        gyro1_x_snap = 16'h0000;
-        gyro1_y_snap = 16'h0000;
-        gyro1_z_snap = 16'h0000;
-        quat1_valid_snap = 1'b0;
-        gyro1_valid_snap = 1'b0;
-    end
-    
-    // Packet buffer - assembled from SNAPSHOT data (stable during transaction)
-    logic [7:0] packet_buffer [0:PACKET_SIZE-1];
-    
-    // Assemble packet from snapshot sensor data (using assign statements for iverilog compatibility)
-    // In test mode, use known test pattern; otherwise use sensor data
-    generate
-        if (TEST_MODE) begin : gen_test_mode
-            // Test mode: Use known pattern
-            assign packet_buffer[0] = test_pattern[0];
-            assign packet_buffer[1] = test_pattern[1];
-            assign packet_buffer[2] = test_pattern[2];
-            assign packet_buffer[3] = test_pattern[3];
-            assign packet_buffer[4] = test_pattern[4];
-            assign packet_buffer[5] = test_pattern[5];
-            assign packet_buffer[6] = test_pattern[6];
-            assign packet_buffer[7] = test_pattern[7];
-            assign packet_buffer[8] = test_pattern[8];
-            assign packet_buffer[9] = test_pattern[9];
-            assign packet_buffer[10] = test_pattern[10];
-            assign packet_buffer[11] = test_pattern[11];
-            assign packet_buffer[12] = test_pattern[12];
-            assign packet_buffer[13] = test_pattern[13];
-            assign packet_buffer[14] = test_pattern[14];
-            assign packet_buffer[15] = test_pattern[15];
-        end else begin : gen_normal_mode
-            // Normal mode: Use sensor data
-            // Header
-            assign packet_buffer[0] = HEADER_BYTE;
-            
-            // Sensor 1 Quaternion (MSB,LSB format) - from snapshot
-            assign packet_buffer[1] = quat1_w_snap[15:8];  // W MSB
-            assign packet_buffer[2] = quat1_w_snap[7:0];   // W LSB
-            assign packet_buffer[3] = quat1_x_snap[15:8];  // X MSB
-            assign packet_buffer[4] = quat1_x_snap[7:0];   // X LSB
-            assign packet_buffer[5] = quat1_y_snap[15:8];  // Y MSB
-            assign packet_buffer[6] = quat1_y_snap[7:0];   // Y LSB
-            assign packet_buffer[7] = quat1_z_snap[15:8];  // Z MSB
-            assign packet_buffer[8] = quat1_z_snap[7:0];   // Z LSB
-            
-            // Sensor 1 Gyroscope (MSB,LSB format) - from snapshot
-            assign packet_buffer[9]  = gyro1_x_snap[15:8];  // X MSB
-            assign packet_buffer[10] = gyro1_x_snap[7:0];   // X LSB
-            assign packet_buffer[11] = gyro1_y_snap[15:8];  // Y MSB
-            assign packet_buffer[12] = gyro1_y_snap[7:0];   // Y LSB
-            assign packet_buffer[13] = gyro1_z_snap[15:8];  // Z MSB
-            assign packet_buffer[14] = gyro1_z_snap[7:0];   // Z LSB
-            
-            // Sensor 1 Flags - from snapshot (bit 0=quat_valid, bit 1=gyro_valid, bit 2=initialized, bit 3=error)
-            assign packet_buffer[15] = {4'h0, error_snap, initialized_snap, gyro1_valid_snap, quat1_valid_snap};
-        end
-    endgenerate
     
     // ----------------------------
-    // Create 128-bit packet from packet buffer (16 bytes * 8 bits)
+    // Create 128-bit packet from packet snapshot (16 bytes * 8 bits)
     // ----------------------------
     logic [127:0] tx_packet;
     assign tx_packet = {
-                packet_buffer[0], packet_buffer[1], packet_buffer[2], packet_buffer[3],
-                packet_buffer[4], packet_buffer[5], packet_buffer[6], packet_buffer[7],
-                packet_buffer[8], packet_buffer[9], packet_buffer[10], packet_buffer[11],
-        packet_buffer[12], packet_buffer[13], packet_buffer[14], packet_buffer[15]
+                packet_snapshot[0], packet_snapshot[1], packet_snapshot[2], packet_snapshot[3],
+                packet_snapshot[4], packet_snapshot[5], packet_snapshot[6], packet_snapshot[7],
+                packet_snapshot[8], packet_snapshot[9], packet_snapshot[10], packet_snapshot[11],
+                packet_snapshot[12], packet_snapshot[13], packet_snapshot[14], packet_snapshot[15]
     };
     
     // ----------------------------
@@ -285,9 +170,9 @@ module spi_slave_mcu(
     
     // Main shift logic - clocked on SCK falling edge, with async reset on CS high
     // CRITICAL: Ensure shift_out is initialized before first SCK rising edge
-    // Use test_pattern[0] in test mode, HEADER_BYTE otherwise
+    // Use first byte from packet snapshot (header byte)
     logic [7:0] first_byte_value;
-    assign first_byte_value = (TEST_MODE) ? test_pattern[0] : HEADER_BYTE;
+    assign first_byte_value = packet_snapshot[0];
     
     always_ff @(negedge sck or posedge cs_n) begin
         if (cs_n) begin
