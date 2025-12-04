@@ -248,7 +248,7 @@ module tb_arduino_spi_slave_with_arduino_model;
             // Verify results
             check_test("Test 1.1a: Header valid → initialized = 1", initialized == 1'b1);
             check_test("Test 1.1b: Header valid → error = 0", error == 1'b0);
-            check_test("Test 1.1c: Quat W = 16384 (Q14 format)", quat1_w == 16'd16384);
+            check_test("Test 1.1c: Quat W = 0 (not available from Euler angles)", quat1_w == 16'd0);
             check_test("Test 1.1d: Quat X = Roll (1000)", quat1_x == 16'd1000);
             check_test("Test 1.1e: Quat Y = Pitch (-500)", quat1_y == -16'd500);
             check_test("Test 1.1f: Quat Z = Yaw (2000)", quat1_z == 16'd2000);
