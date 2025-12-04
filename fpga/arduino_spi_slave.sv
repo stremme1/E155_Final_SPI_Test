@@ -40,10 +40,10 @@ module arduino_spi_slave(
     // - FPGA must sample MOSI on RISING edge of SCK
     // - Data is stable on rising edge
     
-    // Shift register for receiving data
-    logic [7:0] rx_shift;
-    logic [3:0] byte_count;  // 0-15 (4 bits for 16 bytes)
-    logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
+    // Simplified SPI receive logic based on working bridge.sv pattern
+    // Use single large shift register and direct MSB-first shifting
+    logic [127:0] packet_shift;  // 16 bytes = 128 bits total
+    logic [7:0]   bit_count;     // Count bits received (0-127)
     
     // Packet buffer - stores received 16-byte packet
     // Initialize to zeros to avoid 'x' values
@@ -52,61 +52,55 @@ module arduino_spi_slave(
         for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
             packet_buffer[i] = 8'h00;
         end
+        bit_count = 8'd0;
+        packet_shift = 128'd0;
     end
     
-    // CS state tracking for SCK domain
-    logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
-    logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
-    
-    // Synchronize CS to SCK domain (2-stage synchronizer on SCK falling edge)
-    always_ff @(negedge sck) begin
-        cs_n_sync_sck <= cs_n;
-        cs_n_prev_sck <= cs_n_sync_sck;
-    end
-    
-    // Detect CS falling edge in SCK domain (combinational)
-    logic cs_falling_edge_sck;
-    assign cs_falling_edge_sck = cs_n_prev_sck && !cs_n_sync_sck;
-    
-    // Main SPI receive logic - clocked on SCK rising edge with async reset on CS
+    // Main SPI receive logic - based on working bridge.sv pattern
     // SPI Mode 0: Sample data on rising edge of SCK
-    // In SPI Mode 0, the first bit is set up by master before first SCK rising edge
-    // We sample on each rising edge, starting with the first one
-    // CRITICAL: packet_buffer is NOT reset on CS high - it retains data until overwritten
-    // This is correct because we want to capture the complete packet before CS goes high
-    always_ff @(posedge sck or posedge cs_n) begin
-        if (cs_n) begin
-            // Async reset when CS goes high - reset counters but NOT packet_buffer
-            // packet_buffer retains the complete packet for CDC capture
-            byte_count <= 0;
-            bit_count  <= 0;
-            rx_shift   <= 8'd0;
-        end else begin
+    // MSB-first: Shift directly into large register using {register, sdi} pattern
+    always_ff @(posedge sck) begin
+        if (!cs_n) begin
             // CS is low - receive data on rising edge of SCK (MSB first)
-            // SPI Mode 0 MSB-first: First bit received is MSB (bit 7), last is LSB (bit 0)
-            // For MSB-first: we receive bits in order bit7, bit6, ..., bit0
-            // 
-            // CORRECT LOGIC: Use left shift with new bit in LSB position
-            // This works because: first bit goes to LSB, then shifts left on each new bit
-            // After 7 shifts, first bit is in MSB position (bit 7)
-            // 
-            // Example: Receiving 0xAA (10101010)
-            // Bit 7 (1): rx_shift = 00000001 (bit 7 in LSB)
-            // Bit 6 (0): rx_shift = 00000010 (shifted left, bit 7 now in bit 1)
-            // Bit 5 (1): rx_shift = 00000101
-            // ...
-            // Bit 0 (0): rx_shift = 10101010 (complete byte, first bit now in MSB)
-            if (bit_count == 3'd7) begin
-                // 8th bit (LSB) - shift it in and store complete byte
-                packet_buffer[byte_count] <= {rx_shift[6:0], sdi};
-                byte_count <= byte_count + 1;
-                bit_count  <= 0;
-                rx_shift   <= 8'd0;  // Clear for next byte
+            // Shift data in MSB-first: {packet_shift, sdi} pattern
+            // First bit goes into MSB position, subsequent bits shift left
+            logic [127:0] packet_shift_new;
+            packet_shift_new = {packet_shift[126:0], sdi};
+            packet_shift <= packet_shift_new;
+            
+            // Check if we've received all 128 bits (0-127 = 128 bits)
+            // When bit_count == 127, we've received 128 bits, so after this shift we're done
+            if (bit_count == 8'd127) begin
+                // All 128 bits received - store into packet_buffer using NEW shifted value
+                // packet_shift_new[127:0] contains all bytes after shift
+                // [127:120] = byte 0 (MSB first), [119:112] = byte 1, etc.
+                packet_buffer[0]  <= packet_shift_new[127:120];
+                packet_buffer[1]  <= packet_shift_new[119:112];
+                packet_buffer[2]  <= packet_shift_new[111:104];
+                packet_buffer[3]  <= packet_shift_new[103:96];
+                packet_buffer[4]  <= packet_shift_new[95:88];
+                packet_buffer[5]  <= packet_shift_new[87:80];
+                packet_buffer[6]  <= packet_shift_new[79:72];
+                packet_buffer[7]  <= packet_shift_new[71:64];
+                packet_buffer[8]  <= packet_shift_new[63:56];
+                packet_buffer[9]  <= packet_shift_new[55:48];
+                packet_buffer[10] <= packet_shift_new[47:40];
+                packet_buffer[11] <= packet_shift_new[39:32];
+                packet_buffer[12] <= packet_shift_new[31:24];
+                packet_buffer[13] <= packet_shift_new[23:16];
+                packet_buffer[14] <= packet_shift_new[15:8];
+                packet_buffer[15] <= packet_shift_new[7:0];
+                bit_count <= 8'd0;
             end else begin
-                // Shift in current bit (bits 1-7): left shift, new bit in LSB
-                rx_shift <= {rx_shift[6:0], sdi};
                 bit_count <= bit_count + 1;
             end
+        end
+    end
+    
+    // Reset bit counter when CS goes high (like working bridge.sv)
+    always_ff @(posedge sck) begin
+        if (cs_n) begin
+            bit_count <= 8'd0;
         end
     end
     
