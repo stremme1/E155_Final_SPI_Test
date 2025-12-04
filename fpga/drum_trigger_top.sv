@@ -65,7 +65,7 @@ module drum_trigger_top (
     //   - Arduino SPI: 100kHz (10us period) → 30 FPGA clocks per SPI bit
     //   - MCU SPI: Variable, but 3MHz provides sufficient margin
     //   - CDC: 3-cycle delay = 1us, provides 10x margin over worst-case SPI timing
-    HSOSC #(.CLKHF_DIV(2'b11)) hf_osc (
+    HSOSC #(.CLKHF_DIV(2'b00)) hf_osc (
         .CLKHFPU(1'b1),   // Power up (must be 1 for oscillator to run)
         .CLKHFEN(1'b1),   // Enable (must be 1 for clock output)
         .CLKHF(clk)       // Output: 3MHz system clock (48MHz / 16)

@@ -127,12 +127,10 @@ module arduino_spi_slave(
     
     // Wait for CS to be high and stable before reading packet_buffer
     // This ensures SCK domain is idle (CS high = transaction complete, SCK idle in Mode 0)
+    // CS is active low: cs_n=1 means high (not selected), cs_n=0 means low (selected)
+    // Simplified: Start counting whenever CS is high, regardless of edge detection
     always_ff @(posedge clk) begin
-        if (cs_rising_edge_clk) begin
-            // CS just went high - start counting
-            cs_high_counter <= 2'd1;  // Start at 1 (first cycle after rising edge)
-            cs_high_stable <= 1'b0;
-        end else if (!cs_n_sync_clk2) begin  // CS is high (synchronized)
+        if (cs_n_sync_clk2) begin  // CS is high (synchronized) - cs_n=1 means high
             // CS is high - count cycles
             if (cs_high_counter < 2'd3) begin
                 cs_high_counter <= cs_high_counter + 1;
