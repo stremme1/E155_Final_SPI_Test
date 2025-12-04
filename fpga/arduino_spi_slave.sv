@@ -26,11 +26,7 @@ module arduino_spi_slave(
     output logic        quat1_valid,
     output logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z,
     output logic        gyro1_valid,
-    output logic signed [15:0] gyro1_x, gyro1_y, gyro1_z,
-    
-    // Diagnostic outputs (for debugging)
-    output logic        cs_detected,      // High when CS is low (active)
-    output logic        packet_received   // High when packet_valid is true
+    output logic signed [15:0] gyro1_x, gyro1_y, gyro1_z
 );
 
     localparam PACKET_SIZE = 16;
@@ -102,15 +98,8 @@ module arduino_spi_slave(
             // Bit 0 (0): rx_shift = 10101010 (complete byte, first bit now in MSB)
             if (bit_count == 3'd7) begin
                 // 8th bit (LSB) - shift it in and store complete byte
-                // Store byte in packet_buffer (byte_count is 0-15, valid for 16-byte packet)
                 packet_buffer[byte_count] <= {rx_shift[6:0], sdi};
-                // Increment byte_count for next byte (wraps at 16, but that's OK - we only store 16 bytes)
-                if (byte_count < 15) begin
-                    byte_count <= byte_count + 1;
-                end else begin
-                    // Byte 15 complete - wrap to 0 (but we won't store more bytes)
-                    byte_count <= 0;
-                end
+                byte_count <= byte_count + 1;
                 bit_count  <= 0;
                 rx_shift   <= 8'd0;  // Clear for next byte
             end else begin
@@ -225,11 +214,7 @@ module arduino_spi_slave(
             packet_snapshot[14] <= packet_buffer[14];
             packet_snapshot[15] <= packet_buffer[15];
             packet_valid_raw <= 1'b1;
-        end
-        // CRITICAL FIX: Only clear packet_valid_raw when CS goes low AND we're ready for next packet
-        // Don't clear it immediately - keep it high until CS goes low to ensure data is captured
-        // This ensures packet_snapshot is stable and can be read by parsing logic
-        if (cs_n_prev_sync && !cs_n_sync_clk2) begin
+        end else if (cs_n_prev_sync && !cs_n_sync_clk2) begin
             // CS just went low (falling edge detected) - clear valid flag to prepare for next packet
             // This ensures we capture the next packet when CS goes high again
             packet_valid_raw <= 1'b0;
@@ -290,8 +275,6 @@ module arduino_spi_slave(
         
         // Read from packet_snapshot (safely synchronized from SCK domain to clk domain)
         // packet_snapshot is captured when CS is high and stable (3+ cycles)
-        // CRITICAL: Only read when packet_valid is true to ensure we have new data
-        // Reading when packet_valid is false would read stale/zero data
         if (packet_valid) begin
             // Read from packet_snapshot which is safely synchronized to clk domain
             header <= packet_snapshot[0];
@@ -303,26 +286,24 @@ module arduino_spi_slave(
             gyro_z <= {packet_snapshot[11], packet_snapshot[12]};
             flags <= packet_snapshot[13];
         end
-        // Values persist until next packet (when packet_valid is false, keep previous values)
+        // Values persist until next packet
         
         // Set flag one cycle after packet_valid (when parsed values are registered)
         // This ensures header and all parsed values are stable when checked
-        // CRITICAL FIX: Keep new_packet_available high until next packet arrives
-        // This ensures status updates have time to complete
         if (packet_valid_delayed) begin
             // One cycle after packet_valid - parsed values are definitely stable
             new_packet_available <= 1'b1;
-        end else if (cs_n_prev_sync && !cs_n_sync_clk2) begin
-            // CS just went low (falling edge) - clear flag to prepare for next packet
-            // This ensures we detect the next packet when it arrives
+        end else begin
+            // Clear flag when no valid packet
             new_packet_available <= 1'b0;
         end
-        // Keep new_packet_available high between packets so status persists
     end
     
     // Validate header and set status
     // Update status when new packet data is available, same timing as output updates
-    // CRITICAL: Only update when new_packet_available is true (when we have new parsed data)
+    // CRITICAL FIX: Only update error/initialized when we actually have a new packet
+    // Don't set error on startup or when packet_snapshot contains zeros from initialization
+    // Also check that we've actually received data (not just zeros) before setting error
     logic packet_received;  // Track if we've ever received a packet
     always_ff @(posedge clk) begin
         if (new_packet_available) begin
@@ -368,30 +349,17 @@ module arduino_spi_slave(
         gyro1_x = 16'd0;
         gyro1_y = 16'd0;
         gyro1_z = 16'd0;
-        cs_detected = 1'b0;
-        packet_received = 1'b0;
-    end
-    
-    // Diagnostic outputs: CS detection and packet reception
-    // These help debug if CS/SCK signals are reaching the FPGA
-    always_ff @(posedge clk) begin
-        // CS detected: High when CS is low (active, Arduino is sending)
-        cs_detected <= !cs_n_sync_clk2;  // cs_n=0 means CS is low (active)
-        
-        // Packet received: High when packet_valid is true
-        packet_received <= packet_valid;
     end
     
     // Map Arduino packet fields to spi_slave_mcu interface
     // Arduino sends Euler angles (Roll, Pitch, Yaw), map to quaternion fields
-    // Roll → quat_x, Pitch → quat_y, Yaw → quat_z
-    // Note: quat_w is not available from Euler angles, set to 0
+    // Roll → quat_x, Pitch → quat_y, Yaw → quat_z, set quat_w = 16384 (Q14 format = 1.0)
     // Update outputs when new valid packet data is available (new_packet_available && header == HEADER_BYTE)
     // This ensures outputs are updated with fresh data and remain stable for spi_slave_mcu to capture
     always_ff @(posedge clk) begin
         if (new_packet_available && (header == HEADER_BYTE)) begin
             // Map Euler angles to quaternion fields
-            // quat_w is not available from Euler angles (would require conversion), set to 0
+            // quat_w is not available from Euler angles, set to 0
             quat1_w <= 16'd0;       // Not available from Euler angles
             quat1_x <= roll;        // Roll → quat_x
             quat1_y <= pitch;       // Pitch → quat_y
