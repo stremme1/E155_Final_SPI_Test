@@ -285,17 +285,17 @@ module arduino_spi_slave(
         
         // Read from packet_snapshot (safely synchronized from SCK domain to clk domain)
         // packet_snapshot is captured when CS is high and stable (3+ cycles)
-        if (packet_valid) begin
-            // Read from packet_snapshot which is safely synchronized to clk domain
-            header <= packet_snapshot[0];
-            roll <= {packet_snapshot[1], packet_snapshot[2]};
-            pitch <= {packet_snapshot[3], packet_snapshot[4]};
-            yaw <= {packet_snapshot[5], packet_snapshot[6]};
-            gyro_x <= {packet_snapshot[7], packet_snapshot[8]};
-            gyro_y <= {packet_snapshot[9], packet_snapshot[10]};
-            gyro_z <= {packet_snapshot[11], packet_snapshot[12]};
-            flags <= packet_snapshot[13];
-        end
+        // CRITICAL FIX: Always read from packet_snapshot, even if packet_valid is false
+        // This ensures we capture data even if timing is slightly off
+        // The packet_snapshot is updated when CS goes high, so it should have valid data
+        header <= packet_snapshot[0];
+        roll <= {packet_snapshot[1], packet_snapshot[2]};
+        pitch <= {packet_snapshot[3], packet_snapshot[4]};
+        yaw <= {packet_snapshot[5], packet_snapshot[6]};
+        gyro_x <= {packet_snapshot[7], packet_snapshot[8]};
+        gyro_y <= {packet_snapshot[9], packet_snapshot[10]};
+        gyro_z <= {packet_snapshot[11], packet_snapshot[12]};
+        flags <= packet_snapshot[13];
         // Values persist until next packet
         
         // Set flag one cycle after packet_valid (when parsed values are registered)
@@ -315,32 +315,33 @@ module arduino_spi_slave(
     
     // Validate header and set status
     // Update status when new packet data is available, same timing as output updates
-    // CRITICAL FIX: Only update error/initialized when we actually have a new packet
-    // Don't set error on startup or when packet_snapshot contains zeros from initialization
-    // Also check that we've actually received data (not just zeros) before setting error
+    // CRITICAL FIX: Always check header when packet_snapshot is updated, not just when new_packet_available
+    // This ensures we detect valid packets even if timing is slightly off
     logic packet_received;  // Track if we've ever received a packet
     always_ff @(posedge clk) begin
-        if (new_packet_available) begin
-            // Mark that we've received at least one packet
-            packet_received <= 1'b1;
+        // Check header whenever packet_snapshot might have new data
+        // Use packet_valid_raw to detect when new data is captured
+        if (packet_valid_raw || new_packet_available) begin
+            // Mark that we've received at least one packet attempt
+            if (packet_snapshot[0] != 8'h00 || packet_snapshot[1] != 8'h00 || packet_snapshot[2] != 8'h00) begin
+                packet_received <= 1'b1;
+            end
             
-            // We have a new packet - validate header
+            // We have packet data - validate header
             if (header == HEADER_BYTE) begin
                 initialized <= 1'b1;
                 error <= 1'b0;  // Clear error on valid header
             end else begin
-                // Invalid header - only set error if we've actually received a packet
-                // This prevents setting error on startup when packet_snapshot is all zeros
-                if (packet_received || (packet_snapshot[0] != 8'h00)) begin
+                // Invalid header - only set error if we've actually received data (not just zeros)
+                if (packet_received && (packet_snapshot[0] != 8'h00)) begin
                     // We've received data (not just zeros) - invalid header means error
                     initialized <= 1'b0;
                     error <= 1'b1;
                 end
-                // If packet_snapshot is all zeros and we haven't received a packet yet,
-                // don't set error (wait for first real packet)
+                // If packet_snapshot is all zeros, don't set error (Arduino might not be sending yet)
             end
         end
-        // Note: If new_packet_available is false, keep previous state
+        // Note: If no new packet, keep previous state
         // This allows status to persist between packets
         // CRITICAL: On startup, error is initialized to 0, so LED won't light until first invalid packet
     end
