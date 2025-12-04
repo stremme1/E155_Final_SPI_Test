@@ -186,6 +186,25 @@ void loop() {
   if (current_time - last_packet_send >= 50) {
     // DEBUG: Use current sensor values even if euler_valid is false (for testing)
     // In production, only send if euler_valid is true
+    
+    // DEBUG: Print sensor values before packing
+    Serial.print("[DEBUG] Sensor values - Roll: ");
+    Serial.print(current_roll);
+    Serial.print(", Pitch: ");
+    Serial.print(current_pitch);
+    Serial.print(", Yaw: ");
+    Serial.print(current_yaw);
+    Serial.print(", GyroX: ");
+    Serial.print(current_gyro_x);
+    Serial.print(", GyroY: ");
+    Serial.print(current_gyro_y);
+    Serial.print(", GyroZ: ");
+    Serial.print(current_gyro_z);
+    Serial.print(", EulerValid: ");
+    Serial.print(euler_valid);
+    Serial.print(", GyroValid: ");
+    Serial.println(gyro_valid);
+    
     uint8_t packet[16];
     packet[0] = 0xAA;  // Header (Byte 0)
     
@@ -228,6 +247,34 @@ void loop() {
     packet[14] = 0x00;
     packet[15] = 0x00;
     
+    // DEBUG: Print packed values
+    Serial.print("[DEBUG] Packed values - Roll: ");
+    Serial.print(roll);
+    Serial.print(" (0x");
+    Serial.print(packet[1], HEX);
+    Serial.print(packet[2], HEX);
+    Serial.print("), Pitch: ");
+    Serial.print(pitch);
+    Serial.print(" (0x");
+    Serial.print(packet[3], HEX);
+    Serial.print(packet[4], HEX);
+    Serial.print("), Yaw: ");
+    Serial.print(yaw);
+    Serial.print(" (0x");
+    Serial.print(packet[5], HEX);
+    Serial.print(packet[6], HEX);
+    Serial.print(")");
+    Serial.println();
+    
+    // DEBUG: Print full packet array
+    Serial.print("[DEBUG] Full packet: ");
+    for (int i = 0; i < 16; i++) {
+      if (packet[i] < 0x10) Serial.print("0");
+      Serial.print(packet[i], HEX);
+      Serial.print(" ");
+    }
+    Serial.println();
+    
   // Send packet via SPI to FPGA using default SPI pins
   // SPI Mode 0 (CPOL=0, CPHA=0): Clock idle LOW, sample on rising edge
   // MSB First: Most significant bit sent first
@@ -243,6 +290,9 @@ void loop() {
   
   digitalWrite(FPGA_SPI_CS, HIGH);  // Deselect FPGA (CS high) - transaction complete
   SPI.endTransaction();
+  
+    // DEBUG: Confirm packet sent
+    Serial.println("[DEBUG] Packet sent via SPI to FPGA");
     
     last_packet_send = current_time;
   }
