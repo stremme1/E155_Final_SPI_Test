@@ -21,12 +21,18 @@ module arduino_spi_slave(
     input  logic        sdi,           // SPI data in (MOSI from Arduino)
     
     // Outputs mapped to spi_slave_mcu interface
-    output logic        initialized,
-    output logic        error,
-    output logic        quat1_valid,
-    output logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z,
-    output logic        gyro1_valid,
-    output logic signed [15:0] gyro1_x, gyro1_y, gyro1_z
+    // Initialize to safe defaults (inline initialization is synthesis-friendly)
+    output logic        initialized = 1'b0,
+    output logic        error = 1'b0,
+    output logic        quat1_valid = 1'b0,
+    output logic signed [15:0] quat1_w = 16'd0,
+    output logic signed [15:0] quat1_x = 16'd0,
+    output logic signed [15:0] quat1_y = 16'd0,
+    output logic signed [15:0] quat1_z = 16'd0,
+    output logic        gyro1_valid = 1'b0,
+    output logic signed [15:0] gyro1_x = 16'd0,
+    output logic signed [15:0] gyro1_y = 16'd0,
+    output logic signed [15:0] gyro1_z = 16'd0
 );
 
     localparam PACKET_SIZE = 16;
@@ -291,7 +297,7 @@ module arduino_spi_slave(
     // CRITICAL FIX: Only update error/initialized when we actually have a new packet
     // Don't set error on startup or when packet_snapshot contains zeros from initialization
     // Also check that we've actually received data (not just zeros) before setting error
-    logic packet_received;  // Track if we've ever received a packet
+    logic packet_received = 1'b0;  // Track if we've ever received a packet (inline init)
     always_ff @(posedge clk) begin
         if (new_packet_available) begin
             // Mark that we've received at least one packet
@@ -318,25 +324,8 @@ module arduino_spi_slave(
         // CRITICAL: On startup, error is initialized to 0, so LED won't light until first invalid packet
     end
     
-    // Initialize packet_received
-    initial begin
-        packet_received = 1'b0;
-    end
-    
-    // Initialize outputs (SystemVerilog allows initialization)
-    initial begin
-        initialized = 1'b0;
-        error = 1'b0;
-        quat1_valid = 1'b0;
-        gyro1_valid = 1'b0;
-        quat1_w = 16'd0;
-        quat1_x = 16'd0;
-        quat1_y = 16'd0;
-        quat1_z = 16'd0;
-        gyro1_x = 16'd0;
-        gyro1_y = 16'd0;
-        gyro1_z = 16'd0;
-    end
+    // Outputs are initialized inline in port declarations above
+    // They are updated in always_ff blocks below when new packets arrive
     
     // Map Arduino packet fields to spi_slave_mcu interface
     // Arduino sends Euler angles (Roll, Pitch, Yaw), map to quaternion fields
