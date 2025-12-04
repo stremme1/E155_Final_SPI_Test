@@ -51,16 +51,22 @@ module arduino_spi_slave(
     
     // Main SPI receive logic - simple shift on SCK rising edge (Lab7 style)
     // Shift in data on posedge sck: {packet_shift[126:0], sdi}
-    // When CS is high, reset shift register
-    always_ff @(posedge sck or posedge cs_n) begin
-        if (cs_n) begin
-            // CS high - reset shift register
+    // CRITICAL: Do NOT reset packet_shift on CS high - we need to read it for CDC!
+    // Reset only on CS falling edge (new transaction starting)
+    logic cs_n_prev_sck = 1'b1;
+    
+    always_ff @(posedge sck) begin
+        cs_n_prev_sck <= cs_n;
+        
+        if (cs_n_prev_sck && !cs_n) begin
+            // CS falling edge - new transaction starting, reset shift register
             packet_shift <= 128'd0;
-        end else begin
+        end else if (!cs_n) begin
             // CS low - shift in data (MSB first)
             // First bit (MSB of first byte) goes to bit 127, shifts right
             packet_shift <= {packet_shift[126:0], sdi};
         end
+        // When CS is high, packet_shift retains its value for CDC capture
     end
     
     // Extract 16 bytes from 128-bit shift register
