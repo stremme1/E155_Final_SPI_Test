@@ -34,79 +34,54 @@ module arduino_spi_slave(
     localparam HEADER_BYTE = 8'hAA;
     
     // ========================================================================
-    // SPI Slave Receive Logic - Clocked on Arduino SCK
+    // SPI Slave Receive Logic - Clocked on Arduino SCK (Lab7 style)
     // ========================================================================
-    // SPI Mode 0 (CPOL=0, CPHA=0):
-    // - Arduino samples MISO on RISING edge of SCK
-    // - FPGA must sample MOSI on RISING edge of SCK
-    // - Data is stable on rising edge
+    // SPI Mode 0 (CPOL=0, CPHA=0): Data sampled on first edge (rising edge)
+    // Simple shift register approach - shift in on posedge sck, MSB first
+    // Similar to lab7 aes_spi.sv pattern
     
-    // Shift register for receiving data
-    logic [7:0] rx_shift;
-    logic [3:0] byte_count;  // 0-15 (4 bits for 16 bytes)
-    logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
+    // 128-bit shift register (16 bytes * 8 bits) - MSB first
+    // packet_buffer_rx[0] is first byte (header), packet_buffer_rx[15] is last byte
+    logic [127:0] packet_shift;
     
-    // Packet buffer - stores received 16-byte packet (SCK domain)
-    // Initialize to zeros to avoid 'x' values
-    logic [7:0] packet_buffer_rx [0:PACKET_SIZE-1];
+    // Initialize shift register
     initial begin
-        for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
-            packet_buffer_rx[i] = 8'h00;
-        end
+        packet_shift = 128'd0;
     end
     
-    // CS state tracking - use async reset for immediate response
-    // CS can go low before SCK starts, so we need to handle it asynchronously
-    logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain (for edge detection)
-    logic cs_n_prev_sck = 1'b1;  // Previous CS state in SCK domain
-    
-    // Synchronize CS to SCK domain (sample on both edges to catch CS changes quickly)
-    always_ff @(negedge sck or posedge sck) begin
-        cs_n_sync_sck <= cs_n;
-        cs_n_prev_sck <= cs_n_sync_sck;
-    end
-    
-    // Main SPI receive logic - clocked on SCK rising edge with async reset on CS
-    // SPI Mode 0: Sample data on rising edge of SCK
-    // In SPI Mode 0, the first bit is set up by master before first SCK rising edge
-    // We sample on each rising edge, starting with the first one
-    // CRITICAL: packet_buffer_rx is NOT reset on CS high - it retains data until overwritten
-    // This is correct because we want to capture the complete packet before CS goes high
+    // Main SPI receive logic - simple shift on SCK rising edge (Lab7 style)
+    // Shift in data on posedge sck: {packet_shift[126:0], sdi}
+    // When CS is high, reset shift register
     always_ff @(posedge sck or posedge cs_n) begin
         if (cs_n) begin
-            // Async reset when CS goes high - reset counters but NOT packet_buffer_rx
-            // packet_buffer_rx retains the complete packet for CDC capture
-            byte_count <= 0;
-            bit_count  <= 0;
-            rx_shift   <= 8'd0;
+            // CS high - reset shift register
+            packet_shift <= 128'd0;
         end else begin
-            // CS is low - receive data on rising edge of SCK (MSB first)
-            // SPI Mode 0 MSB-first: First bit received is MSB (bit 7), last is LSB (bit 0)
-            // For MSB-first: we receive bits in order bit7, bit6, ..., bit0
-            // 
-            // CORRECT LOGIC: Use left shift with new bit in LSB position
-            // This works because: first bit goes to LSB, then shifts left on each new bit
-            // After 7 shifts, first bit is in MSB position (bit 7)
-            // 
-            // Example: Receiving 0xAA (10101010)
-            // Bit 7 (1): rx_shift = 00000001 (bit 7 in LSB)
-            // Bit 6 (0): rx_shift = 00000010 (shifted left, bit 7 now in bit 1)
-            // Bit 5 (1): rx_shift = 00000101
-            // ...
-            // Bit 0 (0): rx_shift = 10101010 (complete byte, first bit now in MSB)
-            if (bit_count == 3'd7) begin
-                // 8th bit (LSB) - shift it in and store complete byte
-                packet_buffer_rx[byte_count] <= {rx_shift[6:0], sdi};
-                byte_count <= byte_count + 1;
-                bit_count  <= 0;
-                rx_shift   <= 8'd0;  // Clear for next byte
-            end else begin
-                // Shift in current bit (bits 1-7): left shift, new bit in LSB
-                rx_shift <= {rx_shift[6:0], sdi};
-                bit_count <= bit_count + 1;
-            end
+            // CS low - shift in data (MSB first)
+            // First bit (MSB of first byte) goes to bit 127, shifts right
+            packet_shift <= {packet_shift[126:0], sdi};
         end
     end
+    
+    // Extract 16 bytes from 128-bit shift register
+    // packet_shift[127:120] is first byte (header), packet_shift[7:0] is last byte
+    logic [7:0] packet_buffer_rx [0:PACKET_SIZE-1];
+    assign packet_buffer_rx[0]  = packet_shift[127:120];
+    assign packet_buffer_rx[1]  = packet_shift[119:112];
+    assign packet_buffer_rx[2]  = packet_shift[111:104];
+    assign packet_buffer_rx[3]  = packet_shift[103:96];
+    assign packet_buffer_rx[4]  = packet_shift[95:88];
+    assign packet_buffer_rx[5]  = packet_shift[87:80];
+    assign packet_buffer_rx[6]  = packet_shift[79:72];
+    assign packet_buffer_rx[7]  = packet_shift[71:64];
+    assign packet_buffer_rx[8]  = packet_shift[63:56];
+    assign packet_buffer_rx[9]  = packet_shift[55:48];
+    assign packet_buffer_rx[10] = packet_shift[47:40];
+    assign packet_buffer_rx[11] = packet_shift[39:32];
+    assign packet_buffer_rx[12] = packet_shift[31:24];
+    assign packet_buffer_rx[13] = packet_shift[23:16];
+    assign packet_buffer_rx[14] = packet_shift[15:8];
+    assign packet_buffer_rx[15] = packet_shift[7:0];
     
     // ========================================================================
     // Clock Domain Crossing: Synchronize packet data from SCK domain to clk domain
