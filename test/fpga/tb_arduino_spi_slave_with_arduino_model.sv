@@ -58,9 +58,19 @@ module tb_arduino_spi_slave_with_arduino_model;
         .gyro1_z(gyro1_z)
     );
     
-    // Access internal signals for debugging (simplified)
+    // Access internal signals for debugging
+    wire [7:0] packet_buffer_0 = dut.packet_buffer[0];
+    wire [7:0] packet_buffer_1 = dut.packet_buffer[1];
+    wire [7:0] packet_buffer_2 = dut.packet_buffer[2];
+    wire [7:0] header = dut.header;
+    wire signed [15:0] roll = dut.roll;
+    wire signed [15:0] pitch = dut.pitch;
+    wire signed [15:0] yaw = dut.yaw;
+    wire cs_high_stable = dut.cs_high_stable;
+    wire packet_valid_raw = dut.packet_valid_raw;
+    wire packet_valid = dut.packet_valid;
+    wire new_packet_available = dut.new_packet_available;
     wire [7:0] packet_snapshot_0 = dut.packet_snapshot[0];
-    wire packet_ready = dut.packet_ready;
     
     // Test tracking
     integer test_count = 0;
@@ -79,14 +89,10 @@ module tb_arduino_spi_slave_with_arduino_model;
         end
     endtask
     
-    // Helper task to wait for packet processing (simplified)
-    // Timing: CS high → 2 cycles (sync) → packet_ready → 1 cycle (parse) → 1 cycle (outputs)
+    // Helper task to wait for CDC and packet processing
     task wait_cdc;
         wait(cs_n == 1'b1);  // Wait for CS to go high
-        repeat(10) @(posedge clk);  // Wait for CDC sync (2 cycles) + processing
-        wait(packet_ready == 1'b1);  // Wait for packet to be ready
-        @(posedge clk);  // One cycle for parsing
-        @(posedge clk);  // One more cycle for outputs to update
+        repeat(50) @(posedge clk);  // Wait for CDC and processing
     endtask
     
     // SPI parameters
@@ -219,10 +225,16 @@ module tb_arduino_spi_slave_with_arduino_model;
             
             wait_cdc();
             
-            // Debug output (simplified)
+            // Debug output
             $display("    Internal signals after packet reception:");
-            $display("      packet_snapshot[0] = 0x%02X (header, expected 0xAA)", packet_snapshot_0);
-            $display("      packet_ready = %b", packet_ready);
+            $display("      packet_buffer[0] = 0x%02X (header, expected 0xAA)", packet_buffer_0);
+            $display("      packet_buffer[1] = 0x%02X (Roll MSB, expected 0x03)", packet_buffer_1);
+            $display("      packet_buffer[2] = 0x%02X (Roll LSB, expected 0xE8)", packet_buffer_2);
+            $display("      CDC: cs_high_stable=%b, packet_valid=%b, new_packet_available=%b", 
+                     cs_high_stable, packet_valid, new_packet_available);
+            $display("      packet_snapshot[0] = 0x%02X", packet_snapshot_0);
+            $display("      header = 0x%02X, roll = 0x%04X (%0d)", header, roll, roll);
+            $display("      pitch = 0x%04X (%0d), yaw = 0x%04X (%0d)", pitch, pitch, yaw, yaw);
             
             // Check outputs
             $display("    Output signals after packet reception:");
@@ -236,7 +248,7 @@ module tb_arduino_spi_slave_with_arduino_model;
             // Verify results
             check_test("Test 1.1a: Header valid → initialized = 1", initialized == 1'b1);
             check_test("Test 1.1b: Header valid → error = 0", error == 1'b0);
-            check_test("Test 1.1c: Quat W = 0 (not available from Euler angles)", quat1_w == 16'd0);
+            check_test("Test 1.1c: Quat W = 16384 (Q14 format)", quat1_w == 16'd16384);
             check_test("Test 1.1d: Quat X = Roll (1000)", quat1_x == 16'd1000);
             check_test("Test 1.1e: Quat Y = Pitch (-500)", quat1_y == -16'd500);
             check_test("Test 1.1f: Quat Z = Yaw (2000)", quat1_z == 16'd2000);
