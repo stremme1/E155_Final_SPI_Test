@@ -135,10 +135,11 @@ void loop() {
   static float current_gyro_y = 0.0f;
   static float current_gyro_z = 0.0f;
 
-  if (bno08x.wasReset()) {
-    Serial.print("sensor was reset ");
-    setReports(reportType, reportIntervalUs);
-  }
+  // Auto timer based calibration commented out
+  // if (bno08x.wasReset()) {
+  //   Serial.print("sensor was reset ");
+  //   setReports(reportType, reportIntervalUs);
+  // }
   
   if (bno08x.getSensorEvent(&sensorValue)) {
     // in this demo only one report type will be received depending on FAST_MODE define (above)
