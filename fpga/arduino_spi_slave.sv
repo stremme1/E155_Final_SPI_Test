@@ -290,13 +290,17 @@ module arduino_spi_slave(
         
         // Set flag one cycle after packet_valid (when parsed values are registered)
         // This ensures header and all parsed values are stable when checked
+        // CRITICAL FIX: Keep new_packet_available high until next packet arrives
+        // This ensures status updates have time to complete
         if (packet_valid_delayed) begin
             // One cycle after packet_valid - parsed values are definitely stable
             new_packet_available <= 1'b1;
-        end else begin
-            // Clear flag when no valid packet
+        end else if (cs_n_prev_sync && !cs_n_sync_clk2) begin
+            // CS just went low (falling edge) - clear flag to prepare for next packet
+            // This ensures we detect the next packet when it arrives
             new_packet_available <= 1'b0;
         end
+        // Keep new_packet_available high between packets so status persists
     end
     
     // Validate header and set status
