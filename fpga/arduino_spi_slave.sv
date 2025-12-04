@@ -242,22 +242,15 @@ module arduino_spi_slave(
     // for the MCU interface: Roll→quat_x, Pitch→quat_y, Yaw→quat_z, quat_w=16384 (Q14=1.0)
     
     // Parse packet fields - register them for stability
-    logic [7:0] header;
-    logic signed [15:0] roll, pitch, yaw;
-    logic signed [15:0] gyro_x, gyro_y, gyro_z;
-    logic [7:0] flags;
-    
-    // Initialize parsed values to avoid 'x' values
-    initial begin
-        header = 8'h00;
-        roll = 16'd0;
-        pitch = 16'd0;
-        yaw = 16'd0;
-        gyro_x = 16'd0;
-        gyro_y = 16'd0;
-        gyro_z = 16'd0;
-        flags = 8'h00;
-    end
+    // Initialize to zeros using SystemVerilog initialization (synthesis-friendly)
+    logic [7:0] header = 8'h00;
+    logic signed [15:0] roll = 16'd0;
+    logic signed [15:0] pitch = 16'd0;
+    logic signed [15:0] yaw = 16'd0;
+    logic signed [15:0] gyro_x = 16'd0;
+    logic signed [15:0] gyro_y = 16'd0;
+    logic signed [15:0] gyro_z = 16'd0;
+    logic [7:0] flags = 8'h00;
     
     // Register parsed values when packet is captured for stability
     // CRITICAL: Read from packet_snapshot (safely synchronized from SCK domain), not packet_buffer directly
