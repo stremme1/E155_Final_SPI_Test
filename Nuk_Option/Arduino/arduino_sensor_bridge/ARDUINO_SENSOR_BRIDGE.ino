@@ -14,6 +14,9 @@
 // Architecture: Arduino (Master) → FPGA (Slave) → MCU (Master reads from FPGA)
 #define FPGA_SPI_CS 10
 
+// Button pin for IMU reset and tare (pulled high, goes low when pressed)
+#define BUTTON_PIN A0
+
 
 // #define FAST_MODE
 
@@ -80,6 +83,10 @@ void setup(void) {
   pinMode(FPGA_SPI_CS, OUTPUT);
   digitalWrite(FPGA_SPI_CS, HIGH);  // CS high = deselected
   SPI.begin();
+
+  // Initialize button pin with internal pull-up (button goes low when pressed)
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  Serial.println("Button initialized on pin A0 (pulled high, goes low when pressed)");
 }
 
 void quaternionToEuler(float qr, float qi, float qj, float qk, euler_t* ypr, bool degrees = false) {
@@ -134,6 +141,56 @@ void loop() {
   static float current_gyro_x = 0.0f;
   static float current_gyro_y = 0.0f;
   static float current_gyro_z = 0.0f;
+  
+  // Button debouncing and handling
+  static unsigned long last_button_check = 0;
+  static bool last_button_state = HIGH;
+  static bool button_pressed = false;
+  const unsigned long DEBOUNCE_DELAY = 50;  // 50ms debounce delay
+  
+  unsigned long current_time = millis();
+  
+  // Check button state with debouncing
+  bool current_button_state = digitalRead(BUTTON_PIN);
+  if (current_button_state != last_button_state) {
+    last_button_check = current_time;
+  }
+  
+  // If button has been held low for debounce delay, trigger action
+  if ((current_time - last_button_check >= DEBOUNCE_DELAY) && 
+      (current_button_state == LOW) && 
+      !button_pressed) {
+    button_pressed = true;
+    Serial.println("Button pressed - Resetting and taring IMU...");
+    
+    // Tare the IMU on all axes using rotation vector as basis
+    int tare_result = sh2_setTareNow(SH2_TARE_X | SH2_TARE_Y | SH2_TARE_Z, 
+                                      SH2_TARE_BASIS_ROTATION_VECTOR);
+    if (tare_result == SH2_OK) {
+      Serial.println("IMU tared successfully");
+    } else {
+      Serial.print("Tare failed with error: ");
+      Serial.println(tare_result);
+    }
+    
+    // Reinitialize the sensor hub (soft reset)
+    int reset_result = sh2_reinitialize();
+    if (reset_result == SH2_OK) {
+      Serial.println("IMU reset successfully");
+      // Reports will be re-enabled when wasReset() is detected
+    } else {
+      Serial.print("Reset failed with error: ");
+      Serial.println(reset_result);
+    }
+  }
+  
+  // Reset button pressed flag when button is released
+  if (current_button_state == HIGH && button_pressed) {
+    button_pressed = false;
+    Serial.println("Button released");
+  }
+  
+  last_button_state = current_button_state;
 
   if (bno08x.wasReset()) {
     Serial.print("sensor was reset ");
@@ -180,7 +237,7 @@ void loop() {
   // FPGA receives Euler angles and converts to quaternion format for MCU
   // See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
   // Packet format (16 bytes): [Header][Roll][Pitch][Yaw][Gyro X][Gyro Y][Gyro Z][Flags][Reserved]
-  unsigned long current_time = millis();
+  // Note: current_time was already defined above for button handling
   if (euler_valid && (current_time - last_packet_send >= 50)) {
     uint8_t packet[16];
     packet[0] = 0xAA;  // Header (Byte 0)

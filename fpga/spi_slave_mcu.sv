@@ -140,13 +140,22 @@ module spi_slave_mcu(
     logic cs_falling_edge;
     assign cs_falling_edge = cs_n_sync1 && !cs_n;  // Use sync1 for faster detection (1 clock delay instead of 2)
     
-    // Detect CS falling edge and capture snapshot (all in clk domain for synthesis)
-    // Update snapshot continuously when CS is high, freeze when CS is low (during transaction)
-    // Also initialize snapshot on first clock to ensure it has data even before first CS transaction
+    // SIMPLIFIED: Capture snapshot when CS goes high (before transaction starts)
+    // This ensures data is stable during the entire SPI transaction
+    logic cs_n_sync1_snap, cs_n_sync2_snap, cs_n_prev_snap;
+    
+    // Synchronize CS for snapshot capture
     always_ff @(posedge clk) begin
-        if (cs_n) begin
-            // CS high: Update snapshot continuously with latest data
-            // This ensures we always have the latest data when CS goes low
+        cs_n_sync1_snap <= cs_n;
+        cs_n_sync2_snap <= cs_n_sync1_snap;
+        cs_n_prev_snap <= cs_n_sync2_snap;
+    end
+    
+    // Capture snapshot when CS goes high (transaction complete, next transaction not started)
+    // Simple: Only update when CS transitions from low to high
+    always_ff @(posedge clk) begin
+        if (cs_n_sync2_snap && !cs_n_prev_snap) begin
+            // CS just went high - capture snapshot (data is stable)
             quat1_w_snap <= quat1_w_clk;
             quat1_x_snap <= quat1_x_clk;
             quat1_y_snap <= quat1_y_clk;
@@ -161,11 +170,9 @@ module spi_slave_mcu(
         end
         // When CS is low (during transaction), snapshot does NOT update - it remains stable
         // This ensures data consistency during the entire SPI transaction
-        // Note: Snapshot is initialized on first clock cycle when CS is high
     end
     
-    // Initialize snapshot on first clock (before any CS transaction)
-    // This ensures snapshot has valid data even if CS goes low immediately
+    // Initialize snapshot to safe defaults
     initial begin
         quat1_w_snap = 16'h0000;
         quat1_x_snap = 16'h0000;
