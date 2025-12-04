@@ -46,7 +46,13 @@ module arduino_spi_slave(
     logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
     
     // Packet buffer - stores received 16-byte packet
+    // Initialize to zeros to avoid 'x' values
     logic [7:0] packet_buffer [0:PACKET_SIZE-1];
+    initial begin
+        for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
+            packet_buffer[i] = 8'h00;
+        end
+    end
     
     // CS state tracking for SCK domain
     logic cs_n_sync_sck = 1'b1;  // CS synchronized to SCK domain
@@ -66,9 +72,12 @@ module arduino_spi_slave(
     // SPI Mode 0: Sample data on rising edge of SCK
     // In SPI Mode 0, the first bit is set up by master before first SCK rising edge
     // We sample on each rising edge, starting with the first one
+    // CRITICAL: packet_buffer is NOT reset on CS high - it retains data until overwritten
+    // This is correct because we want to capture the complete packet before CS goes high
     always_ff @(posedge sck or posedge cs_n) begin
         if (cs_n) begin
-            // Async reset when CS goes high
+            // Async reset when CS goes high - reset counters but NOT packet_buffer
+            // packet_buffer retains the complete packet for CDC capture
             byte_count <= 0;
             bit_count  <= 0;
             rx_shift   <= 8'd0;
@@ -156,6 +165,14 @@ module arduino_spi_slave(
     // - Worst case: Last SCK edge to CS high: < 1 SCK period (10us at 100kHz)
     // - 3 clk cycles at 3MHz: 3 * 333ns = 1us (10x margin)
     // - This ensures packet_buffer is fully stable before reading
+    //
+    // CRITICAL FIX: packet_valid_raw should only be cleared when CS goes low AND we're ready for a new packet
+    // Don't clear it when CS is low during a transaction - wait for CS to go high again
+    logic cs_n_prev_sync;  // Previous CS state (synchronized)
+    always_ff @(posedge clk) begin
+        cs_n_prev_sync <= cs_n_sync_clk2;
+    end
+    
     always_ff @(posedge clk) begin
         if (cs_high_stable && !packet_valid_raw) begin
             // CS has been high for 3+ cycles - packet_buffer is stable, safe to read
@@ -181,8 +198,9 @@ module arduino_spi_slave(
             packet_snapshot[14] <= packet_buffer[14];
             packet_snapshot[15] <= packet_buffer[15];
             packet_valid_raw <= 1'b1;
-        end else if (!cs_high_stable) begin
-            // CS went low or not stable - clear valid flag
+        end else if (cs_n_prev_sync && !cs_n_sync_clk2) begin
+            // CS just went low (falling edge detected) - clear valid flag to prepare for next packet
+            // This ensures we capture the next packet when CS goes high again
             packet_valid_raw <= 1'b0;
         end
         // Keep packet_snapshot stable when cs_high_stable is false (data persists)
