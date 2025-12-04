@@ -122,6 +122,13 @@ module arduino_spi_slave(
     logic [7:0] packet_snapshot [0:PACKET_SIZE-1];
     logic packet_valid;
     
+    // Initialize packet_snapshot to avoid 'x' values that could cause false error
+    initial begin
+        for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
+            packet_snapshot[i] = 8'h00;
+        end
+    end
+    
     // Synchronize CS to clk domain (2-stage synchronizer)
     always_ff @(posedge clk) begin
         cs_n_sync_clk1 <= cs_n;
@@ -246,6 +253,18 @@ module arduino_spi_slave(
     logic signed [15:0] gyro_x, gyro_y, gyro_z;
     logic [7:0] flags;
     
+    // Initialize parsed values to avoid 'x' values
+    initial begin
+        header = 8'h00;
+        roll = 16'd0;
+        pitch = 16'd0;
+        yaw = 16'd0;
+        gyro_x = 16'd0;
+        gyro_y = 16'd0;
+        gyro_z = 16'd0;
+        flags = 8'h00;
+    end
+    
     // Register parsed values when packet is captured for stability
     // CRITICAL: Read from packet_snapshot (safely synchronized from SCK domain), not packet_buffer directly
     logic new_packet_available;  // Flag to indicate when new parsed data is ready
@@ -282,19 +301,39 @@ module arduino_spi_slave(
     
     // Validate header and set status
     // Update status when new packet data is available, same timing as output updates
-    // Initialize to 0 (not initialized, no error) on startup
+    // CRITICAL FIX: Only update error/initialized when we actually have a new packet
+    // Don't set error on startup or when packet_snapshot contains zeros from initialization
+    // Also check that we've actually received data (not just zeros) before setting error
+    logic packet_received;  // Track if we've ever received a packet
     always_ff @(posedge clk) begin
         if (new_packet_available) begin
+            // Mark that we've received at least one packet
+            packet_received <= 1'b1;
+            
+            // We have a new packet - validate header
             if (header == HEADER_BYTE) begin
                 initialized <= 1'b1;
-                error <= 1'b0;
+                error <= 1'b0;  // Clear error on valid header
             end else begin
-                initialized <= 1'b0;
-                error <= 1'b1;
+                // Invalid header - only set error if we've actually received a packet
+                // This prevents setting error on startup when packet_snapshot is all zeros
+                if (packet_received || (packet_snapshot[0] != 8'h00)) begin
+                    // We've received data (not just zeros) - invalid header means error
+                    initialized <= 1'b0;
+                    error <= 1'b1;
+                end
+                // If packet_snapshot is all zeros and we haven't received a packet yet,
+                // don't set error (wait for first real packet)
             end
         end
         // Note: If new_packet_available is false, keep previous state
         // This allows status to persist between packets
+        // CRITICAL: On startup, error is initialized to 0, so LED won't light until first invalid packet
+    end
+    
+    // Initialize packet_received
+    initial begin
+        packet_received = 1'b0;
     end
     
     // Initialize outputs (SystemVerilog allows initialization)
