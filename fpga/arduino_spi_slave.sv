@@ -98,8 +98,18 @@ module arduino_spi_slave(
             // Bit 0 (0): rx_shift = 10101010 (complete byte, first bit now in MSB)
             if (bit_count == 3'd7) begin
                 // 8th bit (LSB) - shift it in and store complete byte
-                packet_buffer[byte_count] <= {rx_shift[6:0], sdi};
-                byte_count <= byte_count + 1;
+                // CRITICAL: Only store if byte_count is valid (0-15)
+                // This prevents writing to invalid indices
+                if (byte_count < PACKET_SIZE) begin
+                    packet_buffer[byte_count] <= {rx_shift[6:0], sdi};
+                end
+                // Always increment byte_count, even if we don't store (for tracking)
+                if (byte_count < 15) begin
+                    byte_count <= byte_count + 1;
+                end else begin
+                    // Byte 15 complete - wrap or stop (don't overflow)
+                    byte_count <= 15;  // Keep at 15 to prevent overflow
+                end
                 bit_count  <= 0;
                 rx_shift   <= 8'd0;  // Clear for next byte
             end else begin

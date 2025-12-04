@@ -181,7 +181,11 @@ void loop() {
   // See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
   // Packet format (16 bytes): [Header][Roll][Pitch][Yaw][Gyro X][Gyro Y][Gyro Z][Flags][Reserved]
   unsigned long current_time = millis();
-  if (euler_valid && (current_time - last_packet_send >= 50)) {
+  // DEBUG: Always send packet even if euler_valid is false, to test SPI communication
+  // In production, this should be: if (euler_valid && (current_time - last_packet_send >= 50))
+  if (current_time - last_packet_send >= 50) {
+    // DEBUG: Use current sensor values even if euler_valid is false (for testing)
+    // In production, only send if euler_valid is true
     uint8_t packet[16];
     packet[0] = 0xAA;  // Header (Byte 0)
     
