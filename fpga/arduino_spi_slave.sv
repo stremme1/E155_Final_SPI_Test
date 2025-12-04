@@ -140,12 +140,14 @@ module arduino_spi_slave(
     logic cs_rising_edge_clk;
     assign cs_rising_edge_clk = !cs_n_prev_clk && cs_n_sync_clk2;
     
-    // Capture packet buffer on CS rising edge (transaction complete)
+    // Capture packet buffer when CS is high (transaction complete)
     // When CS goes high, SCK is idle (SPI Mode 0: CPOL=0, idle low)
-    // packet_buffer is stable, safe to read after CS rising edge
+    // packet_buffer_rx is stable, safe to read when CS is high
+    // Update continuously when CS is high to ensure latest data is available
     always_ff @(posedge clk) begin
-        if (cs_rising_edge_clk) begin
-            // CS rising edge - transaction complete, capture packet
+        if (cs_n_sync_clk2) begin
+            // CS is high - transaction complete, update packet buffer continuously
+            // This ensures we always have the latest data available
             // Atomic read of all 16 bytes in one clock cycle
             packet_buffer_sync[0] <= packet_buffer_rx[0];
             packet_buffer_sync[1] <= packet_buffer_rx[1];
@@ -164,7 +166,8 @@ module arduino_spi_slave(
             packet_buffer_sync[14] <= packet_buffer_rx[14];
             packet_buffer_sync[15] <= packet_buffer_rx[15];
         end
-        // Data persists until next CS rising edge
+        // When CS is low (during transaction), packet_buffer_sync does NOT update
+        // This ensures data consistency during the entire SPI transaction
     end
     
     // Output synchronized packet buffer
