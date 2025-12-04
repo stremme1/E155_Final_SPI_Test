@@ -46,12 +46,12 @@ module arduino_spi_slave(
     logic [3:0] byte_count;  // 0-15 (4 bits for 16 bytes)
     logic [2:0] bit_count;   // 0-7 (3 bits for 8 bits per byte)
     
-    // Packet buffer - stores received 16-byte packet
+    // Packet buffer - stores received 16-byte packet (SCK domain)
     // Initialize to zeros to avoid 'x' values
-    logic [7:0] packet_buffer [0:PACKET_SIZE-1];
+    logic [7:0] packet_buffer_rx [0:PACKET_SIZE-1];
     initial begin
         for (int i = 0; i < PACKET_SIZE; i = i + 1) begin
-            packet_buffer[i] = 8'h00;
+            packet_buffer_rx[i] = 8'h00;
         end
     end
     
@@ -73,12 +73,12 @@ module arduino_spi_slave(
     // SPI Mode 0: Sample data on rising edge of SCK
     // In SPI Mode 0, the first bit is set up by master before first SCK rising edge
     // We sample on each rising edge, starting with the first one
-    // CRITICAL: packet_buffer is NOT reset on CS high - it retains data until overwritten
+    // CRITICAL: packet_buffer_rx is NOT reset on CS high - it retains data until overwritten
     // This is correct because we want to capture the complete packet before CS goes high
     always_ff @(posedge sck or posedge cs_n) begin
         if (cs_n) begin
-            // Async reset when CS goes high - reset counters but NOT packet_buffer
-            // packet_buffer retains the complete packet for CDC capture
+            // Async reset when CS goes high - reset counters but NOT packet_buffer_rx
+            // packet_buffer_rx retains the complete packet for CDC capture
             byte_count <= 0;
             bit_count  <= 0;
             rx_shift   <= 8'd0;
@@ -99,7 +99,7 @@ module arduino_spi_slave(
             // Bit 0 (0): rx_shift = 10101010 (complete byte, first bit now in MSB)
             if (bit_count == 3'd7) begin
                 // 8th bit (LSB) - shift it in and store complete byte
-                packet_buffer[byte_count] <= {rx_shift[6:0], sdi};
+                packet_buffer_rx[byte_count] <= {rx_shift[6:0], sdi};
                 byte_count <= byte_count + 1;
                 bit_count  <= 0;
                 rx_shift   <= 8'd0;  // Clear for next byte
@@ -147,22 +147,22 @@ module arduino_spi_slave(
         if (cs_rising_edge_clk) begin
             // CS rising edge - transaction complete, capture packet
             // Atomic read of all 16 bytes in one clock cycle
-            packet_buffer_sync[0] <= packet_buffer[0];
-            packet_buffer_sync[1] <= packet_buffer[1];
-            packet_buffer_sync[2] <= packet_buffer[2];
-            packet_buffer_sync[3] <= packet_buffer[3];
-            packet_buffer_sync[4] <= packet_buffer[4];
-            packet_buffer_sync[5] <= packet_buffer[5];
-            packet_buffer_sync[6] <= packet_buffer[6];
-            packet_buffer_sync[7] <= packet_buffer[7];
-            packet_buffer_sync[8] <= packet_buffer[8];
-            packet_buffer_sync[9] <= packet_buffer[9];
-            packet_buffer_sync[10] <= packet_buffer[10];
-            packet_buffer_sync[11] <= packet_buffer[11];
-            packet_buffer_sync[12] <= packet_buffer[12];
-            packet_buffer_sync[13] <= packet_buffer[13];
-            packet_buffer_sync[14] <= packet_buffer[14];
-            packet_buffer_sync[15] <= packet_buffer[15];
+            packet_buffer_sync[0] <= packet_buffer_rx[0];
+            packet_buffer_sync[1] <= packet_buffer_rx[1];
+            packet_buffer_sync[2] <= packet_buffer_rx[2];
+            packet_buffer_sync[3] <= packet_buffer_rx[3];
+            packet_buffer_sync[4] <= packet_buffer_rx[4];
+            packet_buffer_sync[5] <= packet_buffer_rx[5];
+            packet_buffer_sync[6] <= packet_buffer_rx[6];
+            packet_buffer_sync[7] <= packet_buffer_rx[7];
+            packet_buffer_sync[8] <= packet_buffer_rx[8];
+            packet_buffer_sync[9] <= packet_buffer_rx[9];
+            packet_buffer_sync[10] <= packet_buffer_rx[10];
+            packet_buffer_sync[11] <= packet_buffer_rx[11];
+            packet_buffer_sync[12] <= packet_buffer_rx[12];
+            packet_buffer_sync[13] <= packet_buffer_rx[13];
+            packet_buffer_sync[14] <= packet_buffer_rx[14];
+            packet_buffer_sync[15] <= packet_buffer_rx[15];
         end
         // Data persists until next CS rising edge
     end
