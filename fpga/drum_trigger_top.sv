@@ -28,7 +28,11 @@ module drum_trigger_top (
     // Debug / Status LEDs
     output logic        led_initialized,
     output logic        led_error,
-    output logic        led_heartbeat
+    output logic        led_heartbeat,
+    
+    // Diagnostic outputs (for debugging SPI reception)
+    output logic        led_cs_detected,      // High when CS is low (Arduino is sending)
+    output logic        led_packet_received   // High when packet_valid is true
 );
 
     // Internal signals
@@ -101,12 +105,19 @@ module drum_trigger_top (
         .gyro1_valid(gyro1_valid),
         .gyro1_x(gyro1_x),
         .gyro1_y(gyro1_y),
-        .gyro1_z(gyro1_z)
+        .gyro1_z(gyro1_z),
+        .cs_detected(cs_detected_internal),
+        .packet_received(packet_received_internal)
     );
+    
+    // Internal diagnostic signals
+    logic cs_detected_internal, packet_received_internal;
     
     // Status LEDs
     assign led_initialized = initialized1;
     assign led_error = error1;
+    assign led_cs_detected = cs_detected_internal;
+    assign led_packet_received = packet_received_internal;
     
     // ============================================
     // MCU SPI Slave for sending raw sensor data

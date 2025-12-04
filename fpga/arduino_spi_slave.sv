@@ -26,7 +26,11 @@ module arduino_spi_slave(
     output logic        quat1_valid,
     output logic signed [15:0] quat1_w, quat1_x, quat1_y, quat1_z,
     output logic        gyro1_valid,
-    output logic signed [15:0] gyro1_x, gyro1_y, gyro1_z
+    output logic signed [15:0] gyro1_x, gyro1_y, gyro1_z,
+    
+    // Diagnostic outputs (for debugging)
+    output logic        cs_detected,      // High when CS is low (active)
+    output logic        packet_received   // High when packet_valid is true
 );
 
     localparam PACKET_SIZE = 16;
@@ -364,6 +368,18 @@ module arduino_spi_slave(
         gyro1_x = 16'd0;
         gyro1_y = 16'd0;
         gyro1_z = 16'd0;
+        cs_detected = 1'b0;
+        packet_received = 1'b0;
+    end
+    
+    // Diagnostic outputs: CS detection and packet reception
+    // These help debug if CS/SCK signals are reaching the FPGA
+    always_ff @(posedge clk) begin
+        // CS detected: High when CS is low (active, Arduino is sending)
+        cs_detected <= !cs_n_sync_clk2;  // cs_n=0 means CS is low (active)
+        
+        // Packet received: High when packet_valid is true
+        packet_received <= packet_valid;
     end
     
     // Map Arduino packet fields to spi_slave_mcu interface
