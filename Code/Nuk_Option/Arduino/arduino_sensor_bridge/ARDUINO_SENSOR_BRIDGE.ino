@@ -124,13 +124,23 @@ int16_t gyroToInt16(float gyro_rad_per_sec) {
   return (int16_t)scaled;
 }
 
+// Convert quaternion (Q14 format) to int16_t
+// Q14 format: multiply by 16384 to get integer representation
+int16_t quatToInt16(float quat) {
+  float scaled = quat * 16384.0f;
+  if (scaled > 32767.0f) scaled = 32767.0f;
+  if (scaled < -32768.0f) scaled = -32768.0f;
+  return (int16_t)scaled;
+}
+
 void loop() {
   static unsigned long last_packet_send = 0;
-  static bool euler_valid = false;
+  static bool quat_valid = false;
   static bool gyro_valid = false;
-  static float current_roll = 0.0f;
-  static float current_pitch = 0.0f;
-  static float current_yaw = 0.0f;
+  static float current_quat_w = 1.0f;
+  static float current_quat_x = 0.0f;
+  static float current_quat_y = 0.0f;
+  static float current_quat_z = 0.0f;
   static float current_gyro_x = 0.0f;
   static float current_gyro_y = 0.0f;
   static float current_gyro_z = 0.0f;
@@ -145,19 +155,25 @@ void loop() {
     // in this demo only one report type will be received depending on FAST_MODE define (above)
     switch (sensorValue.sensorId) {
       case SH2_ARVR_STABILIZED_RV:
+        // Store quaternion data directly (FPGA will convert to Euler using DSP)
+        current_quat_w = sensorValue.un.arvrStabilizedRV.real;
+        current_quat_x = sensorValue.un.arvrStabilizedRV.i;
+        current_quat_y = sensorValue.un.arvrStabilizedRV.j;
+        current_quat_z = sensorValue.un.arvrStabilizedRV.k;
+        quat_valid = true;
+        // Also compute Euler for serial debug output
         quaternionToEulerRV(&sensorValue.un.arvrStabilizedRV, &ypr, true);
-        current_roll = ypr.roll;
-        current_pitch = ypr.pitch;
-        current_yaw = ypr.yaw;
-        euler_valid = true;
         break;
       case SH2_GYRO_INTEGRATED_RV:
         // faster (more noise?)
+        // Store quaternion data directly (FPGA will convert to Euler using DSP)
+        current_quat_w = sensorValue.un.gyroIntegratedRV.real;
+        current_quat_x = sensorValue.un.gyroIntegratedRV.i;
+        current_quat_y = sensorValue.un.gyroIntegratedRV.j;
+        current_quat_z = sensorValue.un.gyroIntegratedRV.k;
+        quat_valid = true;
+        // Also compute Euler for serial debug output
         quaternionToEulerGI(&sensorValue.un.gyroIntegratedRV, &ypr, true);
-        current_roll = ypr.roll;
-        current_pitch = ypr.pitch;
-        current_yaw = ypr.yaw;
-        euler_valid = true;
         break;
       case SH2_GYROSCOPE_CALIBRATED:
         current_gyro_x = sensorValue.un.gyroscope.x;
@@ -177,53 +193,52 @@ void loop() {
   }
 
   // Send full packet via SPI to FPGA (throttled to ~20Hz)
-  // Data Pipeline: Arduino (this code) → FPGA → MCU
-  // FPGA receives Euler angles and converts to quaternion format for MCU
-  // See DATA_PIPELINE_VERIFICATION.md for complete pipeline documentation
-  // Packet format (16 bytes): [Header][Roll][Pitch][Yaw][Gyro X][Gyro Y][Gyro Z][Flags][Reserved]
+  // Data Pipeline: Arduino (this code) → FPGA (converts quaternion to Euler using DSP) → MCU
+  // FPGA receives quaternion data and converts to Euler angles using DSP blocks
+  // Packet format (16 bytes): [Header][Quat W][Quat X][Quat Y][Quat Z][Gyro X][Gyro Y][Gyro Z][Flags][Reserved]
   unsigned long current_time = millis();
-  if (euler_valid && (current_time - last_packet_send >= 50)) {
+  if (quat_valid && (current_time - last_packet_send >= 50)) {
     uint8_t packet[16];
     packet[0] = 0xAA;  // Header (Byte 0)
     
-    // Pack Euler angles in order: Roll, Pitch, Yaw (matching print statement order)
-    // int16_t scaled by 100, so 1 = 0.01 degrees
-    // Bytes 1-2: Roll
-    int16_t roll = eulerToInt16(current_roll);
-    packet[1] = (roll >> 8) & 0xFF;   // Roll MSB
-    packet[2] = roll & 0xFF;           // Roll LSB
+    // Pack quaternion in Q14 format (int16_t, scaled by 16384)
+    // Bytes 1-2: Quaternion W
+    int16_t quat_w = quatToInt16(current_quat_w);
+    packet[1] = (quat_w >> 8) & 0xFF;   // W MSB
+    packet[2] = quat_w & 0xFF;           // W LSB
     
-    // Bytes 3-4: Pitch
-    int16_t pitch = eulerToInt16(current_pitch);
-    packet[3] = (pitch >> 8) & 0xFF;  // Pitch MSB
-    packet[4] = pitch & 0xFF;          // Pitch LSB
+    // Bytes 3-4: Quaternion X
+    int16_t quat_x = quatToInt16(current_quat_x);
+    packet[3] = (quat_x >> 8) & 0xFF;  // X MSB
+    packet[4] = quat_x & 0xFF;          // X LSB
     
-    // Bytes 5-6: Yaw
-    int16_t yaw = eulerToInt16(current_yaw);
-    packet[5] = (yaw >> 8) & 0xFF;    // Yaw MSB
-    packet[6] = yaw & 0xFF;            // Yaw LSB
+    // Bytes 5-6: Quaternion Y
+    int16_t quat_y = quatToInt16(current_quat_y);
+    packet[5] = (quat_y >> 8) & 0xFF;    // Y MSB
+    packet[6] = quat_y & 0xFF;            // Y LSB
+    
+    // Bytes 7-8: Quaternion Z
+    int16_t quat_z = quatToInt16(current_quat_z);
+    packet[7] = (quat_z >> 8) & 0xFF;    // Z MSB
+    packet[8] = quat_z & 0xFF;            // Z LSB
     
     // Pack gyroscope data (int16_t scaled by 2000)
     int16_t gyro_x = gyro_valid ? gyroToInt16(current_gyro_x) : 0;
     int16_t gyro_y = gyro_valid ? gyroToInt16(current_gyro_y) : 0;
     int16_t gyro_z = gyro_valid ? gyroToInt16(current_gyro_z) : 0;
     
-    packet[7] = (gyro_x >> 8) & 0xFF;
-    packet[8] = gyro_x & 0xFF;
-    packet[9] = (gyro_y >> 8) & 0xFF;
-    packet[10] = gyro_y & 0xFF;
-    packet[11] = (gyro_z >> 8) & 0xFF;
-    packet[12] = gyro_z & 0xFF;
+    packet[9] = (gyro_x >> 8) & 0xFF;
+    packet[10] = gyro_x & 0xFF;
+    packet[11] = (gyro_y >> 8) & 0xFF;
+    packet[12] = gyro_y & 0xFF;
+    packet[13] = (gyro_z >> 8) & 0xFF;
+    packet[14] = gyro_z & 0xFF;
     
-    // Flags: bit 0 = Euler valid, bit 1 = Gyro valid
+    // Flags: bit 0 = Quaternion valid, bit 1 = Gyro valid
     uint8_t flags = 0;
-    if (euler_valid) flags |= 0x01;
+    if (quat_valid) flags |= 0x01;
     if (gyro_valid) flags |= 0x02;
-    packet[13] = flags;
-    
-    // Reserved bytes (14-15)
-    packet[14] = 0x00;
-    packet[15] = 0x00;
+    packet[15] = flags;
     
   // Send packet via SPI to FPGA using default SPI pins
   // SPI Mode 0 (CPOL=0, CPHA=0): Clock idle LOW, sample on rising edge
