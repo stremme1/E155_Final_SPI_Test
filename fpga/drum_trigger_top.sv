@@ -58,31 +58,33 @@ module drum_trigger_top (
     //   2'b10 = divide by 8  → 48MHz/8  =  6MHz
     //   2'b11 = divide by 16 → 48MHz/16 =  3MHz
     //
-    // Current setting: 2'b11 = 3MHz
+    // Current setting: 2'b00 = 24MHz
     // Rationale:
-    //   - 3MHz provides sufficient speed for SPI operations (Arduino: 100kHz, MCU: variable)
-    //   - Lower frequency reduces power consumption
-    //   - Adequate for CDC timing margins (3 cycles = 1us, well above SPI timing)
-    //   - Matches all timing calculations in code comments
+    //   - 24MHz provides sufficient speed for SPI operations (Arduino: 100kHz, MCU: variable)
+    //   - Adequate for CDC timing margins (3 cycles = 125ns, well above SPI timing)
     //
     // Timing Margins:
-    //   - Arduino SPI: 100kHz (10us period) → 30 FPGA clocks per SPI bit
-    //   - MCU SPI: Variable, but 3MHz provides sufficient margin
-    //   - CDC: 3-cycle delay = 1us, provides 10x margin over worst-case SPI timing
+    //   - Arduino SPI: 100kHz (10us period) → 240 FPGA clocks per SPI bit
+    //   - MCU SPI: Variable, but 24MHz provides sufficient margin
+    //   - CDC: 3-cycle delay = 125ns, provides 80x margin over worst-case SPI timing
+    // HSOSC power and enable pins - use wire connections instead of constant drivers
+    wire clkhfpu_wire = 1'b1;  // Power up (must be 1 for oscillator to run)
+    wire clkhfen_wire = 1'b1;  // Enable (must be 1 for clock output)
+    
     HSOSC #(.CLKHF_DIV(2'b00)) hf_osc (
-        .CLKHFPU(1'b1),   // Power up (must be 1 for oscillator to run)
-        .CLKHFEN(1'b1),   // Enable (must be 1 for clock output)
-        .CLKHF(clk)       // Output: 3MHz system clock (48MHz / 16)
+        .CLKHFPU(clkhfpu_wire),   // Power up (must be 1 for oscillator to run)
+        .CLKHFEN(clkhfen_wire),   // Enable (must be 1 for clock output)
+        .CLKHF(clk)               // Output: 24MHz system clock (48MHz / 2)
     );
     
     // Heartbeat LED (1Hz approx)
-    // 3MHz = 3,000,000 cycles/sec. 2^22 = ~4M. Bit 21 toggles every ~0.7s
-    logic [21:0] heartbeat_cnt;
+    // 24MHz = 24,000,000 cycles/sec. 2^24 = ~16M. Bit 23 toggles every ~0.7s
+    logic [23:0] heartbeat_cnt;
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) heartbeat_cnt <= 0;
         else heartbeat_cnt <= heartbeat_cnt + 1;
     end
-    assign led_heartbeat = heartbeat_cnt[21];
+    assign led_heartbeat = heartbeat_cnt[23];
     
     // ============================================
     // Arduino SPI Slave - Receive sensor data from Arduino
