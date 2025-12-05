@@ -8,16 +8,8 @@ website:
     left:
       - href: index.qmd
         text: Home
-      - href: project-documentation.qmd
-        text: Design Documentation
-      - href: code.qmd
-        text: Code Repository
-      - href: schematics.qmd
-        text: Schematics & Diagrams
-      - href: media.qmd
-        text: Photos & Video
-      - href: technical-details.qmd
-        text: Technical Details
+      - href: project.qmd
+        text: Project
     right:
       - icon: github
         href: https://github.com/stremme1

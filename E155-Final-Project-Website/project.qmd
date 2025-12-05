@@ -1,0 +1,236 @@
+::: {.full-width-title}
+::: {.section-title-container}
+## Project Documentation {.section-title}
+:::
+:::
+
+::: {.page-content}
+::: {.main-content}
+::: {.scroll-animate}
+This page provides complete documentation of our E155 final project: a sensor data pipeline system implementing Arduino → FPGA → MCU communication.
+:::
+
+::: {.section-title-container}
+## System Architecture {.section-title}
+:::
+
+::: {.scroll-animate}
+The system implements a three-stage sensor data pipeline:
+
+**Stage 1: Arduino (Sensor Interface)**
+- Reads BNO085 9-axis IMU sensor data via I2C
+- Converts quaternion and gyroscope data to Euler angles
+- Packages data into 16-byte SPI packets
+- Acts as SPI master, transmitting to FPGA
+
+**Stage 2: FPGA (Data Bridge)**
+- Receives 16-byte packets from Arduino via SPI slave interface
+- Acts as SPI slave to MCU, providing data on request
+- Implements dual SPI slave interfaces (Arduino → FPGA → MCU)
+
+**Stage 3: MCU (Data Processing)**
+- Reads sensor data from FPGA via SPI master interface
+- Processes quaternion and gyroscope data
+- Implements application-specific logic for sensor data utilization
+
+### Data Flow Diagram
+
+```
+BNO085 Sensor (I2C) → Arduino → [SPI] → FPGA → [SPI] → STM32 MCU
+```
+
+The FPGA acts as a bridge, allowing the Arduino (SPI master) and MCU (SPI master) to communicate through the FPGA's dual slave interfaces.
+:::
+
+::: {.section-title-container}
+## How the Design Works {.section-title}
+:::
+
+::: {.scroll-animate}
+### SPI Communication Protocol
+
+The system uses SPI Mode 0 (CPOL=0, CPHA=0) with MSB-first bit ordering:
+
+**Arduino → FPGA SPI Interface:**
+- Clock Speed: 100kHz
+- Packet Format: 16 bytes
+  - Byte 0: Header (0xAA)
+  - Bytes 1-2: Roll (int16_t, MSB first, scaled by 100)
+  - Bytes 3-4: Pitch (int16_t, MSB first, scaled by 100)
+  - Bytes 5-6: Yaw (int16_t, MSB first, scaled by 100)
+  - Bytes 7-8: Gyro X (int16_t, MSB first, scaled by 2000)
+  - Bytes 9-10: Gyro Y (int16_t, MSB first, scaled by 2000)
+  - Bytes 11-12: Gyro Z (int16_t, MSB first, scaled by 2000)
+  - Byte 13: Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
+  - Bytes 14-15: Reserved (0x00)
+
+**FPGA → MCU SPI Interface:**
+- FPGA passes raw 16-byte packet buffer directly to MCU
+- MCU reads data via SPI master transactions
+- FPGA acts as transparent bridge, forwarding data without modification
+
+### Key Components
+
+**FPGA Implementation:**
+- Top-level module: `drum_trigger_top.sv`
+- Arduino SPI slave: `arduino_spi_slave.sv`
+- MCU SPI slave: `spi_slave_mcu.sv`
+- System clock: 3MHz (48MHz HSOSC divided by 16)
+
+**MCU Implementation:**
+- STM32L432KC with SPI1 master configuration
+- Pins: PB3=SCK, PB5=MOSI, PB4=MISO, PA11=NSS
+- Reads and processes sensor data from FPGA
+
+**Arduino Implementation:**
+- BNO085 sensor interface via I2C (400kHz)
+- SPI master to FPGA (100kHz, Mode 0, CS pin D10)
+- 100Hz sensor update rate
+:::
+
+::: {.section-title-container}
+## Schematics & Block Diagrams {.section-title}
+:::
+
+::: {.scroll-animate}
+### System Block Diagram
+
+**TODO: Add complete system block diagram**
+
+Please add a high-level system block diagram showing:
+- Arduino with BNO085 sensor connection
+- FPGA with dual SPI slave interfaces
+- STM32 MCU with SPI master interface
+- Data flow arrows indicating direction
+- Key signals (SPI lines, I2C lines, power, ground)
+
+**Recommended Image Specifications:**
+- Format: PNG or SVG
+- Size: 1200px width minimum
+- Location: Save to `Images/system-block-diagram.png`
+
+**Example:**
+```markdown
+![System Block Diagram](Images/system-block-diagram.png){width="100%" alt="Complete system block diagram"}
+```
+:::
+
+::: {.section-title-container}
+## Code Repository {.section-title}
+:::
+
+::: {.scroll-animate}
+**TODO: Add GitHub repository URL**
+
+[View Complete Source Code on GitHub](https://github.com/your-username/your-repo-name){.btn .btn-primary target="_blank"}
+
+The repository contains all source code, including:
+- FPGA Verilog modules (`Code/fpga/`)
+- MCU C code (`Code/mcu/`)
+- Arduino/ESP32 code (`Code/Nuk_Option/Arduino/`)
+- Testbenches and simulation files
+- Documentation files
+
+### Key Source Files
+
+**FPGA:**
+- `drum_trigger_top.sv` - Top-level module
+- `arduino_spi_slave.sv` - Arduino SPI slave interface
+- `spi_slave_mcu.sv` - MCU SPI slave interface
+
+**MCU:**
+- `main.c` - Main application code
+- `STM32L432KC_SPI.c` - SPI driver
+
+**Arduino:**
+- `ARDUINO_SENSOR_BRIDGE.ino` - Sensor bridge code
+:::
+
+::: {.section-title-container}
+## Photos & Video {.section-title}
+:::
+
+::: {.scroll-animate}
+### Finished Design Photos
+
+**TODO: Add photos of the complete system**
+
+Please add photos showing:
+- Complete assembled system
+- FPGA board close-up
+- MCU board close-up
+- Arduino/ESP32 setup
+- Wiring and connections
+
+**Recommended Specifications:**
+- Format: JPG or PNG
+- Size: 1500-2000px width minimum
+- Location: Save to `Images/` directory
+
+**Example:**
+```markdown
+![Complete System](Images/system-assembly.jpg){width="100%" alt="Complete assembled system"}
+```
+
+### Video Demonstration
+
+**TODO: Add video link or embed**
+
+Please add your demonstration video. The video should be:
+- Hosted in the provided Google Drive folder
+- Named: `<LastName1><LastName2><VideoName>`
+- Shows the complete system in operation
+
+**Video Content Should Include:**
+- System overview and setup
+- Sensor data acquisition demonstration
+- Data flow through the pipeline
+- Application-specific functionality
+
+**Embedding Options:**
+- Google Drive embed (iframe)
+- Direct link to Google Drive
+- YouTube/Vimeo embed
+:::
+
+::: {.section-title-container}
+## Design Decisions & Challenges {.section-title}
+:::
+
+::: {.scroll-animate}
+### Key Design Decisions
+
+**1. FPGA as Bridge Architecture**
+- Allows for data processing and formatting in the FPGA
+- Provides flexibility for future enhancements
+- Separates concerns: Arduino handles sensor interface, FPGA handles protocol conversion, MCU handles application logic
+
+**2. Dual SPI Slave Design**
+- Allows both Arduino and MCU to act as SPI masters
+- Simplifies protocol design (no arbitration needed)
+- Enables asynchronous data flow
+
+**3. 16-Byte Packet Format**
+- Fixed size simplifies FPGA buffering logic
+- Header byte (0xAA) enables packet synchronization
+- Includes all necessary sensor data
+
+### Technical Challenges
+
+**Clock Domain Crossing (CDC):**
+- Safely transferring data between asynchronous clock domains (Arduino SCK, FPGA system clock, MCU SCK)
+- Solution: CS-based safe read approach with 3-cycle delay, providing 10:1 timing margin
+
+**SPI Timing Synchronization:**
+- Ensuring proper timing between Arduino SPI master and FPGA SPI slave
+- Solution: CS-based protocol with proper clock edge detection and header validation
+
+**Data Format Consistency:**
+- Maintaining consistent data formats across all stages
+- Solution: Fixed 16-byte packet format with clear byte assignments
+:::
+
+:::
+:::
+
+<script src="scroll-animations.js"></script>
