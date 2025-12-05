@@ -172,7 +172,7 @@ Video should be hosted in the provided Google Drive folder and named: `<LastName
 ## Acknowledgements {.section-title}
 :::
 
-::: {style="margin-bottom: 4rem; padding-bottom: 2rem;"}
+::: {.scroll-animate style="margin-bottom: 4rem; padding-bottom: 2rem;"}
 We want to thank staff engineer Xavier Walter and Professor Matthew Spencer for their constant support.
 :::
 
