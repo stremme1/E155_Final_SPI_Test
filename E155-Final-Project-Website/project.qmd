@@ -10,10 +10,14 @@
 ## Abstract {.section-title}
 :::
 
-::: {.scroll-animate}
+::: {.scroll-animate style="max-width: 800px; margin: 0 auto; text-align: center;"}
 This project aims to adapt the existing Invisible Drum Set—originally implemented with an Arduino Nano and BNO055 IMU sensor—onto the E155 hardware platform, consisting of an STM32 MCU and UPduino FPGA. It will enable playing virtual drums through air gestures detected by the IMU, with real-time audio synthesis and low latency.
 :::
 
+:::
+:::
+
+::: {.full-width-content}
 ::: {.section-title-container}
 ## System Overview {.section-title}
 :::
@@ -168,7 +172,7 @@ Video should be hosted in the provided Google Drive folder and named: `<LastName
 ## Acknowledgements {.section-title}
 :::
 
-::: {.scroll-animate}
+::: {style="margin-bottom: 4rem; padding-bottom: 2rem;"}
 We want to thank staff engineer Xavier Walter and Professor Matthew Spencer for their constant support.
 :::
 

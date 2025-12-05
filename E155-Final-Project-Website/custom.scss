@@ -156,6 +156,42 @@ html, body, div, section, article, main, header, footer, nav, aside,
   padding: 0;
 }
 
+/* Center featured grid for team members */
+.featured-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: var(--space-8) !important;
+  max-width: 1000px !important;
+  margin: 0 auto !important;
+  padding: 0 var(--space-8) !important;
+  justify-content: center !important;
+}
+
+@media (max-width: 768px) {
+  .featured-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Full width content for project page sections */
+.full-width-content {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: var(--space-16) auto !important;
+  padding: 0 var(--space-8) !important;
+}
+
+.full-width-content .scroll-animate {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Ensure acknowledgements is visible (no animation cutoff) */
+.full-width-content .section-title-container:last-of-type + * {
+  margin-bottom: var(--space-16) !important;
+  padding-bottom: var(--space-16) !important;
+}
+
 /* Ensure section title containers have no top spacing */
 .full-width-title .section-title-container {
   margin-top: 0 !important;
