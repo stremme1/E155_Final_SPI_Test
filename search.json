@@ -7,25 +7,46 @@
     "text": "Project Documentation"
   },
   {
-    "objectID": "project.html#system-architecture",
-    "href": "project.html#system-architecture",
+    "objectID": "project.html#abstract",
+    "href": "project.html#abstract",
     "title": "E155 Final Project - Sensor Data Pipeline System",
-    "section": "System Architecture",
-    "text": "System Architecture"
+    "section": "Abstract",
+    "text": "Abstract"
   },
   {
-    "objectID": "project.html#how-the-design-works",
-    "href": "project.html#how-the-design-works",
+    "objectID": "project.html#system-overview",
+    "href": "project.html#system-overview",
     "title": "E155 Final Project - Sensor Data Pipeline System",
-    "section": "How the Design Works",
-    "text": "How the Design Works"
+    "section": "System Overview",
+    "text": "System Overview"
   },
   {
-    "objectID": "project.html#schematics-block-diagrams",
-    "href": "project.html#schematics-block-diagrams",
+    "objectID": "project.html#hardware-components",
+    "href": "project.html#hardware-components",
     "title": "E155 Final Project - Sensor Data Pipeline System",
-    "section": "Schematics & Block Diagrams",
-    "text": "Schematics & Block Diagrams"
+    "section": "Hardware Components",
+    "text": "Hardware Components"
+  },
+  {
+    "objectID": "project.html#communication-protocols",
+    "href": "project.html#communication-protocols",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Communication Protocols",
+    "text": "Communication Protocols"
+  },
+  {
+    "objectID": "project.html#results",
+    "href": "project.html#results",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Results",
+    "text": "Results"
+  },
+  {
+    "objectID": "project.html#schematics-diagrams",
+    "href": "project.html#schematics-diagrams",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Schematics & Diagrams",
+    "text": "Schematics & Diagrams"
   },
   {
     "objectID": "project.html#code-repository",
@@ -42,18 +63,32 @@
     "text": "Photos & Video"
   },
   {
-    "objectID": "project.html#design-decisions-challenges",
-    "href": "project.html#design-decisions-challenges",
+    "objectID": "project.html#bill-of-materials",
+    "href": "project.html#bill-of-materials",
     "title": "E155 Final Project - Sensor Data Pipeline System",
-    "section": "Design Decisions & Challenges",
-    "text": "Design Decisions & Challenges"
+    "section": "Bill of Materials",
+    "text": "Bill of Materials"
   },
   {
-    "objectID": "index.html#sensor-data-pipeline-system",
-    "href": "index.html#sensor-data-pipeline-system",
+    "objectID": "project.html#references",
+    "href": "project.html#references",
     "title": "E155 Final Project - Sensor Data Pipeline System",
-    "section": "Sensor Data Pipeline System",
-    "text": "Sensor Data Pipeline System"
+    "section": "References",
+    "text": "References"
+  },
+  {
+    "objectID": "project.html#acknowledgements",
+    "href": "project.html#acknowledgements",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Acknowledgements",
+    "text": "Acknowledgements"
+  },
+  {
+    "objectID": "index.html#invisible-drum-set",
+    "href": "index.html#invisible-drum-set",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Invisible Drum Set",
+    "text": "Invisible Drum Set"
   },
   {
     "objectID": "index.html#about-the-team",
