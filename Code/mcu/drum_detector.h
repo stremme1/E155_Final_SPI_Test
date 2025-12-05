@@ -47,5 +47,31 @@ uint8_t detect_drum_trigger(
 // Based on Code_for_C_imp/main.c calibration button logic
 void update_yaw_offsets(euler_t *euler1, euler_t *euler2, yaw_offset_t *offsets);
 
+// LEFT HAND ONLY functions (for main_left.c)
+// Detect drum trigger from LEFT HAND sensor data only
+uint8_t detect_drum_trigger_left(
+    euler_t *euler,
+    int16_t gyro_y,
+    int16_t gyro_z,
+    drum_detector_state_t *state,
+    float *yaw_offset
+);
+
+// Update yaw offset for left hand calibration
+void update_yaw_offset_left(euler_t *euler, float *yaw_offset);
+
+// RIGHT HAND ONLY functions (for main_right.c)
+// Detect drum trigger from RIGHT HAND sensor data only
+uint8_t detect_drum_trigger_right(
+    euler_t *euler,
+    int16_t gyro_y,
+    int16_t gyro_z,
+    drum_detector_state_t *state,
+    float *yaw_offset
+);
+
+// Update yaw offset for right hand calibration
+void update_yaw_offset_right(euler_t *euler, float *yaw_offset);
+
 #endif // DRUM_DETECTOR_H
 
