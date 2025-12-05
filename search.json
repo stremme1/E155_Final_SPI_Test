@@ -1,0 +1,247 @@
+[
+  {
+    "objectID": "technical-details.html#technical-details",
+    "href": "technical-details.html#technical-details",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Technical Details",
+    "text": "Technical Details"
+  },
+  {
+    "objectID": "technical-details.html#spi-protocol-implementation",
+    "href": "technical-details.html#spi-protocol-implementation",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "SPI Protocol Implementation",
+    "text": "SPI Protocol Implementation"
+  },
+  {
+    "objectID": "technical-details.html#fpga-design-patterns",
+    "href": "technical-details.html#fpga-design-patterns",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "FPGA Design Patterns",
+    "text": "FPGA Design Patterns"
+  },
+  {
+    "objectID": "technical-details.html#mcu-integration-techniques",
+    "href": "technical-details.html#mcu-integration-techniques",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "MCU Integration Techniques",
+    "text": "MCU Integration Techniques"
+  },
+  {
+    "objectID": "technical-details.html#sensor-interface-methods",
+    "href": "technical-details.html#sensor-interface-methods",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Sensor Interface Methods",
+    "text": "Sensor Interface Methods"
+  },
+  {
+    "objectID": "technical-details.html#debugging-approaches",
+    "href": "technical-details.html#debugging-approaches",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Debugging Approaches",
+    "text": "Debugging Approaches"
+  },
+  {
+    "objectID": "technical-details.html#common-pitfalls-and-solutions",
+    "href": "technical-details.html#common-pitfalls-and-solutions",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Common Pitfalls and Solutions",
+    "text": "Common Pitfalls and Solutions"
+  },
+  {
+    "objectID": "technical-details.html#additional-resources",
+    "href": "technical-details.html#additional-resources",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Additional Resources",
+    "text": "Additional Resources"
+  },
+  {
+    "objectID": "index.html#sensor-data-pipeline-system",
+    "href": "index.html#sensor-data-pipeline-system",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Sensor Data Pipeline System",
+    "text": "Sensor Data Pipeline System"
+  },
+  {
+    "objectID": "index.html#system-overview",
+    "href": "index.html#system-overview",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "System Overview",
+    "text": "System Overview"
+  },
+  {
+    "objectID": "index.html#project-deliverables-1",
+    "href": "index.html#project-deliverables-1",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Project Deliverables",
+    "text": "Project Deliverables"
+  },
+  {
+    "objectID": "code.html#code-repository",
+    "href": "code.html#code-repository",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Code Repository",
+    "text": "Code Repository"
+  },
+  {
+    "objectID": "code.html#github-repository",
+    "href": "code.html#github-repository",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "GitHub Repository",
+    "text": "GitHub Repository"
+  },
+  {
+    "objectID": "code.html#code-organization",
+    "href": "code.html#code-organization",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Code Organization",
+    "text": "Code Organization"
+  },
+  {
+    "objectID": "code.html#key-source-files",
+    "href": "code.html#key-source-files",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Key Source Files",
+    "text": "Key Source Files"
+  },
+  {
+    "objectID": "code.html#code-commenting-standards",
+    "href": "code.html#code-commenting-standards",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Code Commenting Standards",
+    "text": "Code Commenting Standards"
+  },
+  {
+    "objectID": "code.html#direct-code-links",
+    "href": "code.html#direct-code-links",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Direct Code Links",
+    "text": "Direct Code Links"
+  },
+  {
+    "objectID": "schematics.html#schematics-block-diagrams",
+    "href": "schematics.html#schematics-block-diagrams",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Schematics & Block Diagrams",
+    "text": "Schematics & Block Diagrams"
+  },
+  {
+    "objectID": "schematics.html#system-block-diagram",
+    "href": "schematics.html#system-block-diagram",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "System Block Diagram",
+    "text": "System Block Diagram"
+  },
+  {
+    "objectID": "schematics.html#fpga-block-diagram",
+    "href": "schematics.html#fpga-block-diagram",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "FPGA Block Diagram",
+    "text": "FPGA Block Diagram"
+  },
+  {
+    "objectID": "schematics.html#mcu-interface-diagram",
+    "href": "schematics.html#mcu-interface-diagram",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "MCU Interface Diagram",
+    "text": "MCU Interface Diagram"
+  },
+  {
+    "objectID": "schematics.html#arduino-sensor-interface",
+    "href": "schematics.html#arduino-sensor-interface",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Arduino Sensor Interface",
+    "text": "Arduino Sensor Interface"
+  },
+  {
+    "objectID": "schematics.html#pin-connection-diagram",
+    "href": "schematics.html#pin-connection-diagram",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Pin Connection Diagram",
+    "text": "Pin Connection Diagram"
+  },
+  {
+    "objectID": "schematics.html#spi-protocol-timing-diagram",
+    "href": "schematics.html#spi-protocol-timing-diagram",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "SPI Protocol Timing Diagram",
+    "text": "SPI Protocol Timing Diagram"
+  },
+  {
+    "objectID": "schematics.html#adding-your-diagrams",
+    "href": "schematics.html#adding-your-diagrams",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Adding Your Diagrams",
+    "text": "Adding Your Diagrams"
+  },
+  {
+    "objectID": "project-documentation.html#design-documentation",
+    "href": "project-documentation.html#design-documentation",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Design Documentation",
+    "text": "Design Documentation"
+  },
+  {
+    "objectID": "project-documentation.html#system-architecture",
+    "href": "project-documentation.html#system-architecture",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "System Architecture",
+    "text": "System Architecture"
+  },
+  {
+    "objectID": "project-documentation.html#how-the-design-works",
+    "href": "project-documentation.html#how-the-design-works",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "How the Design Works",
+    "text": "How the Design Works"
+  },
+  {
+    "objectID": "project-documentation.html#key-design-decisions",
+    "href": "project-documentation.html#key-design-decisions",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Key Design Decisions",
+    "text": "Key Design Decisions"
+  },
+  {
+    "objectID": "project-documentation.html#technical-challenges-and-solutions",
+    "href": "project-documentation.html#technical-challenges-and-solutions",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Technical Challenges and Solutions",
+    "text": "Technical Challenges and Solutions"
+  },
+  {
+    "objectID": "project-documentation.html#techniques-for-future-students",
+    "href": "project-documentation.html#techniques-for-future-students",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Techniques for Future Students",
+    "text": "Techniques for Future Students"
+  },
+  {
+    "objectID": "media.html#photos-video",
+    "href": "media.html#photos-video",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Photos & Video",
+    "text": "Photos & Video"
+  },
+  {
+    "objectID": "media.html#finished-design-photos",
+    "href": "media.html#finished-design-photos",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Finished Design Photos",
+    "text": "Finished Design Photos"
+  },
+  {
+    "objectID": "media.html#video-demonstration",
+    "href": "media.html#video-demonstration",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Video Demonstration",
+    "text": "Video Demonstration"
+  },
+  {
+    "objectID": "media.html#adding-your-media",
+    "href": "media.html#adding-your-media",
+    "title": "E155 Final Project - Sensor Data Pipeline System",
+    "section": "Adding Your Media",
+    "text": "Adding Your Media"
+  }
+]
