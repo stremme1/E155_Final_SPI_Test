@@ -232,14 +232,33 @@ body:has(.full-width-content) {
   --body-width: 100% !important;
 }
 
-/* Override Quarto's column layout for project page */
+/* Override Quarto's column layout for project page - target all possible layout containers */
 body:has(.full-width-content) .page-layout,
 body:has(.full-width-content) .quarto-layout-row,
-body:has(.full-width-content) .quarto-layout-col {
+body:has(.full-width-content) .quarto-layout-col,
+body:has(.full-width-content) .quarto-layout-panel,
+body:has(.full-width-content) .quarto-layout-cell,
+body:has(.full-width-content) .quarto-layout-cell-content {
   display: block !important;
   grid-template-columns: none !important;
   width: 100% !important;
   max-width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Target the abstract section to also use full width container */
+body:has(.full-width-content) .section-title-container,
+body:has(.full-width-content) .scroll-animate {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* But keep abstract text centered */
+body:has(.full-width-content) .section-title-container:has(+ .scroll-animate) + .scroll-animate {
+  max-width: 800px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 
 /* Ensure acknowledgements is visible (no animation cutoff) */
