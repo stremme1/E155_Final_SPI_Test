@@ -177,11 +177,23 @@ html, body, div, section, article, main, header, footer, nav, aside,
 .full-width-content {
   width: 100% !important;
   max-width: 100% !important;
-  margin: var(--space-16) 0 !important;
+  margin: var(--space-16) auto !important;
   padding: 0 var(--space-8) !important;
   box-sizing: border-box !important;
   position: relative !important;
   grid-column: 1 / -1 !important;
+  display: block !important;
+}
+
+/* Break out of Quarto's column layout */
+body:has(.full-width-content) .quarto-layout-panel,
+body:has(.full-width-content) .quarto-layout-row,
+body:has(.full-width-content) .quarto-layout-col,
+body:has(.full-width-content) .page-layout {
+  max-width: 100% !important;
+  width: 100% !important;
+  display: block !important;
+  grid-template-columns: none !important;
 }
 
 .full-width-content .scroll-animate {
@@ -204,11 +216,30 @@ body:has(.full-width-content) .main-content {
 }
 
 /* Ensure full-width-content breaks out of any parent containers */
-#quarto-content:has(.full-width-content),
-.page-layout-custom:has(.full-width-content),
-main.content:has(.full-width-content) {
+body:has(.full-width-content) #quarto-content,
+body:has(.full-width-content) .page-layout-custom,
+body:has(.full-width-content) main.content,
+body:has(.full-width-content) .quarto-container,
+body:has(.full-width-content) .quarto-container-centered {
   max-width: 100% !important;
   width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Override Quarto's body-width constraint for project page */
+body:has(.full-width-content) {
+  --body-width: 100% !important;
+}
+
+/* Override Quarto's column layout for project page */
+body:has(.full-width-content) .page-layout,
+body:has(.full-width-content) .quarto-layout-row,
+body:has(.full-width-content) .quarto-layout-col {
+  display: block !important;
+  grid-template-columns: none !important;
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 /* Ensure acknowledgements is visible (no animation cutoff) */
@@ -1598,8 +1629,27 @@ main.content {
   margin-right: 0 !important;
 }
 
-/* Override Quarto's page layout system to be centered */
-.page-layout-custom {
+/* Override Quarto's page layout system - allow full width for project page */
+.page-layout-custom:has(.full-width-content) {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.page-layout-custom:has(.full-width-content) .page-layout {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  display: block !important;
+  grid-template-columns: none !important;
+}
+
+/* Default centered layout for other pages */
+.page-layout-custom:not(:has(.full-width-content)) {
   max-width: 1200px !important;
   width: 100% !important;
   margin: 0 auto !important;
@@ -1607,7 +1657,7 @@ main.content {
   box-sizing: border-box !important;
 }
 
-.page-layout-custom .page-layout {
+.page-layout-custom:not(:has(.full-width-content)) .page-layout {
   max-width: 1200px !important;
   width: 100% !important;
   margin: 0 auto !important;
@@ -1654,20 +1704,36 @@ main.content {
   }
 }
 
-/* Page-specific container adjustments */
-.page-layout-custom {
+/* Page-specific container adjustments - full width for project page */
+.page-layout-custom:has(.full-width-content) {
   max-width: 100% !important;
   width: 100% !important;
   padding: 0 !important;
   margin: 0 !important;
 }
 
-/* Ensure proper content flow */
-main.content {
+/* Default for other pages */
+.page-layout-custom:not(:has(.full-width-content)) {
+  max-width: 1200px !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+  padding: 0 var(--space-8) !important;
+}
+
+/* Ensure proper content flow - full width for project page */
+body:has(.full-width-content) main.content {
   max-width: 100% !important;
   width: 100% !important;
   padding: 0 !important;
   margin: 0 !important;
+}
+
+/* Default for other pages */
+main.content:not(:has(.full-width-content)) {
+  max-width: 1200px !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+  padding: 0 var(--space-8) !important;
 }
 
 /* Apple-style section containers */
