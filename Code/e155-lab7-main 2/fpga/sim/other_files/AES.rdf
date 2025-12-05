@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<RadiantProject version="4.2" radiant="2024.2.0.3.0" title="AES" device="iCE40UP5K-SG48I" performance_grade="High-Performance_1.2V" family_int="ice40tp" device_int="itpa08" package_int="SG48" operation_int="IND" speed_int="6" default_implementation="AES_code">
-    <Options/>
-    <Implementation title="AES_code" dir="AES_code" description="AES_code" synthesis="lse" default_strategy="Strategy1">
-        <Options/>
-    </Implementation>
-    <Strategy name="Strategy1" file="AES1.sty"/>
-</RadiantProject>
