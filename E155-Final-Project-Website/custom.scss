@@ -179,11 +179,21 @@ html, body, div, section, article, main, header, footer, nav, aside,
   max-width: 100% !important;
   margin: var(--space-16) auto !important;
   padding: 0 var(--space-8) !important;
+  box-sizing: border-box !important;
 }
 
 .full-width-content .scroll-animate {
   max-width: 100% !important;
   width: 100% !important;
+  padding: 0 !important;
+}
+
+/* Override any page-content constraints on project page */
+body:has(.full-width-content) .page-content,
+body:has(.full-width-content) .main-content {
+  max-width: 100% !important;
+  width: 100% !important;
+  grid-column: 1 / -1 !important;
 }
 
 /* Ensure acknowledgements is visible (no animation cutoff) */
