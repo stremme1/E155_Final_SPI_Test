@@ -12,11 +12,11 @@ format:
 :::
 
 ::: {.hero-subtitle-container}
-## Sensor Data Pipeline System {.hero-subtitle}
+## Invisible Drum Set {.hero-subtitle}
 :::
 
 ::: {.hero-description}
-A complete embedded systems design implementing a multi-stage sensor data pipeline: Arduino reads BNO085 sensor data via I2C, transmits to FPGA via SPI, and FPGA bridges the data to STM32 MCU for processing.
+Adapting the existing Invisible Drum Set onto the E155 hardware platform, enabling playing virtual drums through air gestures detected by an IMU, with real-time audio synthesis and low latency.
 :::
 
 ::: {.hero-actions}
@@ -35,21 +35,30 @@ A complete embedded systems design implementing a multi-stage sensor data pipeli
 ::: {.featured-grid}
 ::: {.featured-card .scroll-animate-left}
 ::: {.featured-card-content}
-### Emmett Stralka
+### Marina Bellido
 
-![Emmett Stralka](Images/headshot.jpg){width="200px" style="border-radius: 12px; margin-bottom: 1rem;"}
+![Marina Bellido](Images/marina.jpg){width="200px" style="border-radius: 12px; margin-bottom: 1rem;"}
 
-Harvey Mudd College student majoring in Engineering and Economics with hands-on experience in ML/AI product management at Apple and Ford Motor Company. Expertise in embedded systems, data science, and cross-functional product development.
+I am a senior engineering major at Harvey Mudd College interested in electrical and computer engineering/digital design. I'm currently doing research as a Clay-Wolkin Fellow at Harvey Mudd's VLSI lab developing a comprehensive open-source functional verification suite for RISC-V processors. I have experience with SystemVerilog and RISC-V assembly and would love to continue to grow my computer engineering skills. I'm always excited to learn new things and would be happy to connect with you!
+
+**Links:**
+- [Portfolio Website](https://marina-bellido.github.io/E155-Portfolio/){target="_blank"}
+- [Personal Website](https://marina-bellido.github.io){target="_blank"}
+- [LinkedIn](https://www.linkedin.com/in/marina-bellido-hmc/){target="_blank"}
 :::
 :::
 
 ::: {.featured-card .scroll-animate-right}
 ::: {.featured-card-content}
-### Marina
+### Emmett Stralka
 
-![Marina](Images/marina.jpg){width="200px" style="border-radius: 12px; margin-bottom: 1rem;"}
+![Emmett Stralka](Images/headshot.jpg){width="200px" style="border-radius: 12px; margin-bottom: 1rem;"}
 
-**TODO: Add Marina's photo to `Images/marina.jpg` and update this section with Marina's introduction and background.**
+Harvey Mudd College student majoring in Engineering and Economics with hands-on experience in ML/AI product management at Apple and Ford Motor Company. Expertise in embedded systems, data science, and cross-functional product development.
+
+**Links:**
+- [Portfolio Website](https://stremme1.github.io/E155-Website-Emmett_Stralka/){target="_blank"}
+- [LinkedIn](https://www.linkedin.com/in/emmett-stralka-b41575213/){target="_blank"}
 :::
 :::
 :::
