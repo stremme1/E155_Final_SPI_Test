@@ -4,32 +4,15 @@ format:
     body-class: homepage
 ---
 
-::: {.hero-section}
-::: {.hero-content}
-::: {.hero-text}
-::: {.hero-name-container}
-# E155 Final Project {.hero-title}
-:::
-
-::: {.hero-subtitle-container}
-## Invisible Drum Set {.hero-subtitle}
-:::
-
-::: {.hero-description}
-Adapting the existing Invisible Drum Set onto the E155 hardware platform, enabling playing virtual drums through air gestures detected by an IMU, with real-time audio synthesis and low latency.
-:::
-
-::: {.hero-actions}
-[View Project](project.qmd){.btn .btn-primary}
-:::
-
-:::
+::: {.full-width-title}
+::: {.section-title-container}
+# E155 Final Project - Invisible Drum Set {.section-title}
 :::
 :::
 
 ::: {.featured-section #team}
 ::: {.section-title-container}
-## About the Team {.section-title}
+## Team Members {.section-title}
 :::
 
 ::: {.featured-grid}
@@ -62,6 +45,10 @@ Harvey Mudd College student majoring in Engineering and Economics with hands-on 
 :::
 :::
 :::
+:::
+
+::: {.scroll-animate}
+[View Project Documentation →](project.qmd){.btn .btn-primary style="display: block; text-align: center; margin: 2rem auto; max-width: 300px;"}
 :::
 
 <script src="scroll-animations.js"></script>
