@@ -177,6 +177,5 @@ We want to thank staff engineer Xavier Walter and Professor Matthew Spencer for 
 :::
 
 :::
-:::
 
 <script src="scroll-animations.js"></script>
