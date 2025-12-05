@@ -1,0 +1,2 @@
+*.sv merge=ours
+fpga/spi_slave_mcu.sv merge=ours

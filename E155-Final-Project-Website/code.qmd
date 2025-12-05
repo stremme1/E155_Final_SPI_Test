@@ -1,0 +1,265 @@
+::: {.full-width-title}
+::: {.section-title-container}
+## Code Repository {.section-title}
+:::
+:::
+
+::: {.page-content}
+::: {.main-content}
+::: {.scroll-animate}
+This page provides links to the complete source code repository and explains the code organization, structure, and commenting standards used throughout the project.
+:::
+
+::: {.section-title-container}
+## GitHub Repository {.section-title}
+:::
+
+::: {.scroll-animate}
+**TODO: Add GitHub repository URL**
+
+Please update the link below with your actual GitHub repository URL:
+
+[View Complete Source Code on GitHub](https://github.com/your-username/your-repo-name){.btn .btn-primary target="_blank"}
+
+The repository contains all source code, including:
+- FPGA Verilog modules
+- MCU C code
+- Arduino/ESP32 code
+- Testbenches and simulation files
+- Documentation files
+:::
+
+::: {.section-title-container}
+## Code Organization {.section-title}
+:::
+
+::: {.scroll-animate}
+The source code is organized into the following directory structure:
+
+### FPGA Code (Verilog)
+
+**Location**: `Code/fpga/`
+
+**Key Files**:
+- **`drum_trigger_top.sv`** - Top-level module integrating Arduino and MCU SPI slaves, system clock generation (3MHz), and status LEDs
+- **`arduino_spi_slave.sv`** - SPI slave interface for receiving 16-byte packets from Arduino, implements CS-based protocol and clock domain crossing
+- **`spi_slave_mcu.sv`** - SPI slave interface for providing data to MCU, implements clock domain crossing and test mode
+- **`TIMING_CONSTRAINTS.md`** - Complete timing analysis and CDC documentation
+
+**Code Structure**:
+```
+Code/fpga/
+├── drum_trigger_top.sv      # Top-level integration
+├── arduino_spi_slave.sv     # Arduino SPI slave
+├── spi_slave_mcu.sv         # MCU SPI slave
+├── bno085_controller.sv      # Sensor controller
+└── spi_master.sv            # SPI master (if used)
+```
+
+### MCU Code (C)
+
+**Location**: `Code/mcu/` or `Code/Code_for_C_imp/`
+
+**Key Files**:
+- **`main.c`** - Main application code with SPI master implementation
+- **`STM32L432KC_SPI.c`** - SPI peripheral driver
+- **`STM32L432KC_SPI.h`** - SPI peripheral header
+- **`STM32L432KC_GPIO.c`** - GPIO configuration
+- **`STM32L432KC_RCC.c`** - Clock configuration
+
+**Code Structure**:
+```
+Code/mcu/
+├── main.c                   # Main application
+├── STM32L432KC_SPI.c       # SPI driver
+├── STM32L432KC_SPI.h       # SPI header
+├── STM32L432KC_GPIO.c      # GPIO driver
+└── STM32L432KC_RCC.c       # Clock driver
+```
+
+### Arduino Code
+
+**Location**: `Code/Nuk_Option/Arduino/arduino_sensor_bridge/`
+
+**Key Files**:
+- **`ARDUINO_SENSOR_BRIDGE.ino`** - Main Arduino code
+  - BNO085 sensor interface via I2C (using Adafruit_BNO08x library)
+  - SPI master implementation for FPGA communication (100kHz, Mode 0, MSB first)
+  - 16-byte packet formatting with header (0xAA), Euler angles, gyroscope data, and flags
+  - CS pin: D10 (FPGA_SPI_CS) - connects to FPGA arduino_cs_n input
+
+**Code Structure**:
+```
+Code/Nuk_Option/Arduino/
+└── arduino_sensor_bridge/
+    └── ARDUINO_SENSOR_BRIDGE.ino  # Main Arduino code
+```
+
+### Testbenches
+
+**Location**: `Code/test/` or `Code/e155-lab7-main/fpga/sim/`
+
+**Key Files**:
+- Testbenches for individual modules
+- Integration testbenches
+- System-level testbenches
+:::
+
+::: {.section-title-container}
+## Key Source Files {.section-title}
+:::
+
+::: {.scroll-animate}
+### FPGA: Top-Level Module
+
+**File**: `Code/fpga/drum_trigger_top.sv`
+
+**Description**: Integrates both SPI slave interfaces and manages data flow between Arduino and MCU. This is the entry point for the FPGA design.
+
+**Key Features**:
+- Dual SPI slave configuration
+- Data buffering and routing
+- Status LED outputs
+- Reset and clock management
+
+### FPGA: Arduino SPI Slave
+
+**File**: `Code/fpga/arduino_spi_slave.sv`
+
+**Description**: Implements SPI slave interface for receiving 16-byte packets from Arduino. Handles CS-based protocol, data shifting, and packet validation.
+
+**Key Features**:
+- SPI Mode 0 (CPOL=0, CPHA=0)
+- 16-byte packet reception
+- Header validation (0xAA)
+- Error detection
+
+### FPGA: MCU SPI Slave
+
+**File**: `Code/fpga/spi_slave_mcu.sv`
+
+**Description**: Implements SPI slave interface for providing sensor data to MCU. Passes raw 16-byte packet buffer directly to MCU (transparent bridge).
+
+**Key Features**:
+- SPI Mode 0 interface (read-only mode, ignores MOSI)
+- Clock domain crossing from FPGA system clock to MCU SCK domain
+- Continuous snapshot update when CS is high (transaction inactive)
+- Test mode support (outputs known test pattern when enabled)
+- Passes through raw packet buffer without modification
+
+### MCU: Main Application
+
+**File**: `Code/mcu/main.c`
+
+**Description**: Main application code for STM32 MCU. Configures SPI master, reads data from FPGA, and processes sensor data.
+
+**Key Features**:
+- SPI1 master configuration
+- Sensor data reading
+- Quaternion processing
+- Application logic
+
+### MCU: SPI Driver
+
+**File**: `Code/mcu/STM32L432KC_SPI.c`
+
+**Description**: Low-level SPI peripheral driver for STM32L432KC. Handles register configuration and SPI transactions.
+
+**Key Features**:
+- SPI peripheral initialization
+- SPI transaction functions
+- Interrupt handling (if used)
+- Error handling
+
+### Arduino: Sensor Bridge
+
+**File**: `Code/Nuk_Option/Arduino/arduino_sensor_bridge/ARDUINO_SENSOR_BRIDGE.ino`
+
+**Description**: Arduino code that reads BNO085 sensor via I2C and transmits data to FPGA via SPI.
+
+**Key Features**:
+- BNO085 I2C interface (400kHz, using Adafruit_BNO08x library)
+- Quaternion to Euler angle conversion
+- SPI master implementation (100kHz, Mode 0, MSB first, CS pin D10)
+- 16-byte packet formatting: Header (0xAA), Roll/Pitch/Yaw (int16_t scaled by 100), Gyro X/Y/Z (int16_t scaled by 2000), Flags, Reserved
+- 100Hz sensor update rate (10ms intervals)
+:::
+
+::: {.section-title-container}
+## Code Commenting Standards {.section-title}
+:::
+
+::: {.scroll-animate}
+All code follows consistent commenting standards for clarity and maintainability:
+
+### Verilog Commenting
+
+**Module Header**:
+```verilog
+/**
+ * Module Name
+ * Brief description of module purpose
+ * 
+ * Key features:
+ * - Feature 1
+ * - Feature 2
+ * 
+ * @param param_name Description
+ */
+```
+
+**Inline Comments**:
+- Explain complex logic
+- Document state machine transitions
+- Clarify timing requirements
+- Note any design decisions
+
+### C Commenting
+
+**Function Header**:
+```c
+/**
+ * Function Name
+ * 
+ * Brief description of function purpose
+ * 
+ * @param param_name Description
+ * @return Description of return value
+ */
+```
+
+**Inline Comments**:
+- Explain register configurations
+- Document SPI protocol details
+- Clarify data format conversions
+- Note timing requirements
+
+### Code Formatting
+
+- **Indentation**: Consistent 2 or 4 spaces (maintained per file)
+- **Naming**: Descriptive names following language conventions
+- **Structure**: Logical organization with clear separation of concerns
+- **Documentation**: Comments explain "why" not just "what"
+:::
+
+::: {.section-title-container}
+## Direct Code Links {.section-title}
+:::
+
+::: {.scroll-animate}
+**TODO: Update with actual GitHub repository links**
+
+Once your repository is available, add direct links to key files:
+
+- [Top-Level FPGA Module](https://github.com/your-username/your-repo/blob/main/Code/fpga/drum_trigger_top.sv)
+- [Arduino SPI Slave](https://github.com/your-username/your-repo/blob/main/Code/fpga/arduino_spi_slave.sv)
+- [MCU SPI Slave](https://github.com/your-username/your-repo/blob/main/Code/fpga/spi_slave_mcu.sv)
+- [MCU Main Code](https://github.com/your-username/your-repo/blob/main/Code/mcu/main.c)
+- [MCU SPI Driver](https://github.com/your-username/your-repo/blob/main/Code/mcu/STM32L432KC_SPI.c)
+- [Arduino Sensor Bridge](https://github.com/your-username/your-repo/blob/main/Code/Nuk_Option/Arduino/arduino_sensor_bridge/ARDUINO_SENSOR_BRIDGE.ino)
+:::
+
+:::
+:::
+
+<script src="scroll-animations.js"></script>

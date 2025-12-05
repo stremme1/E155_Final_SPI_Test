@@ -1,0 +1,44 @@
+project:
+  type: website
+
+website:
+  title: "E155 Final Project - Sensor Data Pipeline System"
+  description: "E155 Final Project Documentation | Arduino → FPGA → MCU Sensor Data Pipeline | Complete Design Documentation with Schematics, Code, and Video"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: project-documentation.qmd
+        text: Design Documentation
+      - href: code.qmd
+        text: Code Repository
+      - href: schematics.qmd
+        text: Schematics & Diagrams
+      - href: media.qmd
+        text: Photos & Video
+      - href: technical-details.qmd
+        text: Technical Details
+    right:
+      - icon: github
+        href: https://github.com/stremme1
+
+format:
+  html:
+    css: styles.css
+    toc: false
+    toc-depth: 3
+    embed-resources: true
+    link-external-newwindow: true
+    search: true
+    theme: 
+      - custom.scss
+    page-layout: custom
+    grid:
+      sidebar-width: 250px
+      margin-width: 0px
+      body-width: 1200px
+    layout:
+      columns:
+        - width: 33%
+        - width: 67%
+      align: start

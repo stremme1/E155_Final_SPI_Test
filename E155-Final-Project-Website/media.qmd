@@ -1,0 +1,246 @@
+::: {.full-width-title}
+::: {.section-title-container}
+## Photos & Video {.section-title}
+:::
+:::
+
+::: {.page-content}
+::: {.main-content}
+::: {.scroll-animate}
+This page contains photos of the finished design and a video demonstration of the system in operation.
+:::
+
+::: {.section-title-container}
+## Finished Design Photos {.section-title}
+:::
+
+::: {.scroll-animate}
+### Complete System Assembly
+
+**TODO: Add photo of complete system**
+
+Please add a photo showing the complete assembled system with all components (Arduino, FPGA board, MCU board, sensor) clearly visible.
+
+**Recommended Specifications:**
+- Format: JPG or PNG
+- Size: 2000px width minimum
+- Location: Save to `Images/system-assembly.jpg`
+- Ensure good lighting and focus
+- Label components if helpful
+
+**Example placeholder:**
+```markdown
+![Complete System Assembly](Images/system-assembly.jpg){width="100%" alt="Complete assembled system showing Arduino, FPGA, MCU, and BNO085 sensor"}
+```
+:::
+
+::: {.scroll-animate}
+### FPGA Board Close-up
+
+**TODO: Add FPGA board photo**
+
+Please add a close-up photo of the FPGA board showing:
+- FPGA chip
+- Pin connections
+- Any status LEDs
+- Power connections
+
+**Recommended Specifications:**
+- Format: JPG or PNG
+- Size: 1500px width minimum
+- Location: Save to `Images/fpga-board.jpg`
+- Clear focus on board details
+
+**Example placeholder:**
+```markdown
+![FPGA Board](Images/fpga-board.jpg){width="100%" alt="Close-up of FPGA board showing chip and connections"}
+```
+:::
+
+::: {.scroll-animate}
+### MCU Board Close-up
+
+**TODO: Add MCU board photo**
+
+Please add a close-up photo of the STM32 MCU board showing:
+- STM32L432KC chip
+- SPI interface connections
+- Power and ground connections
+- Any peripheral connections
+
+**Recommended Specifications:**
+- Format: JPG or PNG
+- Size: 1500px width minimum
+- Location: Save to `Images/mcu-board.jpg`
+- Clear focus on board details
+
+**Example placeholder:**
+```markdown
+![MCU Board](Images/mcu-board.jpg){width="100%" alt="Close-up of STM32 MCU board showing chip and connections"}
+```
+:::
+
+::: {.scroll-animate}
+### Arduino/ESP32 Setup
+
+**TODO: Add Arduino setup photo**
+
+Please add a photo showing the Arduino/ESP32 board with:
+- BNO085 sensor connection
+- SPI connections to FPGA
+- Power connections
+
+**Recommended Specifications:**
+- Format: JPG or PNG
+- Size: 1500px width minimum
+- Location: Save to `Images/arduino-setup.jpg`
+- Show sensor and connections clearly
+
+**Example placeholder:**
+```markdown
+![Arduino Setup](Images/arduino-setup.jpg){width="100%" alt="Arduino/ESP32 board with BNO085 sensor and connections"}
+```
+:::
+
+::: {.scroll-animate}
+### Wiring and Connections
+
+**TODO: Add wiring photo**
+
+Please add a photo showing the wiring between components:
+- SPI connections (SCK, MOSI, MISO, CS)
+- Power and ground distribution
+- I2C connections (if visible)
+- Overall wiring organization
+
+**Recommended Specifications:**
+- Format: JPG or PNG
+- Size: 2000px width minimum
+- Location: Save to `Images/wiring.jpg`
+- Clear view of all connections
+
+**Example placeholder:**
+```markdown
+![System Wiring](Images/wiring.jpg){width="100%" alt="Wiring connections between Arduino, FPGA, and MCU"}
+```
+:::
+
+::: {.scroll-animate}
+### Testing and Validation
+
+**TODO: Add testing photos**
+
+Please add photos showing:
+- System in operation
+- Oscilloscope captures (if available)
+- Serial monitor output (if applicable)
+- Any debugging setup
+
+**Recommended Specifications:**
+- Format: JPG or PNG
+- Size: 1500px width minimum
+- Location: Save to `Images/testing-*.jpg` (multiple files)
+- Clear documentation of test results
+
+**Example placeholder:**
+```markdown
+![System Testing](Images/testing-operation.jpg){width="100%" alt="System in operation during testing"}
+```
+:::
+
+::: {.section-title-container}
+## Video Demonstration {.section-title}
+:::
+
+::: {.scroll-animate}
+### Project Demonstration Video
+
+**TODO: Add video link or embed**
+
+Please add your demonstration video. The video should be:
+- Hosted in the provided Google Drive folder
+- Named: `<LastName1><LastName2><VideoName>` (e.g., `StralkaFinalProjectDemo`)
+- Shows the complete system in operation
+- Demonstrates key features and functionality
+
+**Video Content Should Include:**
+- System overview and setup
+- Sensor data acquisition demonstration
+- Data flow through the pipeline
+- Application-specific functionality
+- Any visual indicators (LEDs, displays, etc.)
+
+### Embedding Options
+
+**Option 1: Google Drive Embed (Recommended)**
+
+If your video is in Google Drive, you can embed it using an iframe:
+
+```html
+<iframe src="https://drive.google.com/file/d/YOUR_FILE_ID/preview" width="100%" height="600" allow="autoplay"></iframe>
+```
+
+To get the file ID:
+1. Open your video in Google Drive
+2. Click "Share" → "Get link" → "Anyone with the link"
+3. Copy the file ID from the URL: `https://drive.google.com/file/d/FILE_ID/view`
+
+**Option 2: Direct Link**
+
+Alternatively, provide a direct link:
+
+[View Demonstration Video on Google Drive](https://drive.google.com/file/d/YOUR_FILE_ID/view){.btn .btn-primary target="_blank"}
+
+**Option 3: YouTube/Vimeo**
+
+If you upload to YouTube or Vimeo, you can embed directly:
+
+```html
+<iframe width="100%" height="600" src="https://www.youtube.com/embed/VIDEO_ID" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+```
+
+### Video Description
+
+**TODO: Add video description**
+
+Please provide a brief description of what the video demonstrates:
+
+- System overview and components
+- Key features shown
+- Demonstration highlights
+- Any special notes about the demonstration
+:::
+
+::: {.section-title-container}
+## Adding Your Media {.section-title}
+:::
+
+::: {.scroll-animate}
+### Instructions for Adding Photos
+
+1. **Take high-quality photos** with good lighting and focus
+2. **Resize if needed** to reasonable file sizes (aim for 2-5MB per photo)
+3. **Save to `Images/` directory** with descriptive filenames
+4. **Update this page** by replacing placeholder sections with actual image references
+
+### Photo Guidelines
+
+- **Format**: JPG for photos, PNG for diagrams/screenshots
+- **Resolution**: Minimum 1500px width for close-ups, 2000px for full system
+- **File Size**: Optimize to keep page load reasonable (2-5MB max per image)
+- **Naming**: Use descriptive, lowercase filenames (e.g., `system-assembly.jpg`)
+- **Alt Text**: Always include descriptive alt text for accessibility
+
+### Video Guidelines
+
+- **Format**: MP4 recommended
+- **Resolution**: 1080p (1920x1080) minimum
+- **Duration**: 3-10 minutes recommended
+- **Content**: Show complete system operation, key features, and results
+- **Naming**: Follow convention: `<LastName1><LastName2><VideoName>`
+:::
+
+:::
+:::
+
+<script src="scroll-animations.js"></script>

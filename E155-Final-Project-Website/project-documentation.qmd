@@ -1,0 +1,248 @@
+::: {.full-width-title}
+::: {.section-title-container}
+## Design Documentation {.section-title}
+:::
+:::
+
+::: {.page-content}
+::: {.main-content}
+::: {.scroll-animate}
+This page provides a comprehensive explanation of the system design, how it works, and the key design decisions made during development.
+:::
+
+::: {.section-title-container}
+## System Architecture {.section-title}
+:::
+
+::: {.scroll-animate}
+The system implements a three-stage sensor data pipeline:
+
+**Stage 1: Arduino (Sensor Interface)**
+- Reads BNO085 9-axis IMU sensor data via I2C
+- Converts quaternion and gyroscope data to Euler angles
+- Packages data into 16-byte SPI packets
+- Acts as SPI master, transmitting to FPGA
+
+**Stage 2: FPGA (Data Bridge)**
+- Receives 16-byte packets from Arduino via SPI slave interface
+- Parses and buffers sensor data
+- Acts as SPI slave to MCU, providing data on request
+- Implements dual SPI slave interfaces (Arduino → FPGA → MCU)
+
+**Stage 3: MCU (Data Processing)**
+- Reads sensor data from FPGA via SPI master interface
+- Processes quaternion and gyroscope data
+- Implements application-specific logic for sensor data utilization
+
+### Data Flow Diagram
+
+```
+BNO085 Sensor (I2C) → Arduino → [SPI] → FPGA → [SPI] → STM32 MCU
+```
+
+The FPGA acts as a bridge, allowing the Arduino (SPI master) and MCU (SPI master) to communicate through the FPGA's dual slave interfaces.
+:::
+
+::: {.section-title-container}
+## How the Design Works {.section-title}
+:::
+
+::: {.scroll-animate}
+### SPI Communication Protocol
+
+The system uses SPI Mode 0 (CPOL=0, CPHA=0) with MSB-first bit ordering:
+
+**Arduino → FPGA SPI Interface:**
+- Clock Speed: 100kHz
+- Packet Format: 16 bytes
+  - Byte 0: Header (0xAA)
+  - Bytes 1-2: Roll (int16_t, MSB first, scaled by 100)
+  - Bytes 3-4: Pitch (int16_t, MSB first, scaled by 100)
+  - Bytes 5-6: Yaw (int16_t, MSB first, scaled by 100)
+  - Bytes 7-8: Gyro X (int16_t, MSB first, scaled by 2000)
+  - Bytes 9-10: Gyro Y (int16_t, MSB first, scaled by 2000)
+  - Bytes 11-12: Gyro Z (int16_t, MSB first, scaled by 2000)
+  - Byte 13: Flags (bit 0 = Euler valid, bit 1 = Gyro valid)
+  - Bytes 14-15: Reserved (0x00)
+
+**FPGA → MCU SPI Interface:**
+- FPGA passes raw 16-byte packet buffer directly to MCU (same format as received from Arduino)
+- MCU reads data via SPI master transactions
+- Packet format: Same 16-byte structure as Arduino sends (header, Roll, Pitch, Yaw, Gyro X/Y/Z, Flags, Reserved)
+- FPGA acts as transparent bridge, forwarding data without modification
+
+### FPGA Implementation
+
+The FPGA implements two SPI slave modules:
+1. **`arduino_spi_slave.sv`**: Receives data from Arduino
+   - Handles CS-based protocol
+   - Shifts in data on SCK rising edge
+   - Validates header byte (0xAA)
+   - Buffers complete 16-byte packets
+
+2. **`spi_slave_mcu.sv`**: Provides data to MCU
+   - Responds to MCU SPI master requests
+   - Passes raw 16-byte packet buffer directly to MCU (transparent bridge)
+   - Implements clock domain crossing from FPGA system clock to MCU SCK domain
+   - Includes test mode for debugging (outputs known test pattern when enabled)
+
+The top-level module (`drum_trigger_top.sv`) integrates both SPI slaves and manages data flow between them. The FPGA system clock runs at 3MHz (48MHz HSOSC divided by 16), providing sufficient timing margins for SPI operations (Arduino: 100kHz, MCU: variable).
+
+### MCU Implementation
+
+The STM32L432KC MCU:
+- Configures SPI1 as master (PB3=SCK, PB5=MOSI, PB4=MISO, PA11=NSS)
+- Reads sensor data from FPGA via SPI transactions
+- Processes quaternion data for orientation tracking
+- Uses gyroscope data for motion detection
+- Implements application-specific processing logic
+:::
+
+::: {.section-title-container}
+## Key Design Decisions {.section-title}
+:::
+
+::: {.scroll-animate}
+### 1. FPGA as Bridge Architecture
+
+**Decision**: Use FPGA as an intermediate bridge between Arduino and MCU rather than direct Arduino-to-MCU connection.
+
+**Rationale**:
+- Allows for data processing and formatting in the FPGA
+- Provides flexibility for future enhancements (filtering, buffering)
+- Separates concerns: Arduino handles sensor interface, FPGA handles protocol conversion, MCU handles application logic
+- Enables independent clock domains and timing control
+
+### 2. Dual SPI Slave Design
+
+**Decision**: Implement two independent SPI slave interfaces on the FPGA.
+
+**Rationale**:
+- Allows both Arduino and MCU to act as SPI masters
+- Simplifies protocol design (no arbitration needed)
+- Enables asynchronous data flow (Arduino can send while MCU reads)
+- Provides clear separation of data paths
+
+### 3. 16-Byte Packet Format
+
+**Decision**: Use fixed 16-byte packets for Arduino-to-FPGA communication.
+
+**Rationale**:
+- Fixed size simplifies FPGA buffering logic
+- Header byte (0xAA) enables packet synchronization
+- Includes all necessary sensor data (Euler angles + gyroscope)
+- Leaves room for future expansion (reserved bytes)
+
+### 4. SPI Mode 0 Selection
+
+**Decision**: Use SPI Mode 0 (CPOL=0, CPHA=0) for all SPI interfaces.
+
+**Rationale**:
+- Standard mode supported by all components
+- Simplifies timing analysis
+- Well-documented and widely used
+- Compatible with Arduino SPI library defaults
+:::
+
+::: {.section-title-container}
+## Technical Challenges and Solutions {.section-title}
+:::
+
+::: {.scroll-animate}
+### Challenge 1: SPI Timing Synchronization
+
+**Problem**: Ensuring proper timing between Arduino SPI master and FPGA SPI slave, especially with different clock domains.
+
+**Solution**:
+- Used CS-based protocol to clearly define transaction boundaries
+- Implemented proper clock edge detection (rising edge for data capture)
+- Added header validation to detect packet start
+- Implemented state machine to handle SPI transaction lifecycle
+
+### Challenge 2: Clock Domain Crossing (CDC)
+
+**Problem**: Safely transferring data between asynchronous clock domains (Arduino SCK, FPGA system clock, MCU SCK).
+
+**Solution**:
+- Implemented CS-based safe read approach: wait for CS high (transaction complete) before reading data
+- Added 3-cycle delay after CS high to ensure SCK domain is idle (SPI Mode 0 guarantees SCK idle when CS high)
+- Used atomic reads of complete 16-byte packets to prevent partial updates
+- Achieved 10:1 timing margin (3 cycles = 1us, well above worst-case SPI timing of 10us)
+- Documented timing constraints and CDC strategy in `TIMING_CONSTRAINTS.md`
+
+### Challenge 3: Dual SPI Slave Coordination
+
+**Problem**: Managing two independent SPI slave interfaces without conflicts.
+
+**Solution**:
+- Used separate state machines for each SPI slave
+- Implemented independent buffers for each interface
+- Added status flags to indicate data availability
+- Designed clear data flow path: Arduino → Buffer → MCU
+
+### Challenge 4: Clock Domain Crossing Between SPI Interfaces
+
+**Problem**: Transferring data from Arduino SPI slave (clocked on Arduino SCK) to MCU SPI slave (clocked on MCU SCK) through FPGA system clock domain.
+
+**Solution**:
+- Used continuous snapshot update approach: snapshot updated when CS is high (transaction inactive)
+- Snapshot frozen when CS is low (during active transaction)
+- Data captured from registered clk-domain signals before snapshot
+- Safe because MCU only reads when CS is low (snapshot is frozen during read)
+- Verified with comprehensive timing analysis and testbenches
+:::
+
+::: {.section-title-container}
+## Techniques for Future Students {.section-title}
+:::
+
+::: {.scroll-animate}
+This project demonstrates several techniques that would be useful for future students:
+
+### 1. SPI Slave Implementation in Verilog
+
+The FPGA SPI slave modules demonstrate:
+- Proper handling of SPI clock domain crossing
+- CS-based transaction management
+- Bit-level serial data reception
+- Packet framing and validation
+
+**Key Files**: `arduino_spi_slave.sv`, `spi_slave_mcu.sv`
+
+### 2. Multi-Master SPI Architecture
+
+The dual slave design shows how to:
+- Handle multiple SPI masters with one device
+- Implement independent SPI interfaces
+- Manage data flow between interfaces
+- Coordinate timing between different clock domains
+
+**Key Files**: `drum_trigger_top.sv`
+
+### 3. Sensor Data Processing Pipeline
+
+The system demonstrates:
+- I2C sensor interface (Arduino side) - BNO085 sensor communication
+- SPI protocol bridge (FPGA transparently forwards data)
+- Real-time sensor data handling at 100Hz update rate
+- Clock domain crossing techniques for asynchronous interfaces
+
+**Key Files**: `ARDUINO_SENSOR_BRIDGE.ino`, `arduino_spi_slave.sv`, `spi_slave_mcu.sv`
+
+### 4. MCU-FPGA Integration
+
+The MCU code shows:
+- SPI master configuration for STM32
+- Reading structured data from FPGA
+- Processing quaternion and gyroscope data
+- Application-level sensor data utilization
+
+**Key Files**: `main.c`, `STM32L432KC_SPI.c`
+
+For detailed implementation details, see the [Technical Details](technical-details.qmd) page.
+:::
+
+:::
+:::
+
+<script src="scroll-animations.js"></script>
