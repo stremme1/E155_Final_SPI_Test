@@ -27,4 +27,9 @@ void TIM2_ConfigurePA5(void);  // Configure PA5 for TIM2_CH1
 void TIM2_InitAudio(void);  // Complete audio setup function
 void TIM2_Silence(void);  // Set PWM duty cycle to 0% for silence
 
+// TIM6 Audio Interrupt Functions (for non-blocking multi-channel audio)
+void TIM6_InitAudioInterrupt(void);  // Initialize TIM6 for 22.05kHz audio interrupts
+void TIM6_StartAudioInterrupt(void);  // Start TIM6 audio interrupt timer
+void TIM6_StopAudioInterrupt(void);   // Stop TIM6 audio interrupt timer
+
 #endif

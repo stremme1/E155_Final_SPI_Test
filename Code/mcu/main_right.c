@@ -213,6 +213,11 @@ int main(void) {
     DAC_InitAudio(DAC_CHANNEL_1);
     debug_print("[INIT] DAC initialized successfully\r\n");
     
+    // Initialize multi-channel audio system (non-blocking, timer interrupt based)
+    debug_print("[INIT] Initializing audio player (multi-channel, non-blocking)...\r\n");
+    audio_player_init();
+    debug_print("[INIT] Audio player initialized successfully\r\n");
+    
     // CRITICAL TEST: Direct register write test - EXACTLY like Lab4
     // This bypasses all functions to test if the DAC hardware works at all
     // Measure PA4 with multimeter - you should see voltage changes

@@ -9,6 +9,7 @@
 
 #include "STM32L432KC_TIMER.h"
 #include "STM32L432KC_RCC.h"
+#include <stdint.h>
 
 // Initialize TIM2 for PWM generation
 void TIM2_Init(void) {
@@ -106,4 +107,67 @@ void TIM2_InitAudio(void) {
     
     // Initialize TIM2
     TIM2_Init();
+}
+
+// ============================================================================
+// TIM6 Audio Interrupt Functions
+// ============================================================================
+// TIM6 is used for audio sample rate timing (22.05kHz interrupts)
+// This enables non-blocking audio playback with multi-channel mixing
+
+// Initialize TIM6 for audio sample rate interrupts (22.05kHz)
+// System clock: 80MHz, APB1 timer clock: 80MHz (PPRE1 = 1)
+// Target frequency: 22,050 Hz
+// Calculation: ARR = (80,000,000 / 22,050) - 1 ≈ 3628
+void TIM6_InitAudioInterrupt(void) {
+    // Enable TIM6 clock (APB1ENR1 bit 4)
+    RCC->APB1ENR1 |= (1 << 4);
+    
+    // Small delay for clock stabilization
+    volatile int delay = 10;
+    while (delay-- > 0) {
+        __asm("nop");
+    }
+    
+    // Stop timer before configuration
+    TIM6->CR1 &= ~(1 << 0);  // Clear CEN bit
+    
+    // Configure prescaler: PSC = 0 (no prescaling, timer runs at 80MHz)
+    TIM6->PSC = 0;
+    
+    // Configure auto-reload register for 22.05kHz
+    // ARR = (Timer_Clock / Target_Frequency) - 1
+    // ARR = (80,000,000 / 22,050) - 1 = 3628.12... ≈ 3628
+    TIM6->ARR = 3628;
+    
+    // Enable update interrupt (UIE bit in DIER register)
+    TIM6->DIER |= (1 << 0);
+    
+    // Clear any pending interrupt
+    TIM6->SR &= ~(1 << 0);  // Clear UIF bit
+    
+    // Enable TIM6 interrupt in NVIC
+    // TIM6_DAC_IRQn = 54 (from stm32l432xx.h)
+    // ISER[0] covers interrupts 0-31, ISER[1] covers 32-63
+    // So interrupt 54 is in ISER[1], bit (54 - 32) = bit 22
+    NVIC->ISER[1] |= (1 << 22);  // Enable TIM6_DAC interrupt
+    
+    // Set interrupt priority (lower number = higher priority)
+    // Use priority 2 (moderate priority, allows other interrupts)
+    // For Cortex-M4: NVIC->IP is array of bytes, priority is in bits 7:4
+    // Priority value needs to be shifted: (priority << (8 - __NVIC_PRIO_BITS))
+    // __NVIC_PRIO_BITS = 4, so shift by 4: (2 << 4) = 0x20
+    NVIC->IP[54] = (uint8_t)((2 << 4) & 0xFF);  // Priority 2 (bits 7:4)
+}
+
+// Start TIM6 audio interrupt timer
+void TIM6_StartAudioInterrupt(void) {
+    // Enable counter (CEN bit)
+    TIM6->CR1 |= (1 << 0);
+}
+
+// Stop TIM6 audio interrupt timer
+void TIM6_StopAudioInterrupt(void) {
+    // Disable counter (CEN bit)
+    TIM6->CR1 &= ~(1 << 0);
 }
