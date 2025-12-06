@@ -9,7 +9,6 @@
 
 #include "STM32L432KC_TIMER.h"
 #include "STM32L432KC_RCC.h"
-#include <stdint.h>
 
 // Initialize TIM2 for PWM generation
 void TIM2_Init(void) {
@@ -154,10 +153,8 @@ void TIM6_InitAudioInterrupt(void) {
     
     // Set interrupt priority (lower number = higher priority)
     // Use priority 2 (moderate priority, allows other interrupts)
-    // For Cortex-M4: NVIC->IP is array of bytes, priority is in bits 7:4
-    // Priority value needs to be shifted: (priority << (8 - __NVIC_PRIO_BITS))
-    // __NVIC_PRIO_BITS = 4, so shift by 4: (2 << 4) = 0x20
-    NVIC->IP[54] = (uint8_t)((2 << 4) & 0xFF);  // Priority 2 (bits 7:4)
+    // Each interrupt has 4 bits for priority (bits 7:4 of IPR register)
+    NVIC->IPR[54] = (2 << 4);  // Priority 2 (bits 7:4)
 }
 
 // Start TIM6 audio interrupt timer
