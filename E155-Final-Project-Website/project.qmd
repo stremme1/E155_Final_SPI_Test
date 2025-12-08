@@ -112,10 +112,6 @@ Files responsible for interpreting sensor data against the drum zone map.
 
 - **`drum_detector.c`** Core drum trigger detection using yaw zones, pitch thresholds, and gyroscope readings. Checks both sensors against predefined zones and returns drum codes (0x00-0x07) when strike conditions met.
 
-![Drum Logic Table](Images/TableX_drum Sounds decoder left right.png){width="100%" style="margin: 2rem 0;"}
-
-*Table: Drum detection logic for left and right hand sensors*
-
 The following logic pertains to each left and right hand sensor:
 
 | Code | Instrument | Hand | Yaw Range (°) | Pitch / Condition | Gyro Y | Gyro Z |
@@ -215,6 +211,7 @@ Together, the Arduino Nano ESP32 platform and the Adafruit_BNO08x library provid
 ## Results {.section-title}
 :::
 
+::: {.full-width-content}
 ::: {.scroll-animate}
 Below you can observe the final build and performance of our invisible drum set.
 
@@ -236,7 +233,7 @@ Below you can observe the final build and performance of our invisible drum set.
 
 Before validating the SPI interface, the correct operation of the BNO085 sensor stream was confirmed using the Arduino Serial Monitor. As shown in the figure below, the Arduino receives fused motion data from SHTP Channel 2, including Euler angles and gyroscope measurements. The reported Status = 1 confirms valid quaternion and gyro results, while the dt field demonstrates a stable sampling interval. This establishes that the sensor is configured correctly prior to forwarding data over SPI.
 
-![Arduino Serial Monitor Sensor Data](Images/Arduino serial monitor.png){width="100%" style="margin: 2rem 0;"}
+![Arduino Serial Monitor Sensor Data](Images/image21.png){width="100%" style="margin: 2rem 0;"}
 
 *Figure: Arduino Serial Monitor Sensor Data*
 
@@ -246,7 +243,7 @@ To verify correct data transfer between the Arduino ESP32 and the FPGA, the SPI 
 
 In the SPI trace, the Chip Select (CS) line goes low to initiate communication, and the Serial Clock (SCLK) drives the shifting of bits on the MOSI line. The logic analyzer successfully decodes the transmitted bytes, showing the correct formatting of the motion-data packet. The packet begins with the synchronization header 0xAA, followed by three 16-bit signed values corresponding to the Euler angles (roll, pitch, yaw), encoded in MSB-first two's-complement representation:
 
-![Logic Analyzer with outputted SPI Protocol](Images/Logic Anlyser with .png){width="100%" style="margin: 2rem 0;"}
+![Logic Analyzer with outputted SPI Protocol](Images/image15.png){width="100%" style="margin: 2rem 0;"}
 
 *Figure: Logic Analyzer with outputted SPI Protocol*
 
@@ -297,7 +294,7 @@ As shown in the figure below, the MCU successfully receives the formatted 16-byt
 
 *Table: Custom 16-byte SPI packet structure used for transmitting fused orientation and inertial data from the Arduino through the FPGA to the MCU. The packet includes a 0xAA synchronization header followed by sensor measurements and status information extracted from SHTP Channel 2 reports.*
 
-![Logic Analyzer showcasing the SPI Protocol](Images/image4.png){width="100%" style="margin: 2rem 0;"}
+![Logic Analyzer showcasing the SPI Protocol](Images/image20.png){width="100%" style="margin: 2rem 0;"}
 
 *Figure: Logic Analyzer showcasing the SPI Protocol*
 
@@ -308,6 +305,7 @@ To verify audio output capability and confirm correct DAC initialization, the MC
 ![Initialization of all drum sounds outputted by the DAC](Images/image5.png){width="100%" style="margin: 2rem 0;"}
 
 *Figure: Initialization of all drum sounds outputted by the DAC*
+:::
 :::
 
 ::: {.section-title-container}

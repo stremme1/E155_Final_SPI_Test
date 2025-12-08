@@ -2680,3 +2680,50 @@ h5, h6 { font-size: clamp(1.125rem, 2vw, 1.25rem); }
     padding-right: 16px !important;
   }
 }
+
+/* Full width content for project page */
+.full-width-content {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 var(--space-8) !important;
+  box-sizing: border-box !important;
+}
+
+.full-width-content .scroll-animate {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Ensure tables and images are full width */
+.full-width-content table,
+.full-width-content img {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Results section specific styling */
+#results,
+.section-title-container:has(+ .scroll-animate:has-text("Results")) {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Make main content full width */
+main.content,
+.quarto-layout-row,
+.quarto-layout-row > .quarto-layout-cell {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Full width for all sections */
+.section-title-container,
+.full-width-content,
+.scroll-animate {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding-left: var(--space-8) !important;
+  padding-right: var(--space-8) !important;
+  box-sizing: border-box !important;
+}
