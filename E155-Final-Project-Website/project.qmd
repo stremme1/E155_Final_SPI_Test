@@ -52,6 +52,8 @@ This multi-protocol, distributed architecture enables reliable motion data trans
 
 ![Final Dual-Stick Embedded System Prototype](Images/image13.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
+*Figure: Final Dual-Stick Embedded System Prototype*
+
 ::: {.section-title-container}
 ## FPGA Design Details {.section-title}
 :::
@@ -209,15 +211,15 @@ Together, the Arduino Nano ESP32 platform and the Adafruit_BNO08x library provid
 
 Below you can observe the final build and performance of our invisible drum set.
 
-![Full Dual-Stick Embedded System Prototype](Images/image13.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
+![Full Dual-Stick Embedded System Prototype](Images/image13.png){width="60%" style="max-width: 600px; margin: 2rem auto; display: block;"}
 
 *Figure: Full Dual-Stick Embedded System Prototype*
 
-![User Testing of the Dual-Stick Invisible Drum Set Prototype](Images/image22.jpg){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
+![User Testing of the Dual-Stick Invisible Drum Set Prototype](Images/image22.jpg){width="60%" style="max-width: 600px; margin: 2rem auto; display: block;"}
 
 *Figure: User Testing of the Dual-Stick Invisible Drum Set Prototype*
 
-![Final Prototype Assembly with Integrated Speaker Output](Images/image16.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
+![Final Prototype Assembly with Integrated Speaker Output](Images/image16.png){width="60%" style="max-width: 600px; margin: 2rem auto; display: block;"}
 
 *Figure: Final Prototype Assembly with Integrated Speaker Output*
 
@@ -227,7 +229,7 @@ Below you can observe the final build and performance of our invisible drum set.
 
 Before validating the SPI interface, the correct operation of the BNO085 sensor stream was confirmed using the Arduino Serial Monitor. As shown in the figure below, the Arduino receives fused motion data from SHTP Channel 2, including Euler angles and gyroscope measurements. The reported Status = 1 confirms valid quaternion and gyro results, while the dt field demonstrates a stable sampling interval. This establishes that the sensor is configured correctly prior to forwarding data over SPI.
 
-![Arduino Serial Monitor Sensor Data](Images/image21.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
+![Arduino Serial Monitor Sensor Data](Images/image21.png){width="60%" style="max-width: 600px; margin: 2rem auto; display: block;"}
 
 *Figure: Arduino Serial Monitor Sensor Data*
 
