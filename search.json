@@ -21,11 +21,25 @@
     "text": "System Overview"
   },
   {
-    "objectID": "project.html#hardware-components",
-    "href": "project.html#hardware-components",
+    "objectID": "project.html#fpga-design-details",
+    "href": "project.html#fpga-design-details",
     "title": "E155 Final Project - Invisible Drumset",
-    "section": "Hardware Components",
-    "text": "Hardware Components"
+    "section": "FPGA Design Details",
+    "text": "FPGA Design Details"
+  },
+  {
+    "objectID": "project.html#mcu-design-details",
+    "href": "project.html#mcu-design-details",
+    "title": "E155 Final Project - Invisible Drumset",
+    "section": "MCU Design Details",
+    "text": "MCU Design Details"
+  },
+  {
+    "objectID": "project.html#new-hardware",
+    "href": "project.html#new-hardware",
+    "title": "E155 Final Project - Invisible Drumset",
+    "section": "New Hardware",
+    "text": "New Hardware"
   },
   {
     "objectID": "project.html#results",
@@ -35,13 +49,6 @@
     "text": "Results"
   },
   {
-    "objectID": "project.html#schematics-diagrams",
-    "href": "project.html#schematics-diagrams",
-    "title": "E155 Final Project - Invisible Drumset",
-    "section": "Schematics & Diagrams",
-    "text": "Schematics & Diagrams"
-  },
-  {
     "objectID": "project.html#code-repository",
     "href": "project.html#code-repository",
     "title": "E155 Final Project - Invisible Drumset",
@@ -49,18 +56,11 @@
     "text": "Code Repository"
   },
   {
-    "objectID": "project.html#photos-video",
-    "href": "project.html#photos-video",
+    "objectID": "project.html#technical-information",
+    "href": "project.html#technical-information",
     "title": "E155 Final Project - Invisible Drumset",
-    "section": "Photos & Video",
-    "text": "Photos & Video"
-  },
-  {
-    "objectID": "project.html#bill-of-materials",
-    "href": "project.html#bill-of-materials",
-    "title": "E155 Final Project - Invisible Drumset",
-    "section": "Bill of Materials",
-    "text": "Bill of Materials"
+    "section": "Technical Information",
+    "text": "Technical Information"
   },
   {
     "objectID": "project.html#references",
@@ -75,6 +75,13 @@
     "title": "E155 Final Project - Invisible Drumset",
     "section": "Acknowledgements",
     "text": "Acknowledgements"
+  },
+  {
+    "objectID": "project.html#appendix-a-fpga-based-bno085-shtp-driver-initial-implementation",
+    "href": "project.html#appendix-a-fpga-based-bno085-shtp-driver-initial-implementation",
+    "title": "E155 Final Project - Invisible Drumset",
+    "section": "Appendix A: FPGA-Based BNO085 SHTP Driver (Initial Implementation)",
+    "text": "Appendix A: FPGA-Based BNO085 SHTP Driver (Initial Implementation)"
   },
   {
     "objectID": "index.html#team-members",
