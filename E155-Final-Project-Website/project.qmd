@@ -8,16 +8,14 @@
 ## Abstract {.section-title}
 :::
 
-::: {.scroll-animate style="max-width: 800px; margin: 0 auto; text-align: center; padding: 0 var(--space-8); width: 100%; box-sizing: border-box;"}
+::: {style="max-width: 800px; margin: 0 auto; text-align: center; padding: 0 var(--space-8); width: 100%; box-sizing: border-box;"}
 This project aims to adapt the existing Invisible Drum Set—originally implemented with an Arduino Nano and BNO055 IMU sensor—onto the E155 hardware platform, consisting of an STM32 MCU and UPduino FPGA. It will enable playing virtual drums through air gestures detected by the IMU, with real-time audio synthesis and low latency.
 :::
 
-::: {.full-width-content}
 ::: {.section-title-container}
 ## System Overview {.section-title}
 :::
 
-::: {.scroll-animate}
 Each drumstick is designed as a fully independent embedded system, containing its own BNO085 sensor, Arduino Nano ESP32, FPGA, and STM32 microcontroller. This distributed architecture ensures that the left and right sticks remain electrically and logically isolated — improving robustness, reducing latency, and making the system scalable to additional sticks in the future.
 
 The data pipeline in each stick relies on multiple communication protocols between its hardware components. The BNO085 sensor communicates with the Arduino Nano ESP32 using the I²C protocol, with the high-level SHTP protocol layered on top to enable structured transfer of fused motion data. Once the sensor data is received by the ESP32, it is forwarded to the FPGA over an SPI interface, where the FPGA operates as the SPI slave and the ESP32 serves as the SPI master. On the FPGA, the data is packaged into a custom packet format and relayed to the MCU for trigger processing.
@@ -53,13 +51,11 @@ This multi-protocol, distributed architecture enables reliable motion data trans
 *Figure: Schematic diagram of the System*
 
 ![Final Dual-Stick Embedded System Prototype](Images/image13.png){width="100%" style="margin: 2rem 0;"}
-:::
 
 ::: {.section-title-container}
 ## FPGA Design Details {.section-title}
 :::
 
-::: {.scroll-animate}
 Initially, we attempted to configure the BNO085 sensors directly from the FPGA using a 11-state finite state machine (FSM) with encoding logic implemented using DSP blocks and BRAM (Block RAM) resources. This approach aimed to handle the Sensor Hub Transport Protocol (SHTP) communication directly on the FPGA, including sensor initialization, command encoding, and data packet parsing. While this implementation successfully extracted data from the sensors (as shown in the figure below), the approach proved unreliable in practice.
 
 ![FPGA Data Output Trace](Images/FPGAOUTPUT trace.png){width="100%" style="margin: 2rem 0;"}
@@ -91,7 +87,6 @@ This transition to using Arduino for sensor data acquisition and FPGA for data p
 ## MCU Design Details {.section-title}
 :::
 
-::: {.scroll-animate}
 The STM32 microcontroller decodes the packaged data packets from the FPGA, identifies drum triggers based on gesture patterns, and outputs audio samples through the DAC to drive the speaker. This transition to using Arduino for sensor data acquisition and FPGA for data packaging provided the reliability and consistency needed for real-time operation, while maintaining the FPGA's role in efficient data processing and the MCU's role in audio playback.
 
 ![MCU Flow Diagram](Images/image19.png){width="100%" style="margin: 2rem 0;"}
@@ -174,7 +169,6 @@ Low-level drivers for peripheral configuration and control.
 ## New Hardware {.section-title}
 :::
 
-::: {.scroll-animate}
 ### BNO085 IMU: Sensor and Communication Protocol
 
 The BNO085 is a 9-axis intelligent IMU that integrates an accelerometer, gyroscope, and magnetometer with an onboard sensor-fusion processor. Instead of exposing raw sensor registers directly, the BNO085 communicates through the Sensor Hub Transport Protocol (SHTP) — a structured, packet-based protocol that runs over standard physical interfaces including I²C, SPI, or UART, depending on the configuration of the protocol-select pins at startup.
@@ -213,8 +207,6 @@ Together, the Arduino Nano ESP32 platform and the Adafruit_BNO08x library provid
 ## Results {.section-title}
 :::
 
-::: {.full-width-content}
-::: {.scroll-animate}
 Below you can observe the final build and performance of our invisible drum set.
 
 ![Full Dual-Stick Embedded System Prototype](Images/image13.png){width="100%" style="margin: 2rem 0;"}
@@ -307,14 +299,11 @@ To verify audio output capability and confirm correct DAC initialization, the MC
 ![Initialization of all drum sounds outputted by the DAC](Images/image18.png){width="100%" style="margin: 2rem 0;"}
 
 *Figure: Initialization of all drum sounds outputted by the DAC*
-:::
-:::
 
 ::: {.section-title-container}
 ## Code Repository {.section-title}
 :::
 
-::: {.scroll-animate}
 [View Complete Source Code on GitHub](https://github.com/stremme1/E155_Final_SPI_Test){.btn .btn-primary target="_blank" style="display: block; text-align: center; margin: 2rem auto; max-width: 300px;"}
 
 The repository contains all source code, including FPGA Verilog modules, MCU C code, Arduino/ESP32 code, testbenches, and documentation files.
@@ -327,7 +316,6 @@ The repository contains all source code, including FPGA Verilog modules, MCU C c
 ## Technical Information {.section-title}
 :::
 
-::: {.scroll-animate}
 ### Bill of Materials
 
 | Material | Quantity | Cost | Total |
@@ -350,7 +338,6 @@ The repository contains all source code, including FPGA Verilog modules, MCU C c
 ## References {.section-title}
 :::
 
-::: {.scroll-animate}
 - [BNO055 Datasheet](https://cdn-shop.adafruit.com/datasheets/BST_BNO055_DS000_12.pdf)
 - [STM32L432KC Documentation](https://www.st.com/en/microcontrollers-microprocessors/stm32l432kc.html#documentation)
 - [UPduino Documentation](https://upduino.readthedocs.io/en/latest/)
@@ -367,7 +354,7 @@ The repository contains all source code, including FPGA Verilog modules, MCU C c
 ## Acknowledgements {.section-title}
 :::
 
-::: {.scroll-animate style="margin-bottom: 4rem; padding-bottom: 2rem;"}
+::: {style="margin-bottom: 4rem; padding-bottom: 2rem;"}
 We want to thank staff engineer Xavier Walter and Professor Matthew Spencer for their constant support.
 :::
 
@@ -375,7 +362,6 @@ We want to thank staff engineer Xavier Walter and Professor Matthew Spencer for 
 ## Appendix A: FPGA-Based BNO085 SHTP Driver (Initial Implementation) {.section-title}
 :::
 
-::: {.scroll-animate}
 Before transitioning to the final ESP32-assisted architecture, we developed a fully-hardware BNO085 driver implemented directly on the FPGA. The goal of this approach was to remove the dependency on the Adafruit software libraries and have the FPGA manage all communication with the BNO085 over SPI.
 
 ### A.1 Purpose
@@ -449,8 +435,4 @@ Thus, the logic analyzer confirms correct timing and sequencing of the SPI trans
 ![FPGA Data Output Trace](Images/FPGAOUTPUT trace.png){width="100%" style="margin: 2rem 0;"}
 
 *Figure: FPGA data output trace on Logic Analyzer with FPGA configuration and initialization*
-:::
 
-:::
-
-<script src="scroll-animations.js"></script>
