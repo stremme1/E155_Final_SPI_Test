@@ -58,7 +58,7 @@ This multi-protocol, distributed architecture enables reliable motion data trans
 ## FPGA Design Details {.section-title}
 :::
 
-Initially, we attempted to configure the BNO085 sensors directly from the FPGA using a 11-state finite state machine (FSM) with encoding logic implemented using DSP blocks and BRAM (Block RAM) resources. This approach aimed to handle the Sensor Hub Transport Protocol (SHTP) communication directly on the FPGA, including sensor initialization, command encoding, and data packet parsing. While this implementation successfully extracted data from the sensors (as shown in the figure below), the approach proved unreliable in practice.
+Initially, we attempted to configure the BNO085 sensors directly from the FPGA using a 11-state finite state machine (FSM) with encoding logic implemented using DSP blocks. This approach aimed to handle the Sensor Hub Transport Protocol (SHTP) communication directly on the FPGA, including sensor initialization, command encoding, and data packet parsing. While this implementation successfully extracted data from the sensors (as shown in the figure below), the approach proved unreliable in practice.
 
 ![FPGA Data Output Trace](Images/FPGAOUTPUT trace.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
