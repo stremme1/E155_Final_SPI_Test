@@ -543,10 +543,10 @@ body:has(.about-hero) .about-section strong {
 
 /* Full width content area */
 .full-width-content {
-  width: 100%;
-  max-width: 1200px;
-  margin: var(--space-16) auto;
-  padding: 0 var(--space-8);
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: var(--space-16) 0 !important;
+  padding: 0 var(--space-8) !important;
 }
 
 
@@ -1492,33 +1492,33 @@ body:has(.projects-grid) .project-card h3 {
   padding: 0 !important;
 }
 
-/* Target pages with title blocks (non-homepage pages) for centered content */
+/* Target pages with title blocks - FULL WIDTH */
 #quarto-content:has(.quarto-title-block) {
-  max-width: 1200px !important;
+  max-width: 100% !important;
   width: 100% !important;
-  margin: 0 auto !important;
-  padding-left: 24px !important;
-  padding-right: 24px !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
   box-sizing: border-box !important;
 }
 
 /* Fallback for browsers that don't support :has() */
 .quarto-title-block {
-  max-width: 1200px !important;
+  max-width: 100% !important;
   width: 100% !important;
-  margin: 0 auto !important;
-  padding-left: 24px !important;
-  padding-right: 24px !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
   box-sizing: border-box !important;
 }
 
-/* Ensure all content after title block is also centered */
+/* Ensure all content after title block is also full width */
 .quarto-title-block + * {
-  max-width: 1200px !important;
+  max-width: 100% !important;
   width: 100% !important;
-  margin: 0 auto !important;
-  padding-left: 24px !important;
-  padding-right: 24px !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
   box-sizing: border-box !important;
 }
 
@@ -1566,13 +1566,13 @@ body:has(.projects-grid) .project-card h3 {
   margin-right: 0 !important;
 }
 
-/* Override main content area to be centered */
+/* Override main content area to be FULL WIDTH */
 main.content {
-  max-width: 1200px !important;
+  max-width: 100% !important;
   width: 100% !important;
-  margin: 0 auto !important;
-  padding-left: 24px !important;
-  padding-right: 24px !important;
+  margin: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
   box-sizing: border-box !important;
 }
 
