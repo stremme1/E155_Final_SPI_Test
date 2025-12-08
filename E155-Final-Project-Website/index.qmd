@@ -24,9 +24,9 @@ This project adapts the existing Invisible Drum Set—originally implemented wit
 ::: {.featured-card-content}
 ### Marina Bellido
 
-![Marina Bellido](Images/marina.jpg){width="200px" style="border-radius: 12px; margin-bottom: 1rem;"}
+![Marina Bellido](Images/image.png){width="200px" style="border-radius: 12px; margin-bottom: 1rem;"}
 
-Harvey Mudd College student majoring in Engineering with experience in electrical and computer engineering/digital design. Currently doing research as a Clay-Wolkin Fellow at Harvey Mudd's VLSI lab developing a comprehensive open-source functional verification suite for RISC-V processors. Experience with SystemVerilog and RISC-V assembly.
+I am a senior engineering major at Harvey Mudd College interested in electrical and computer engineering/digital design. I'm currently doing research as a Clay-Wolkin Fellow at Harvey Mudd's VLSI lab developing a comprehensive open-source functional verification suite for RISC-V processors. I have experience with SystemVerilog and RISC-V assembly and would love to continue to grow my computer engineering skills. I'm always excited to learn new things and would be happy to connect with you!
 
 **Links:**
 - [Portfolio Website](https://marina-bellido.github.io/E155-Portfolio/){target="_blank"}
