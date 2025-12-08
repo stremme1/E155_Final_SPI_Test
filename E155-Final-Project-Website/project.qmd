@@ -46,11 +46,11 @@ Each package is passed as:
 
 This multi-protocol, distributed architecture enables reliable motion data transfer across all processing elements in each stick. The correct functionality of each communication stage is demonstrated in the Results section of this report.
 
-![System Schematic](Images/image23.png){width="100%" style="margin: 2rem 0;"}
+![System Schematic](Images/image23.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Schematic diagram of the System*
 
-![Final Dual-Stick Embedded System Prototype](Images/image13.png){width="100%" style="margin: 2rem 0;"}
+![Final Dual-Stick Embedded System Prototype](Images/image13.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 ::: {.section-title-container}
 ## FPGA Design Details {.section-title}
@@ -58,7 +58,7 @@ This multi-protocol, distributed architecture enables reliable motion data trans
 
 Initially, we attempted to configure the BNO085 sensors directly from the FPGA using a 11-state finite state machine (FSM) with encoding logic implemented using DSP blocks and BRAM (Block RAM) resources. This approach aimed to handle the Sensor Hub Transport Protocol (SHTP) communication directly on the FPGA, including sensor initialization, command encoding, and data packet parsing. While this implementation successfully extracted data from the sensors (as shown in the figure below), the approach proved unreliable in practice.
 
-![FPGA Data Output Trace](Images/FPGAOUTPUT trace.png){width="100%" style="margin: 2rem 0;"}
+![FPGA Data Output Trace](Images/FPGAOUTPUT trace.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: FPGA data output trace on Logic Analyzer with FPGA configuration and initialization (more information in Appendix A)*
 
@@ -74,7 +74,7 @@ Given the reliability challenges with the FPGA-based sensor configuration, we tr
 
 This transition to using Arduino for sensor data acquisition and FPGA for data packaging provided the reliability and consistency needed for real-time operation, while maintaining the FPGA's role in efficient data processing and the MCU's role in audio playback.
 
-![FPGA Top Module](Images/image12.png){width="100%" style="margin: 2rem 0;"}
+![FPGA Top Module](Images/image12.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Top FPGA Module*
 
@@ -89,7 +89,7 @@ This transition to using Arduino for sensor data acquisition and FPGA for data p
 
 The STM32 microcontroller decodes the packaged data packets from the FPGA, identifies drum triggers based on gesture patterns, and outputs audio samples through the DAC to drive the speaker. This transition to using Arduino for sensor data acquisition and FPGA for data packaging provided the reliability and consistency needed for real-time operation, while maintaining the FPGA's role in efficient data processing and the MCU's role in audio playback.
 
-![MCU Flow Diagram](Images/image19.png){width="100%" style="margin: 2rem 0;"}
+![MCU Flow Diagram](Images/image19.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: MCU main control loop flowchart for dual-hand invisible drum system.*
 
@@ -209,15 +209,15 @@ Together, the Arduino Nano ESP32 platform and the Adafruit_BNO08x library provid
 
 Below you can observe the final build and performance of our invisible drum set.
 
-![Full Dual-Stick Embedded System Prototype](Images/image13.png){width="100%" style="margin: 2rem 0;"}
+![Full Dual-Stick Embedded System Prototype](Images/image13.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Full Dual-Stick Embedded System Prototype*
 
-![User Testing of the Dual-Stick Invisible Drum Set Prototype](Images/image22.jpg){width="100%" style="margin: 2rem 0;"}
+![User Testing of the Dual-Stick Invisible Drum Set Prototype](Images/image22.jpg){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: User Testing of the Dual-Stick Invisible Drum Set Prototype*
 
-![Final Prototype Assembly with Integrated Speaker Output](Images/image16.png){width="100%" style="margin: 2rem 0;"}
+![Final Prototype Assembly with Integrated Speaker Output](Images/image16.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Final Prototype Assembly with Integrated Speaker Output*
 
@@ -227,7 +227,7 @@ Below you can observe the final build and performance of our invisible drum set.
 
 Before validating the SPI interface, the correct operation of the BNO085 sensor stream was confirmed using the Arduino Serial Monitor. As shown in the figure below, the Arduino receives fused motion data from SHTP Channel 2, including Euler angles and gyroscope measurements. The reported Status = 1 confirms valid quaternion and gyro results, while the dt field demonstrates a stable sampling interval. This establishes that the sensor is configured correctly prior to forwarding data over SPI.
 
-![Arduino Serial Monitor Sensor Data](Images/image21.png){width="100%" style="margin: 2rem 0;"}
+![Arduino Serial Monitor Sensor Data](Images/image21.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Arduino Serial Monitor Sensor Data*
 
@@ -237,7 +237,7 @@ To verify correct data transfer between the Arduino ESP32 and the FPGA, the SPI 
 
 In the SPI trace, the Chip Select (CS) line goes low to initiate communication, and the Serial Clock (SCLK) drives the shifting of bits on the MOSI line. The logic analyzer successfully decodes the transmitted bytes, showing the correct formatting of the motion-data packet. The packet begins with the synchronization header 0xAA, followed by three 16-bit signed values corresponding to the Euler angles (roll, pitch, yaw), encoded in MSB-first two's-complement representation:
 
-![Logic Analyzer with outputted SPI Protocol](Images/image15.png){width="100%" style="margin: 2rem 0;"}
+![Logic Analyzer with outputted SPI Protocol](Images/image15.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Logic Analyzer with outputted SPI Protocol*
 
@@ -260,17 +260,17 @@ This result confirms that the Arduino-to-FPGA stage of the communication pipelin
 
 To verify correct data transfer between the FPGA and the MCU, the SPI bus was monitored using a test_bench and a logic analyzer. As we can observe in the figure below, we added a test pattern in module `spi_slave_mcu.sv` and then we can observe how that same packet was transmitted correctly in the MCU Segger debug terminal. This shows that the SPI protocol works correctly.
 
-![spi_slave_mcu test pattern](Images/image3.png){width="100%" style="margin: 2rem 0;"}
+![spi_slave_mcu test pattern](Images/image3.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: spi_slave_mcu test pattern*
 
-![Segger Debug Terminal outputting MCU receiving the correct test pattern](Images/image17.jpg){width="100%" style="margin: 2rem 0;"}
+![Segger Debug Terminal outputting MCU receiving the correct test pattern](Images/image17.jpg){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Segger Debug Terminal outputting MCU receiving the correct test pattern*
 
 As shown in the figure below, the MCU successfully receives the formatted 16-byte packets transmitted through the FPGA. These packets originate from SHTP Channel 2, which is the dedicated fused-sensor data stream of the BNO085. The Arduino firmware parses the incoming SHTP frames and extracts only the motion-tracking payload, removing the original SHTP header before re-packaging the data for SPI transmission. Each packet begins with a synchronization header byte (0xAA), followed by fused orientation and inertial measurements encoded as signed 16-bit integers (MSB-first). A status/flags byte indicates data validity, and two trailing bytes are reserved for potential future use. This structure allows the MCU to efficiently decode motion data in real time while ensuring reliable packet boundary detection.
 
-![MCU Debug Terminal output displaying the 16-byte SPI packet](Images/image10.png){width="100%" style="margin: 2rem 0;"}
+![MCU Debug Terminal output displaying the 16-byte SPI packet](Images/image10.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: MCU Debug Terminal output displaying the 16-byte SPI packet received from the FPGA, including the 0xAA synchronization header and sensor data originating from SHTP Channel 2.*
 
@@ -288,7 +288,7 @@ As shown in the figure below, the MCU successfully receives the formatted 16-byt
 
 *Table: Custom 16-byte SPI packet structure used for transmitting fused orientation and inertial data from the Arduino through the FPGA to the MCU. The packet includes a 0xAA synchronization header followed by sensor measurements and status information extracted from SHTP Channel 2 reports.*
 
-![Logic Analyzer showcasing the SPI Protocol](Images/image20.png){width="100%" style="margin: 2rem 0;"}
+![Logic Analyzer showcasing the SPI Protocol](Images/image20.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Logic Analyzer showcasing the SPI Protocol*
 
@@ -296,7 +296,7 @@ As shown in the figure below, the MCU successfully receives the formatted 16-byt
 
 To verify audio output capability and confirm correct DAC initialization, the MCU firmware begins by sequentially playing each stored drum sample at startup. As shown in the figure below, the debug log confirms successful SPI configuration, DAC activation, and playback of all seven drum sounds (Kick, Snare, Hi-Hat Closed, Hi-Hat Open, Crash, Ride, Tom High, Tom Low). This provides a functional baseline test proving that the audio subsystem is fully operational before real-time trigger detection begins.
 
-![Initialization of all drum sounds outputted by the DAC](Images/image18.png){width="100%" style="margin: 2rem 0;"}
+![Initialization of all drum sounds outputted by the DAC](Images/image18.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: Initialization of all drum sounds outputted by the DAC*
 
@@ -329,7 +329,7 @@ The repository contains all source code, including FPGA Verilog modules, MCU C c
 
 *Total estimated cost under $50, excluding development hardware.*
 
-![BNO085 information on the digikey website](Images/image9.png){width="100%" style="margin: 2rem 0;"}
+![BNO085 information on the digikey website](Images/image9.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: BNO085 information on the digikey website*
 :::
@@ -402,7 +402,7 @@ Once initialized, the FSM:
   - **Gyroscope:** gyro_x, gyro_y, gyro_z
   - **Strobes:** quat_valid, gyro_valid
 
-![FSM for the BNO085_controller.sv](Images/image2.png){width="100%" style="margin: 2rem 0;"}
+![FSM for the BNO085_controller.sv](Images/image2.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: FSM for the BNO085_controller.sv*
 
@@ -432,7 +432,7 @@ The figure below shows a complete initialization SPI transaction. The following 
 
 Thus, the logic analyzer confirms correct timing and sequencing of the SPI transaction as dictated by the FSM.
 
-![FPGA Data Output Trace](Images/FPGAOUTPUT trace.png){width="100%" style="margin: 2rem 0;"}
+![FPGA Data Output Trace](Images/FPGAOUTPUT trace.png){width="80%" style="max-width: 800px; margin: 2rem auto; display: block;"}
 
 *Figure: FPGA data output trace on Logic Analyzer with FPGA configuration and initialization*
 
